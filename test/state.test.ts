@@ -49,12 +49,12 @@ test("reset removes the chat mapping and marks the command as processed", async 
   assert.equal(reloaded.hasProcessed("om_new"), true);
 });
 
-test("marks deterministic harness commands as processed without creating a thread", async () => {
+test("marks a message as processed without creating a thread", async () => {
   const directory = await mkdtemp(join(tmpdir(), "feishu-codex-agent-"));
   const store = new StateStore(join(directory, "state.json"));
   await store.load();
-  await store.markProcessed("om_authorize");
+  await store.markProcessed("om_command");
 
-  assert.equal(store.hasProcessed("om_authorize"), true);
+  assert.equal(store.hasProcessed("om_command"), true);
   assert.equal(store.threadId("oc_chat"), undefined);
 });

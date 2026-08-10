@@ -1,7 +1,6 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { promisify } from "node:util";
-import { basename, dirname, resolve } from "node:path";
 import type { FeishuMessageEvent } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -74,30 +73,6 @@ export class FeishuGateway {
       "--json",
     ];
     await execFileAsync(this.options.executable, args, {
-      env: this.options.env,
-      maxBuffer: 2 * 1024 * 1024,
-    });
-  }
-
-  async replyImage(messageId: string, imagePath: string): Promise<void> {
-    const absolutePath = resolve(imagePath);
-    const idempotencyKey = `codex-auth-qr-${messageId}`.slice(0, 50);
-    const args = [
-      ...this.profileArgs(),
-      "im",
-      "+messages-reply",
-      "--as",
-      "bot",
-      "--message-id",
-      messageId,
-      "--image",
-      `./${basename(absolutePath)}`,
-      "--idempotency-key",
-      idempotencyKey,
-      "--json",
-    ];
-    await execFileAsync(this.options.executable, args, {
-      cwd: dirname(absolutePath),
       env: this.options.env,
       maxBuffer: 2 * 1024 * 1024,
     });

@@ -10,8 +10,8 @@ The pilot intentionally starts with a narrow boundary:
   application-written persona or policy prompt;
 - replies as the app bot;
 - ignores duplicate event deliveries;
-- can acquire and retain the pilot user's renewable Feishu login through a
-  self-service link and QR flow inside the bot conversation.
+- includes the official Lark/Feishu Agent Skills so Codex can operate
+  `lark-cli` and handle authentication conversationally.
 
 The login makes user-context APIs available to `lark-cli`. The actual Codex tool
 permissions remain controlled separately by the container and `CODEX_*`
@@ -22,6 +22,7 @@ settings below.
 - Node.js 20 or newer;
 - `codex` logged in locally for development, or OpenAI API credentials in deployment;
 - `lark-cli` configured with a Feishu self-built app whose bot is enabled;
+- the official Lark skills installed locally with `npx skills add larksuite/cli -y -g`;
 - the app subscribed to `im.message.receive_v1` with the required IM scopes.
 
 ## Run locally
@@ -40,35 +41,25 @@ disconnect that Feishu chat from its current Codex thread. The next ordinary
 message starts a fresh Codex session with no prior conversation context. The old
 Codex transcript remains on disk but is no longer used by the chat.
 
-## Authorize the Railway agent
+## Feishu capabilities and authorization
 
-The authorization exchange is handled by the outer bot harness, not by a model
-turn, so it remains usable even when Codex itself is unavailable.
+The deployment image installs the official Lark skill bundle with:
 
-1. Send `/authorize` (or plain `authorize`) to the bot.
-2. Open the exact Feishu link it replies with, or scan the attached QR code.
-3. Finish authorization with the same Feishu account that sent the command.
-4. Return to the bot and send `/authorized` (or `authorization complete`).
-5. Send `/auth-status` (or `auth status`) at any time to verify the stored login.
-
-`/authorize` requests the domains in `LARK_AUTH_DOMAINS`, which defaults to
-`all` for this private single-user pilot. Narrow requests are also supported:
-
-```text
-/authorize domain docs,drive
-/authorize scope calendar:calendar:readonly
+```sh
+npx skills add larksuite/cli -y -g
 ```
 
-The temporary device code is bound to both the Feishu sender and chat, expires
-after Feishu's stated lifetime, and is stored in a mode-600 file until the
-second command completes it. The resulting renewable login is stored by
-`lark-cli`; put its config, data directory, authorization state, and QR
-directory on a persistent Railway volume. Startup preserves existing user
-logins instead of recreating a bot-only profile.
+The skills teach Codex how to select user or bot identity, operate Feishu
+services, diagnose missing scopes, and complete the split device-code login
+flow. Authentication is ordinary agent work rather than a special harness
+command: ask the agent whether it can access a calendar, document, mailbox, or
+other Feishu resource, then follow its explanation.
 
-The bot sends the link before attempting the QR upload. If the app lacks the
-`im:resource` bot scope, the link still works; grant that scope to enable the
-image attachment.
+The resulting renewable user login is stored by `lark-cli` under its configured
+directory. On Railway, `LARKSUITE_CLI_CONFIG_DIR` points to `/data/lark-cli`, so
+the login survives image rebuilds and service restarts. The outer harness only
+handles message transport and `/new`; phrases such as `authorize`,
+`authorization complete`, and `auth status` are passed directly to Codex.
 
 The checked-in example is safe by default. The local ignored `.env` currently
 allowlists only the developer's Feishu `open_id`; group messages remain disabled.
@@ -106,7 +97,7 @@ the `CODEX_*` variables above.
 1. Run the service locally and verify a private conversation.
 2. Register a separate production app and a dedicated `lark-cli` profile.
 3. Deploy the same chat loop as an always-on service.
-4. Authorize user-context access from the private bot conversation.
+4. Ask the agent to authorize user-context access from the private bot conversation.
 5. Add one action family at a time: documents, then calendar, then mail.
 6. Put external writes behind an interactive confirmation card and keep an audit log.
 

@@ -1,5 +1,5 @@
 import { loadEnvFile } from "node:process";
-import { dirname, join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 try {
   loadEnvFile();
@@ -24,15 +24,6 @@ function csv(name: string): Set<string> {
   );
 }
 
-function csvList(name: string, fallback: string[] = []): string[] {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  return raw
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function choice<const T extends readonly string[]>(
   name: string,
   allowed: T,
@@ -45,9 +36,6 @@ function choice<const T extends readonly string[]>(
 }
 
 const stateFile = resolve(process.env.AGENT_STATE ?? ".data/state.json");
-const authStateFile = resolve(
-  process.env.LARK_AUTH_STATE ?? join(dirname(stateFile), "authorization.json"),
-);
 
 export const config = {
   larkCli: process.env.LARK_CLI ?? "lark-cli",
@@ -58,12 +46,6 @@ export const config = {
   allowedUserIds: csv("ALLOWED_USER_IDS"),
   workspace: resolve(process.env.AGENT_WORKSPACE ?? ".data/workspace"),
   stateFile,
-  authStateFile,
-  authQrDirectory: resolve(
-    process.env.LARK_AUTH_QR_DIR ?? join(dirname(authStateFile), "authorization-qr"),
-  ),
-  authDefaultDomains: csvList("LARK_AUTH_DOMAINS", ["all"]),
-  authPollTimeoutMs: Number(process.env.LARK_AUTH_POLL_TIMEOUT_MS ?? 45_000),
   codexSandboxMode: choice(
     "CODEX_SANDBOX_MODE",
     ["read-only", "workspace-write", "danger-full-access"] as const,
@@ -94,8 +76,5 @@ export function validateConfig(): void {
     throw new Error(
       "No pilot users are allowed. Set ALLOWED_USER_IDS to comma-separated Feishu open_ids, or explicitly set ALLOW_ALL_USERS=true.",
     );
-  }
-  if (!Number.isFinite(config.authPollTimeoutMs) || config.authPollTimeoutMs <= 0) {
-    throw new Error("LARK_AUTH_POLL_TIMEOUT_MS must be a positive number");
   }
 }
