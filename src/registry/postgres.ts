@@ -65,6 +65,7 @@ type TaskRow = {
 type SourceEventRow = {
   batch_id: string;
   id: string;
+  role: CatalogSourceEvent["role"];
   channel: CatalogSourceEvent["channel"];
   external_ref: string;
   sender: string | null;
@@ -581,7 +582,7 @@ export class PostgresRegistry implements RegistryRepository {
         [visibility],
       ),
       this.pool.query<SourceEventRow>(
-        `SELECT bse.batch_id, se.id, se.channel, se.external_ref, se.sender,
+        `SELECT bse.batch_id, bse.role, se.id, se.channel, se.external_ref, se.sender,
                 se.received_at, se.raw_artifact_id
          FROM registry_batch_source_events bse
          JOIN registry_source_events se ON se.id = bse.source_event_id
@@ -644,6 +645,7 @@ export class PostgresRegistry implements RegistryRepository {
     for (const row of sourceEventsResult.rows) {
       append(sourceEventsByBatch, row.batch_id, {
         id: row.id,
+        role: row.role,
         channel: row.channel,
         externalRef: row.external_ref,
         sender: row.sender,
@@ -710,7 +712,7 @@ export class PostgresRegistry implements RegistryRepository {
   async getSourceEvent(id: string): Promise<CatalogSourceEvent | null> {
     const [eventResult, itemsResult, relationsResult] = await Promise.all([
       this.pool.query<SourceEventRow>(
-        `SELECT ''::text AS batch_id, id, channel, external_ref, sender, received_at, raw_artifact_id
+        `SELECT ''::text AS batch_id, NULL::text AS role, id, channel, external_ref, sender, received_at, raw_artifact_id
          FROM registry_source_events WHERE id = $1`,
         [id],
       ),
@@ -730,6 +732,7 @@ export class PostgresRegistry implements RegistryRepository {
     const row = eventResult.rows[0];
     return row ? {
       id: row.id,
+      role: row.role,
       channel: row.channel,
       externalRef: row.external_ref,
       sender: row.sender,
