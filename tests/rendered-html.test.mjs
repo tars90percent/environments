@@ -47,6 +47,7 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
   assert.match(source, /Researchers make those judgments/);
   assert.match(source, /供应商样本库/);
   assert.match(source, /Switch to English/);
+  assert.doesNotMatch(source, /className="criteria-aside"/);
   assert.match(source, /fetch\("\/api\/catalog"/);
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
   assert.match(worker, /CASE_REGISTRY_CATALOG_TOKEN/);

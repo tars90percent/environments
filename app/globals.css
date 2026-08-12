@@ -7,8 +7,8 @@
   --ink: #18181b;
   --muted: #6f747b;
   --faint: #9a9fa6;
-  --blue: #1456f0;
-  --blue-soft: #ecf2fe;
+  --blue: #7d1f2a;
+  --blue-soft: #f7ecee;
   --green: #16803c;
   --red: #c92a37;
 }
@@ -64,11 +64,11 @@ main { min-height: 100vh; padding-top: 78px; }
 .vendor-list button strong { overflow: hidden; font-size: 12px; font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
 .vendor-list button small { color: var(--muted); font-size: 9px; }
 .vendor-mark { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; background: var(--blue-soft); color: var(--blue); font: 650 10px/1 var(--font-geist-mono, ui-monospace), monospace; }
-.vendor-mark.large { width: 52px; height: 52px; flex: 0 0 auto; border-radius: 15px; background: white; box-shadow: 0 10px 30px rgba(20,86,240,.11); font-size: 14px; }
+.vendor-mark.large { width: 52px; height: 52px; flex: 0 0 auto; border-radius: 15px; background: white; box-shadow: 0 10px 30px rgba(125,31,42,.11); font-size: 14px; }
 .sidebar-empty { padding: 24px 14px; color: var(--muted); font-size: 11px; text-align: center; }
 
 .vendor-main { min-width: 0; }
-.vendor-profile { min-height: 206px; padding: 32px 34px; display: flex; align-items: flex-start; gap: 19px; border-radius: 24px; background: linear-gradient(135deg, #edf3ff 0%, #f6f7f9 72%); }
+.vendor-profile { min-height: 206px; padding: 32px 34px; display: flex; align-items: flex-start; gap: 19px; border-radius: 24px; background: linear-gradient(135deg, #faf1f2 0%, #f6f7f9 72%); }
 .vendor-profile h2 { margin: 5px 0 9px; font-size: 32px; line-height: 1.08; letter-spacing: -.035em; font-weight: 550; }
 .vendor-profile p { max-width: 740px; margin: 0; color: var(--muted); line-height: 1.6; }
 .vendor-kicker { color: var(--blue); font: 620 9px/1 var(--font-geist-mono, ui-monospace), monospace; letter-spacing: .1em; text-transform: uppercase; }
@@ -135,7 +135,7 @@ main { min-height: 100vh; padding-top: 78px; }
 .source-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .source-actions a { padding: 6px 9px; border-radius: 7px; background: white; color: var(--blue); font-size: 9px; font-weight: 620; text-decoration: none; white-space: nowrap; }
 .source-item .source-actions a { background: var(--blue-soft); }
-.source-actions a:hover { background: #dce7ff; }
+.source-actions a:hover { background: #edd9dc; }
 .source-empty { padding: 15px; border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 10px; }
 
 .state-card { max-width: 760px; min-height: 250px; padding: 38px; border-radius: 24px; background: var(--surface); }
@@ -154,15 +154,12 @@ main { min-height: 100vh; padding-top: 78px; }
 .checks-row small { color: var(--muted); font-size: 9px; }
 .checks-head { min-height: 44px; background: var(--surface-strong); color: var(--muted); font-size: 9px; font-weight: 620; }
 
-.criteria-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 22px; }
+.criteria-layout { display: block; }
 .criteria-list { margin: 0; padding: 0; display: grid; gap: 9px; list-style: none; }
 .criteria-list li { min-height: 104px; padding: 21px 22px; display: grid; grid-template-columns: 42px 1fr; gap: 14px; border-radius: 18px; background: var(--surface); }
 .criteria-list li > span { color: var(--blue); font: 620 10px/1.4 var(--font-geist-mono, ui-monospace), monospace; }
 .criteria-list h3 { margin: 0 0 7px; font-size: 14px; font-weight: 610; }
 .criteria-list p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
-.criteria-aside { position: sticky; top: 102px; padding: 22px; border-radius: 18px; background: var(--blue); color: white; }
-.criteria-aside strong { font-size: 13px; font-weight: 620; }
-.criteria-aside p { margin: 11px 0 0; color: rgba(255,255,255,.78); font-size: 11px; line-height: 1.65; }
 
 @media (max-width: 1120px) {
   .global-header { grid-template-columns: 160px 1fr auto; gap: 20px; padding: 0 24px; }
@@ -197,8 +194,6 @@ main { min-height: 100vh; padding-top: 78px; }
   .vendor-profile { min-height: 0; padding: 25px; }
   .submission-history { margin-top: 40px; }
   .section-title { min-height: 106px; }
-  .criteria-layout { grid-template-columns: 1fr; }
-  .criteria-aside { position: static; grid-row: 1; }
   .page-body { padding-bottom: 90px; }
 }
 

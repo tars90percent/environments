@@ -424,7 +424,7 @@ function StateCard({ value }: { value: { eyebrow: string; title: string; body: s
 }
 
 function CriteriaView({ t }: { t: UiCopy }) {
-  return <section aria-labelledby="criteria-title"><div className="content-title"><div><p className="eyebrow">{t.criteriaIntro.eyebrow}</p><h2 id="criteria-title">{t.criteriaIntro.title}</h2><p>{t.criteriaIntro.note}</p></div><span className="criteria-count">{t.criteriaIntro.count}</span></div><div className="criteria-layout"><ol className="criteria-list">{t.criteria.map(([title, text], index) => <li key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{text}</p></div></li>)}</ol><aside className="criteria-aside"><strong>{t.criteriaIntro.boundary}</strong><p>{t.criteriaIntro.p1}</p><p>{t.criteriaIntro.p2}</p></aside></div></section>;
+  return <section aria-labelledby="criteria-title"><div className="content-title"><div><p className="eyebrow">{t.criteriaIntro.eyebrow}</p><h2 id="criteria-title">{t.criteriaIntro.title}</h2><p>{t.criteriaIntro.note}</p></div><span className="criteria-count">{t.criteriaIntro.count}</span></div><div className="criteria-layout"><ol className="criteria-list">{t.criteria.map(([title, text], index) => <li key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{text}</p></div></li>)}</ol></div></section>;
 }
 
 function safeExternalUrl(value: string | null) {
