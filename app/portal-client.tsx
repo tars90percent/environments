@@ -50,7 +50,7 @@ export default function PortalClient() {
         if (!active) return;
         setCatalog(snapshot);
         setSelectedVendorId(snapshot.vendors[0]?.id ?? "");
-        setExpandedBatches(new Set(snapshot.vendors[0]?.batches[0] ? [snapshot.vendors[0].batches[0].id] : []));
+        setExpandedBatches(new Set());
         setCatalogState("ready");
       })
       .catch((error: unknown) => {
@@ -66,12 +66,14 @@ export default function PortalClient() {
     return haystack.includes(query.toLowerCase());
   }), [query, vendors]);
 
-  const selectedVendor = vendors.find((vendor) => vendor.id === selectedVendorId) ?? vendors[0];
+  const selectedVendor = query
+    ? matchingVendors.find((vendor) => vendor.id === selectedVendorId) ?? matchingVendors[0]
+    : vendors.find((vendor) => vendor.id === selectedVendorId) ?? vendors[0];
 
   function selectVendor(vendor: CatalogVendor) {
     setSelectedVendorId(vendor.id);
     setTab("vendors");
-    setExpandedBatches(new Set(vendor.batches[0] ? [vendor.batches[0].id] : []));
+    setExpandedBatches(new Set());
   }
 
   function toggleBatch(batchId: string) {
@@ -103,6 +105,7 @@ export default function PortalClient() {
         {catalogState === "loading" && <Loading />}
         {catalogState === "unavailable" && <Unavailable reason={unavailableReason} />}
         {catalogState === "ready" && tab === "vendors" && selectedVendor && <VendorView matchingVendors={matchingVendors} selectedVendor={selectedVendor} expandedBatches={expandedBatches} onSelect={selectVendor} onToggle={toggleBatch} />}
+        {catalogState === "ready" && tab === "vendors" && !selectedVendor && <section className="unavailable"><p className="eyebrow">SEARCH</p><h2>No matching samples</h2><p>Try a vendor, batch, category, or task name.</p></section>}
         {catalogState === "ready" && catalog && tab === "checks" && <ChecksView catalog={catalog} />}
         {tab === "criteria" && <CriteriaView />}
       </div>
