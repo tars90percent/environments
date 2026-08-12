@@ -13,8 +13,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "小环境 — Vendor Sample Registry",
-  description: "An append-only registry of vendor RL environment sample submissions.",
+  metadataBase: new URL("https://env-portal-proto.zwu.chatgpt.site"),
+  title: "小环境 — RL Environment Registry",
+  description: "供应商强化学习环境样本库 · Vendor RL environment sample registry.",
+  openGraph: {
+    title: "小环境 — RL Environment Registry",
+    description: "供应商强化学习环境样本库 · Vendor RL environment sample registry.",
+    images: [{ url: "/og.png", width: 1731, height: 909, alt: "小环境 RL Environment Registry" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "小环境 — RL Environment Registry",
+    description: "供应商强化学习环境样本库 · Vendor RL environment sample registry.",
+    images: ["/og.png"],
+  },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -23,7 +35,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>
