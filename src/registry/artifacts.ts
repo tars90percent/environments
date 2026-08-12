@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export type ArtifactStoreOptions = {
@@ -40,15 +40,32 @@ export class ArtifactStore {
     return { url, expiresInSeconds };
   }
 
-  async createDownloadUrl(key: string): Promise<{ url: string; expiresInSeconds: number }> {
+  async verifyObject(input: { key: string; sha256: string; sizeBytes?: number }): Promise<void> {
+    const result = await this.client.send(new HeadObjectCommand({ Bucket: this.options.bucket, Key: safeKey(input.key) }));
+    if (result.Metadata?.sha256 !== input.sha256) throw new Error("Stored artifact SHA-256 metadata does not match");
+    if (input.sizeBytes !== undefined && result.ContentLength !== input.sizeBytes) {
+      throw new Error("Stored artifact size does not match");
+    }
+  }
+
+  async createDownloadUrl(key: string, downloadName?: string): Promise<{ url: string; expiresInSeconds: number }> {
     const expiresInSeconds = 10 * 60;
     const url = await getSignedUrl(
       this.client,
-      new GetObjectCommand({ Bucket: this.options.bucket, Key: safeKey(key) }),
+      new GetObjectCommand({
+        Bucket: this.options.bucket,
+        Key: safeKey(key),
+        ResponseContentDisposition: downloadName ? `attachment; filename="${safeDownloadName(downloadName)}"` : undefined,
+      }),
       { expiresIn: expiresInSeconds },
     );
     return { url, expiresInSeconds };
   }
+}
+
+export function contentAddressedStorageKey(sha256: string): string {
+  if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error("SHA-256 is invalid");
+  return `objects/sha256/${sha256.slice(0, 2)}/${sha256}`;
 }
 
 function safeKey(value: string): string {
@@ -57,4 +74,9 @@ function safeKey(value: string): string {
     throw new Error("Artifact key is invalid");
   }
   return key;
+}
+
+function safeDownloadName(value: string): string {
+  const name = value.replace(/[\r\n"\\/]/g, "_").trim().slice(0, 180);
+  return name || "artifact";
 }

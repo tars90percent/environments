@@ -9,6 +9,119 @@ export type WorkflowStatus =
 
 export type CatalogVisibility = "featured" | "available" | "log_only" | "internal";
 export type CheckOutcome = "pass" | "fail" | "blocked" | "not_run";
+export type CatalogScope = "research" | "portal" | "all";
+
+export type SourceChannel =
+  | "email"
+  | "feishu"
+  | "slack"
+  | "website"
+  | "vendor_portal"
+  | "workspace"
+  | "upload"
+  | "other";
+
+export type SourceItemKind =
+  | "message"
+  | "attachment"
+  | "url"
+  | "folder"
+  | "document"
+  | "spreadsheet"
+  | "worksheet"
+  | "row"
+  | "pdf"
+  | "archive"
+  | "file"
+  | "task_package"
+  | "container_image"
+  | "web_page"
+  | "other";
+
+export type SourceFetchStatus =
+  | "not_requested"
+  | "queued"
+  | "fetching"
+  | "snapshotted"
+  | "external_only"
+  | "blocked"
+  | "failed";
+
+export type SourceParseStatus =
+  | "not_requested"
+  | "queued"
+  | "parsing"
+  | "parsed"
+  | "partial"
+  | "blocked"
+  | "failed";
+
+export type SourceRelationKind =
+  | "contains"
+  | "links_to"
+  | "derived_from"
+  | "describes"
+  | "mirrors"
+  | "supersedes";
+
+export type RegistryVendorInput = {
+  id: string;
+  name: string;
+  short: string;
+  description: string;
+  aliases?: string[];
+};
+
+export type SourceEventInput = {
+  id: string;
+  channel: SourceChannel;
+  externalRef: string;
+  sender?: string;
+  receivedAt: string;
+  rawArtifactId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type SourceItemInput = {
+  id: string;
+  kind: SourceItemKind;
+  displayName: string;
+  locator?: string;
+  mediaType?: string;
+  artifactId?: string;
+  contentSha256?: string;
+  sizeBytes?: number;
+  fetchStatus: SourceFetchStatus;
+  parseStatus: SourceParseStatus;
+  mutable: boolean;
+  capturedAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type SourceRelationInput = {
+  fromItemId: string;
+  toItemId: string;
+  relation: SourceRelationKind;
+  position?: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type SourceEnvelopeInput = {
+  vendor: RegistryVendorInput;
+  sourceEvent: SourceEventInput;
+  items: SourceItemInput[];
+  relations?: SourceRelationInput[];
+  batchLinks?: Array<{
+    batchId: string;
+    role: "primary" | "supplement" | "correction" | "metadata" | "other";
+    sourceItemIds?: string[];
+  }>;
+  taskLinks?: Array<{
+    taskVersionId: string;
+    sourceItemId: string;
+    role: "normalized_from" | "discovered_in" | "metadata" | "other";
+  }>;
+};
 
 export type SubmissionCategoryInput = {
   id: string;
@@ -27,28 +140,15 @@ export type SubmissionTaskInput = {
   sourcePath?: string;
   format: string;
   contentSha256?: string;
+  sourceItemIds?: string[];
   workflowStatus?: WorkflowStatus;
   catalogVisibility?: CatalogVisibility;
   metadata?: Record<string, unknown>;
 };
 
 export type SubmissionManifest = {
-  vendor: {
-    id: string;
-    name: string;
-    short: string;
-    description: string;
-    aliases?: string[];
-  };
-  sourceEvent: {
-    id: string;
-    channel: "email" | "feishu" | "website" | "workspace" | "other";
-    externalRef: string;
-    sender?: string;
-    receivedAt: string;
-    rawArtifactId?: string;
-    metadata?: Record<string, unknown>;
-  };
+  vendor: RegistryVendorInput;
+  sourceEvent: SourceEventInput;
   batch: {
     id: string;
     date: string;
@@ -74,12 +174,24 @@ export type SubmissionManifest = {
 
 export type ArtifactInput = {
   id: string;
-  kind: "submission" | "task_package" | "trajectory" | "check_evidence" | "other";
+  kind:
+    | "source_payload"
+    | "source_snapshot"
+    | "submission_manifest"
+    | "task_package"
+    | "trajectory"
+    | "check_evidence"
+    | "extracted_text"
+    | "other";
   storageKey: string;
   sha256: string;
   sizeBytes?: number;
   contentType?: string;
   metadata?: Record<string, unknown>;
+};
+
+export type ArtifactRecord = ArtifactInput & {
+  createdAt: string;
 };
 
 export type StatusUpdateInput = {
@@ -152,6 +264,41 @@ export type CatalogTask = {
     blocked: number;
     notRun: number;
   };
+  sourceItemIds: string[];
+};
+
+export type CatalogSourceItem = {
+  id: string;
+  kind: SourceItemKind;
+  displayName: string;
+  locator: string | null;
+  mediaType: string | null;
+  artifactId: string | null;
+  contentSha256: string | null;
+  sizeBytes: number | null;
+  fetchStatus: SourceFetchStatus;
+  parseStatus: SourceParseStatus;
+  mutable: boolean;
+  capturedAt: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type CatalogSourceRelation = {
+  fromItemId: string;
+  toItemId: string;
+  relation: SourceRelationKind;
+  position: number | null;
+};
+
+export type CatalogSourceEvent = {
+  id: string;
+  channel: SourceChannel;
+  externalRef: string;
+  sender: string | null;
+  receivedAt: string;
+  rawArtifactId: string | null;
+  items: CatalogSourceItem[];
+  relations: CatalogSourceRelation[];
 };
 
 export type CatalogCategory = {
@@ -174,6 +321,7 @@ export type CatalogBatch = {
   catalogVisibility: CatalogVisibility;
   revisesBatchId: string | null;
   delta: SubmissionManifest["batch"]["delta"];
+  sourceEvents: CatalogSourceEvent[];
   categories: CatalogCategory[];
 };
 
@@ -200,4 +348,7 @@ export type OperationsSummary = {
   checksByOutcome: Record<string, number>;
   pendingWorkItems: number;
   openFollowUps: number;
+  sourceItemsByFetchStatus: Record<string, number>;
+  sourceItemsByParseStatus: Record<string, number>;
+  artifacts: number;
 };

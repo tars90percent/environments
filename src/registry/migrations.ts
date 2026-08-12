@@ -206,6 +206,105 @@ const migrations: Migration[] = [
         ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
     `,
   },
+  {
+    id: "003_source_graph",
+    sql: `
+      ALTER TABLE registry_source_events
+        ADD COLUMN IF NOT EXISTS payload_sha256 text;
+      ALTER TABLE registry_source_events
+        ADD COLUMN IF NOT EXISTS workflow_status text NOT NULL DEFAULT 'received';
+      ALTER TABLE registry_source_events
+        ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+      CREATE TABLE IF NOT EXISTS registry_source_items (
+        id text PRIMARY KEY,
+        source_event_id text NOT NULL REFERENCES registry_source_events(id) ON DELETE CASCADE,
+        kind text NOT NULL,
+        display_name text NOT NULL,
+        locator text,
+        media_type text,
+        artifact_id text REFERENCES registry_artifacts(id),
+        content_sha256 text,
+        size_bytes bigint,
+        fetch_status text NOT NULL,
+        parse_status text NOT NULL,
+        mutable boolean NOT NULL DEFAULT true,
+        captured_at timestamptz,
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+        payload_sha256 text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS registry_source_relations (
+        source_event_id text NOT NULL REFERENCES registry_source_events(id) ON DELETE CASCADE,
+        from_item_id text NOT NULL REFERENCES registry_source_items(id) ON DELETE CASCADE,
+        to_item_id text NOT NULL REFERENCES registry_source_items(id) ON DELETE CASCADE,
+        relation text NOT NULL,
+        position integer,
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY(from_item_id, to_item_id, relation)
+      );
+
+      CREATE TABLE IF NOT EXISTS registry_batch_source_events (
+        batch_id text NOT NULL REFERENCES registry_submission_batches(id) ON DELETE CASCADE,
+        source_event_id text NOT NULL REFERENCES registry_source_events(id),
+        role text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY(batch_id, source_event_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS registry_batch_source_items (
+        batch_id text NOT NULL REFERENCES registry_submission_batches(id) ON DELETE CASCADE,
+        source_item_id text NOT NULL REFERENCES registry_source_items(id),
+        role text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY(batch_id, source_item_id, role)
+      );
+
+      CREATE TABLE IF NOT EXISTS registry_task_source_items (
+        task_version_id text NOT NULL REFERENCES registry_task_versions(id) ON DELETE CASCADE,
+        source_item_id text NOT NULL REFERENCES registry_source_items(id),
+        role text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY(task_version_id, source_item_id, role)
+      );
+
+      CREATE TABLE IF NOT EXISTS registry_ingestion_runs (
+        id text PRIMARY KEY,
+        source_event_id text NOT NULL REFERENCES registry_source_events(id) ON DELETE CASCADE,
+        source_item_id text REFERENCES registry_source_items(id) ON DELETE CASCADE,
+        stage text NOT NULL,
+        runner text NOT NULL,
+        runner_version text NOT NULL,
+        status text NOT NULL,
+        metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+        error text,
+        started_at timestamptz NOT NULL,
+        completed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
+      SELECT id, source_event_id, 'primary'
+      FROM registry_submission_batches
+      ON CONFLICT(batch_id, source_event_id) DO NOTHING;
+
+      CREATE INDEX IF NOT EXISTS registry_source_items_event_idx
+        ON registry_source_items(source_event_id, kind);
+      CREATE INDEX IF NOT EXISTS registry_source_items_fetch_idx
+        ON registry_source_items(fetch_status, created_at);
+      CREATE INDEX IF NOT EXISTS registry_source_items_parse_idx
+        ON registry_source_items(parse_status, created_at);
+      CREATE INDEX IF NOT EXISTS registry_source_relations_event_idx
+        ON registry_source_relations(source_event_id, relation);
+      CREATE INDEX IF NOT EXISTS registry_ingestion_runs_event_idx
+        ON registry_ingestion_runs(source_event_id, started_at DESC);
+      CREATE INDEX IF NOT EXISTS registry_artifacts_sha_idx
+        ON registry_artifacts(sha256);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

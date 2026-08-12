@@ -2,6 +2,7 @@ import type {
   ArtifactInput,
   CheckResultInput,
   FollowUpInput,
+  SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
   WorkCompletionInput,
@@ -18,6 +19,14 @@ const WORKFLOW_STATUSES = new Set([
 ]);
 const VISIBILITIES = new Set(["featured", "available", "log_only", "internal"]);
 const OUTCOMES = new Set(["pass", "fail", "blocked", "not_run"]);
+const SOURCE_CHANNELS = new Set(["email", "feishu", "slack", "website", "vendor_portal", "workspace", "upload", "other"]);
+const SOURCE_ITEM_KINDS = new Set([
+  "message", "attachment", "url", "folder", "document", "spreadsheet", "worksheet", "row", "pdf", "archive",
+  "file", "task_package", "container_image", "web_page", "other",
+]);
+const SOURCE_FETCH_STATUSES = new Set(["not_requested", "queued", "fetching", "snapshotted", "external_only", "blocked", "failed"]);
+const SOURCE_PARSE_STATUSES = new Set(["not_requested", "queued", "parsing", "parsed", "partial", "blocked", "failed"]);
+const SOURCE_RELATIONS = new Set(["contains", "links_to", "derived_from", "describes", "mirrors", "supersedes"]);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
@@ -51,6 +60,7 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
       sourcePath: optionalString(task.sourcePath, `tasks[${index}].sourcePath`),
       format: string(task.format, `tasks[${index}].format`),
       contentSha256: optionalString(task.contentSha256, `tasks[${index}].contentSha256`),
+      sourceItemIds: optionalStringArray(task.sourceItemIds, `tasks[${index}].sourceItemIds`),
       workflowStatus: optionalEnum(task.workflowStatus, WORKFLOW_STATUSES, `tasks[${index}].workflowStatus`),
       catalogVisibility: optionalEnum(task.catalogVisibility, VISIBILITIES, `tasks[${index}].catalogVisibility`),
       metadata: optionalObject(task.metadata, `tasks[${index}].metadata`),
@@ -67,7 +77,7 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
     },
     sourceEvent: {
       id: identifier(sourceEvent.id, "sourceEvent.id"),
-      channel: enumValue(sourceEvent.channel, new Set(["email", "feishu", "website", "workspace", "other"]), "sourceEvent.channel"),
+      channel: enumValue(sourceEvent.channel, SOURCE_CHANNELS, "sourceEvent.channel"),
       externalRef: string(sourceEvent.externalRef, "sourceEvent.externalRef"),
       sender: optionalString(sourceEvent.sender, "sourceEvent.sender"),
       receivedAt: timestamp(sourceEvent.receivedAt, "sourceEvent.receivedAt"),
@@ -98,11 +108,103 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   } as SubmissionManifest;
 }
 
+export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {
+  const root = object(value, "source envelope");
+  const vendor = object(root.vendor, "vendor");
+  const sourceEvent = object(root.sourceEvent, "sourceEvent");
+  const items = array(root.items, "items").map((value, index) => {
+    const item = object(value, `items[${index}]`);
+    const locator = optionalString(item.locator, `items[${index}].locator`);
+    const artifactId = optionalString(item.artifactId, `items[${index}].artifactId`);
+    if (!locator && !artifactId) throw new ValidationError(`items[${index}] must include locator or artifactId`);
+    return {
+      id: identifier(item.id, `items[${index}].id`),
+      kind: enumValue(item.kind, SOURCE_ITEM_KINDS, `items[${index}].kind`),
+      displayName: string(item.displayName, `items[${index}].displayName`),
+      locator,
+      mediaType: optionalString(item.mediaType, `items[${index}].mediaType`),
+      artifactId,
+      contentSha256: item.contentSha256 === undefined ? undefined : sha256(item.contentSha256, `items[${index}].contentSha256`),
+      sizeBytes: item.sizeBytes === undefined ? undefined : nonNegativeInteger(item.sizeBytes, `items[${index}].sizeBytes`),
+      fetchStatus: enumValue(item.fetchStatus, SOURCE_FETCH_STATUSES, `items[${index}].fetchStatus`),
+      parseStatus: enumValue(item.parseStatus, SOURCE_PARSE_STATUSES, `items[${index}].parseStatus`),
+      mutable: boolean(item.mutable, `items[${index}].mutable`),
+      capturedAt: item.capturedAt === undefined ? undefined : timestamp(item.capturedAt, `items[${index}].capturedAt`),
+      metadata: optionalObject(item.metadata, `items[${index}].metadata`),
+    };
+  });
+  const itemIds = new Set(items.map((item) => item.id));
+  if (itemIds.size !== items.length) throw new ValidationError("items must use unique ids");
+
+  const relations = root.relations === undefined ? undefined : array(root.relations, "relations").map((value, index) => {
+    const relation = object(value, `relations[${index}]`);
+    const fromItemId = identifier(relation.fromItemId, `relations[${index}].fromItemId`);
+    const toItemId = identifier(relation.toItemId, `relations[${index}].toItemId`);
+    if (!itemIds.has(fromItemId) || !itemIds.has(toItemId)) {
+      throw new ValidationError(`relations[${index}] references an item outside this envelope`);
+    }
+    return {
+      fromItemId,
+      toItemId,
+      relation: enumValue(relation.relation, SOURCE_RELATIONS, `relations[${index}].relation`),
+      position: relation.position === undefined ? undefined : nonNegativeInteger(relation.position, `relations[${index}].position`),
+      metadata: optionalObject(relation.metadata, `relations[${index}].metadata`),
+    };
+  });
+
+  const batchLinks = root.batchLinks === undefined ? undefined : array(root.batchLinks, "batchLinks").map((value, index) => {
+    const link = object(value, `batchLinks[${index}]`);
+    const sourceItemIds = optionalStringArray(link.sourceItemIds, `batchLinks[${index}].sourceItemIds`);
+    for (const itemId of sourceItemIds ?? []) {
+      if (!itemIds.has(itemId)) throw new ValidationError(`batchLinks[${index}] references an item outside this envelope`);
+    }
+    return {
+      batchId: identifier(link.batchId, `batchLinks[${index}].batchId`),
+      role: enumValue(link.role, new Set(["primary", "supplement", "correction", "metadata", "other"]), `batchLinks[${index}].role`),
+      sourceItemIds,
+    };
+  });
+
+  const taskLinks = root.taskLinks === undefined ? undefined : array(root.taskLinks, "taskLinks").map((value, index) => {
+    const link = object(value, `taskLinks[${index}]`);
+    const sourceItemId = identifier(link.sourceItemId, `taskLinks[${index}].sourceItemId`);
+    if (!itemIds.has(sourceItemId)) throw new ValidationError(`taskLinks[${index}] references an item outside this envelope`);
+    return {
+      taskVersionId: identifier(link.taskVersionId, `taskLinks[${index}].taskVersionId`),
+      sourceItemId,
+      role: enumValue(link.role, new Set(["normalized_from", "discovered_in", "metadata", "other"]), `taskLinks[${index}].role`),
+    };
+  });
+
+  return {
+    vendor: {
+      id: identifier(vendor.id, "vendor.id"),
+      name: string(vendor.name, "vendor.name"),
+      short: string(vendor.short, "vendor.short"),
+      description: string(vendor.description, "vendor.description"),
+      aliases: optionalStringArray(vendor.aliases, "vendor.aliases"),
+    },
+    sourceEvent: {
+      id: identifier(sourceEvent.id, "sourceEvent.id"),
+      channel: enumValue(sourceEvent.channel, SOURCE_CHANNELS, "sourceEvent.channel"),
+      externalRef: string(sourceEvent.externalRef, "sourceEvent.externalRef"),
+      sender: optionalString(sourceEvent.sender, "sourceEvent.sender"),
+      receivedAt: timestamp(sourceEvent.receivedAt, "sourceEvent.receivedAt"),
+      rawArtifactId: optionalString(sourceEvent.rawArtifactId, "sourceEvent.rawArtifactId"),
+      metadata: optionalObject(sourceEvent.metadata, "sourceEvent.metadata"),
+    },
+    items,
+    relations,
+    batchLinks,
+    taskLinks,
+  } as SourceEnvelopeInput;
+}
+
 export function parseArtifact(value: unknown): ArtifactInput {
   const input = object(value, "artifact");
   return {
     id: identifier(input.id, "id"),
-    kind: enumValue(input.kind, new Set(["submission", "task_package", "trajectory", "check_evidence", "other"]), "kind"),
+    kind: enumValue(input.kind, new Set(["source_payload", "source_snapshot", "submission_manifest", "task_package", "trajectory", "check_evidence", "extracted_text", "other"]), "kind"),
     storageKey: string(input.storageKey, "storageKey"),
     sha256: sha256(input.sha256, "sha256"),
     sizeBytes: input.sizeBytes === undefined ? undefined : nonNegativeInteger(input.sizeBytes, "sizeBytes"),

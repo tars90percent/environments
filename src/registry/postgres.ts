@@ -4,14 +4,20 @@ import { runRegistryMigrations } from "./migrations.js";
 import type { RegistryRepository } from "./repository.js";
 import type {
   ArtifactInput,
+  ArtifactRecord,
   CatalogBatch,
   CatalogCategory,
+  CatalogScope,
   CatalogSnapshot,
+  CatalogSourceEvent,
+  CatalogSourceItem,
+  CatalogSourceRelation,
   CatalogTask,
   CatalogVendor,
   CheckResultInput,
   FollowUpInput,
   OperationsSummary,
+  SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
   WorkCompletionInput,
@@ -56,6 +62,38 @@ type TaskRow = {
   blocked_count: string;
   not_run_count: string;
 };
+type SourceEventRow = {
+  batch_id: string;
+  id: string;
+  channel: CatalogSourceEvent["channel"];
+  external_ref: string;
+  sender: string | null;
+  received_at: string | Date;
+  raw_artifact_id: string | null;
+};
+type SourceItemRow = {
+  source_event_id: string;
+  id: string;
+  kind: CatalogSourceItem["kind"];
+  display_name: string;
+  locator: string | null;
+  media_type: string | null;
+  artifact_id: string | null;
+  content_sha256: string | null;
+  size_bytes: string | null;
+  fetch_status: CatalogSourceItem["fetchStatus"];
+  parse_status: CatalogSourceItem["parseStatus"];
+  mutable: boolean;
+  captured_at: string | Date | null;
+  metadata: Record<string, unknown>;
+};
+type SourceRelationRow = {
+  source_event_id: string;
+  from_item_id: string;
+  to_item_id: string;
+  relation: CatalogSourceRelation["relation"];
+  position: number | null;
+};
 
 export class PostgresRegistry implements RegistryRepository {
   private readonly pool: Pool;
@@ -77,22 +115,135 @@ export class PostgresRegistry implements RegistryRepository {
     await this.pool.end();
   }
 
+  async ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }> {
+    const payloadSha256 = hashSourceEnvelope(envelope);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.upsertVendor(client, envelope.vendor);
+      const existingEvent = await client.query<{ payload_sha256: string | null }>(
+        "SELECT payload_sha256 FROM registry_source_events WHERE id = $1",
+        [envelope.sourceEvent.id],
+      );
+      const created = !existingEvent.rows[0];
+      const previousSha = existingEvent.rows[0]?.payload_sha256;
+      if (previousSha && previousSha !== payloadSha256) {
+        throw new RegistryConflictError(`Source event ${envelope.sourceEvent.id} already exists with different immutable contents`);
+      }
+
+      if (created) {
+        await client.query(
+          `INSERT INTO registry_source_events(
+             id, vendor_id, channel, external_ref, sender, received_at, raw_artifact_id, metadata, payload_sha256
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
+          [envelope.sourceEvent.id, envelope.vendor.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
+            envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
+            json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
+        );
+      } else if (!previousSha) {
+        await client.query(
+          `UPDATE registry_source_events
+           SET channel = $2, external_ref = $3, sender = $4, received_at = $5,
+               raw_artifact_id = $6, metadata = $7::jsonb, payload_sha256 = $8, updated_at = now()
+           WHERE id = $1`,
+          [envelope.sourceEvent.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
+            envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
+            json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
+        );
+      }
+
+      for (const item of envelope.items) {
+        const itemSha256 = hashValue(item);
+        const existingItem = await client.query<{ payload_sha256: string }>(
+          "SELECT payload_sha256 FROM registry_source_items WHERE id = $1",
+          [item.id],
+        );
+        if (existingItem.rows[0]?.payload_sha256 && existingItem.rows[0].payload_sha256 !== itemSha256) {
+          throw new RegistryConflictError(`Source item ${item.id} already exists with different immutable contents`);
+        }
+        if (!existingItem.rows[0]) {
+          await client.query(
+            `INSERT INTO registry_source_items(
+               id, source_event_id, kind, display_name, locator, media_type, artifact_id,
+               content_sha256, size_bytes, fetch_status, parse_status, mutable, captured_at, metadata, payload_sha256
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15)`,
+            [item.id, envelope.sourceEvent.id, item.kind, item.displayName, item.locator ?? null, item.mediaType ?? null,
+              item.artifactId ?? null, item.contentSha256 ?? null, item.sizeBytes ?? null, item.fetchStatus, item.parseStatus,
+              item.mutable, item.capturedAt ?? null, json(item.metadata ?? {}), itemSha256],
+          );
+          if (item.fetchStatus === "queued") {
+            await this.enqueueWork(client, "fetch_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
+          }
+          if (item.parseStatus === "queued") {
+            await this.enqueueWork(client, "parse_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
+          }
+        }
+      }
+
+      for (const relation of envelope.relations ?? []) {
+        await client.query(
+          `INSERT INTO registry_source_relations(
+             source_event_id, from_item_id, to_item_id, relation, position, metadata
+           ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+           ON CONFLICT(from_item_id, to_item_id, relation) DO NOTHING`,
+          [envelope.sourceEvent.id, relation.fromItemId, relation.toItemId, relation.relation,
+            relation.position ?? null, json(relation.metadata ?? {})],
+        );
+      }
+
+      for (const link of envelope.batchLinks ?? []) {
+        await client.query(
+          `INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
+           VALUES ($1, $2, $3)
+           ON CONFLICT(batch_id, source_event_id) DO UPDATE SET role = EXCLUDED.role`,
+          [link.batchId, envelope.sourceEvent.id, link.role],
+        );
+        for (const itemId of link.sourceItemIds ?? []) {
+          await client.query(
+            `INSERT INTO registry_batch_source_items(batch_id, source_item_id, role)
+             VALUES ($1, $2, $3)
+             ON CONFLICT(batch_id, source_item_id, role) DO NOTHING`,
+            [link.batchId, itemId, link.role],
+          );
+        }
+      }
+
+      for (const link of envelope.taskLinks ?? []) {
+        await client.query(
+          `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
+           VALUES ($1, $2, $3)
+           ON CONFLICT(task_version_id, source_item_id, role) DO NOTHING`,
+          [link.taskVersionId, link.sourceItemId, link.role],
+        );
+      }
+
+      if (created || !previousSha) {
+        await this.enqueueWork(client, "normalize_source_event", "source_event", envelope.sourceEvent.id, {
+          payloadSha256,
+          sourceItems: envelope.items.length,
+        });
+        await this.insertStatusEvent(client, "source_event", envelope.sourceEvent.id, "source.ingested", "case", {
+          payloadSha256,
+          sourceItems: envelope.items.length,
+          relations: envelope.relations?.length ?? 0,
+        });
+      }
+      await client.query("COMMIT");
+      return { sourceEventId: envelope.sourceEvent.id, created };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }> {
     const manifestSha256 = hashManifest(manifest);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(
-        `INSERT INTO registry_vendors(id, name, short, description, aliases)
-         VALUES ($1, $2, $3, $4, $5::jsonb)
-         ON CONFLICT(id) DO UPDATE SET
-           name = EXCLUDED.name,
-           short = EXCLUDED.short,
-           description = EXCLUDED.description,
-           aliases = EXCLUDED.aliases,
-           updated_at = now()`,
-        [manifest.vendor.id, manifest.vendor.name, manifest.vendor.short, manifest.vendor.description, json(manifest.vendor.aliases ?? [])],
-      );
+      await this.upsertVendor(client, manifest.vendor);
 
       const existing = await client.query<{ manifest_sha256: string }>(
         "SELECT manifest_sha256 FROM registry_submission_batches WHERE id = $1",
@@ -115,7 +266,6 @@ export class PostgresRegistry implements RegistryRepository {
           manifest.sourceEvent.sender ?? null, manifest.sourceEvent.receivedAt, manifest.sourceEvent.rawArtifactId ?? null,
           json(manifest.sourceEvent.metadata ?? {})],
       );
-
       await client.query(
         `INSERT INTO registry_submission_batches(
            id, vendor_id, source_event_id, submission_date, label, source_label,
@@ -126,6 +276,12 @@ export class PostgresRegistry implements RegistryRepository {
           manifest.batch.sourceLabel, manifest.batch.taskCount, json(manifest.batch.formats), manifest.batch.workflowStatus,
           manifest.batch.catalogVisibility, manifest.batch.revisesBatchId ?? null, json(manifest.batch.delta),
           json(manifest.batch.metadata ?? {}), manifestSha256],
+      );
+      await client.query(
+        `INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
+         VALUES ($1, $2, 'primary')
+         ON CONFLICT(batch_id, source_event_id) DO NOTHING`,
+        [manifest.batch.id, manifest.sourceEvent.id],
       );
 
       for (const category of manifest.categories) {
@@ -164,6 +320,14 @@ export class PostgresRegistry implements RegistryRepository {
             task.catalogVisibility ?? manifest.batch.catalogVisibility,
             json(task.metadata ?? {})],
         );
+        for (const sourceItemId of task.sourceItemIds ?? []) {
+          await client.query(
+            `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
+             VALUES ($1, $2, 'normalized_from')
+             ON CONFLICT(task_version_id, source_item_id, role) DO NOTHING`,
+            [task.id, sourceItemId],
+          );
+        }
       }
 
       await this.insertStatusEvent(client, "submission_batch", manifest.batch.id, "submission.ingested", "case", {
@@ -171,11 +335,7 @@ export class PostgresRegistry implements RegistryRepository {
         sourceEventId: manifest.sourceEvent.id,
         taskVersions: manifest.tasks?.length ?? 0,
       });
-      await client.query(
-        `INSERT INTO registry_work_items(id, kind, entity_type, entity_id, status, payload)
-         VALUES ($1, 'check_submission', 'submission_batch', $2, 'queued', $3::jsonb)`,
-        [randomUUID(), manifest.batch.id, json({ manifestSha256 })],
-      );
+      await this.enqueueWork(client, "check_submission", "submission_batch", manifest.batch.id, { manifestSha256 });
       await client.query("COMMIT");
       return { batchId: manifest.batch.id, created: true };
     } catch (error) {
@@ -235,19 +395,50 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async registerArtifact(input: ArtifactInput): Promise<void> {
+    const existing = await this.pool.query<{ storage_key: string; sha256: string }>(
+      "SELECT storage_key, sha256 FROM registry_artifacts WHERE id = $1",
+      [input.id],
+    );
+    if (existing.rows[0]) {
+      if (existing.rows[0].storage_key !== input.storageKey || existing.rows[0].sha256 !== input.sha256) {
+        throw new RegistryConflictError(`Artifact ${input.id} already exists with different immutable contents`);
+      }
+      return;
+    }
     await this.pool.query(
       `INSERT INTO registry_artifacts(id, kind, storage_key, sha256, size_bytes, content_type, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-       ON CONFLICT(id) DO UPDATE SET
-         kind = EXCLUDED.kind,
-         storage_key = EXCLUDED.storage_key,
-         sha256 = EXCLUDED.sha256,
-         size_bytes = EXCLUDED.size_bytes,
-         content_type = EXCLUDED.content_type,
-         metadata = EXCLUDED.metadata`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
       [input.id, input.kind, input.storageKey, input.sha256, input.sizeBytes ?? null,
         input.contentType ?? null, json(input.metadata ?? {})],
     );
+  }
+
+  async getArtifact(id: string): Promise<ArtifactRecord | null> {
+    const result = await this.pool.query<{
+      id: string;
+      kind: ArtifactInput["kind"];
+      storage_key: string;
+      sha256: string;
+      size_bytes: string | null;
+      content_type: string | null;
+      metadata: Record<string, unknown>;
+      created_at: string | Date;
+    }>(
+      `SELECT id, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
+       FROM registry_artifacts WHERE id = $1`,
+      [id],
+    );
+    const row = result.rows[0];
+    return row ? {
+      id: row.id,
+      kind: row.kind,
+      storageKey: row.storage_key,
+      sha256: row.sha256,
+      sizeBytes: row.size_bytes === null ? undefined : Number(row.size_bytes),
+      contentType: row.content_type ?? undefined,
+      metadata: row.metadata,
+      createdAt: new Date(row.created_at).toISOString(),
+    } : null;
   }
 
   async updateStatus(input: StatusUpdateInput): Promise<void> {
@@ -345,9 +536,9 @@ export class PostgresRegistry implements RegistryRepository {
     if (!result.rowCount) throw new RegistryConflictError(`Work item ${input.id} is not leased by ${input.workerId}`);
   }
 
-  async catalogSnapshot(scope: "research" | "all"): Promise<CatalogSnapshot> {
-    const visibility = scope === "research" ? ["featured", "available"] : ["featured", "available", "log_only", "internal"];
-    const [vendorsResult, batchesResult, categoriesResult, tasksResult] = await Promise.all([
+  async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
+    const visibility = catalogVisibility(scope);
+    const [vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult] = await Promise.all([
       this.pool.query<VendorRow>(
         `SELECT DISTINCT v.id, v.name, v.short, v.description
          FROM registry_vendors v
@@ -389,12 +580,52 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY t.title`,
         [visibility],
       ),
+      this.pool.query<SourceEventRow>(
+        `SELECT bse.batch_id, se.id, se.channel, se.external_ref, se.sender,
+                se.received_at, se.raw_artifact_id
+         FROM registry_batch_source_events bse
+         JOIN registry_source_events se ON se.id = bse.source_event_id
+         JOIN registry_submission_batches b ON b.id = bse.batch_id
+         WHERE b.catalog_visibility = ANY($1::text[])
+         ORDER BY se.received_at, se.created_at`,
+        [visibility],
+      ),
+      this.pool.query<SourceItemRow>(
+        `SELECT DISTINCT si.source_event_id, si.id, si.kind, si.display_name, si.locator,
+                si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
+                si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata
+         FROM registry_source_items si
+         JOIN registry_batch_source_events bse ON bse.source_event_id = si.source_event_id
+         JOIN registry_submission_batches b ON b.id = bse.batch_id
+         WHERE b.catalog_visibility = ANY($1::text[])
+         ORDER BY si.created_at, si.id`,
+        [visibility],
+      ),
+      this.pool.query<SourceRelationRow>(
+        `SELECT DISTINCT sr.source_event_id, sr.from_item_id, sr.to_item_id, sr.relation, sr.position
+         FROM registry_source_relations sr
+         JOIN registry_batch_source_events bse ON bse.source_event_id = sr.source_event_id
+         JOIN registry_submission_batches b ON b.id = bse.batch_id
+         WHERE b.catalog_visibility = ANY($1::text[])
+         ORDER BY sr.position NULLS LAST, sr.created_at`,
+        [visibility],
+      ),
+      this.pool.query<{ task_version_id: string; source_item_id: string }>(
+        `SELECT tsi.task_version_id, tsi.source_item_id
+         FROM registry_task_source_items tsi
+         JOIN registry_task_versions tv ON tv.id = tsi.task_version_id
+         WHERE tv.catalog_visibility = ANY($1::text[])
+         ORDER BY tsi.created_at`,
+        [visibility],
+      ),
     ]);
 
+    const taskSourceIds = group(taskSourcesResult.rows, (row) => row.task_version_id);
     const tasksByCategory = group(tasksResult.rows, (row) => `${row.batch_id}\u0000${row.category_id}`);
     const categoriesByBatch = new Map<string, CatalogCategory[]>();
     for (const row of categoriesResult.rows) {
-      const tasks = (tasksByCategory.get(`${row.batch_id}\u0000${row.id}`) ?? []).map(taskFromRow);
+      const tasks = (tasksByCategory.get(`${row.batch_id}\u0000${row.id}`) ?? [])
+        .map((task) => taskFromRow(task, (taskSourceIds.get(task.id) ?? []).map((source) => source.source_item_id)));
       append(categoriesByBatch, row.batch_id, {
         id: row.id,
         name: row.name,
@@ -402,6 +633,22 @@ export class PostgresRegistry implements RegistryRepository {
         count: row.declared_count,
         examples: row.examples,
         tasks,
+      });
+    }
+
+    const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => row.source_event_id);
+    const sourceRelationsByEvent = group(sourceRelationsResult.rows, (row) => row.source_event_id);
+    const sourceEventsByBatch = new Map<string, CatalogSourceEvent[]>();
+    for (const row of sourceEventsResult.rows) {
+      append(sourceEventsByBatch, row.batch_id, {
+        id: row.id,
+        channel: row.channel,
+        externalRef: row.external_ref,
+        sender: row.sender,
+        receivedAt: new Date(row.received_at).toISOString(),
+        rawArtifactId: row.raw_artifact_id,
+        items: (sourceItemsByEvent.get(row.id) ?? []).map(sourceItemFromRow),
+        relations: (sourceRelationsByEvent.get(row.id) ?? []).map(sourceRelationFromRow),
       });
     }
 
@@ -418,6 +665,7 @@ export class PostgresRegistry implements RegistryRepository {
         catalogVisibility: row.catalog_visibility,
         revisesBatchId: row.revises_batch_id,
         delta: row.delta,
+        sourceEvents: sourceEventsByBatch.get(row.id) ?? [],
         categories: categoriesByBatch.get(row.id) ?? [],
       });
     }
@@ -441,15 +689,15 @@ export class PostgresRegistry implements RegistryRepository {
     };
   }
 
-  async getVendor(id: string, scope: "research" | "all"): Promise<CatalogVendor | null> {
+  async getVendor(id: string, scope: CatalogScope): Promise<CatalogVendor | null> {
     return (await this.catalogSnapshot(scope)).vendors.find((vendor) => vendor.id === id) ?? null;
   }
 
-  async getBatch(id: string, scope: "research" | "all"): Promise<CatalogBatch | null> {
+  async getBatch(id: string, scope: CatalogScope): Promise<CatalogBatch | null> {
     return (await this.catalogSnapshot(scope)).vendors.flatMap((vendor) => vendor.batches).find((batch) => batch.id === id) ?? null;
   }
 
-  async getTask(id: string, scope: "research" | "all"): Promise<CatalogTask | null> {
+  async getTask(id: string, scope: CatalogScope): Promise<CatalogTask | null> {
     return (await this.catalogSnapshot(scope)).vendors
       .flatMap((vendor) => vendor.batches)
       .flatMap((batch) => batch.categories)
@@ -457,8 +705,41 @@ export class PostgresRegistry implements RegistryRepository {
       .find((task) => task.id === id) ?? null;
   }
 
+  async getSourceEvent(id: string): Promise<CatalogSourceEvent | null> {
+    const [eventResult, itemsResult, relationsResult] = await Promise.all([
+      this.pool.query<SourceEventRow>(
+        `SELECT ''::text AS batch_id, id, channel, external_ref, sender, received_at, raw_artifact_id
+         FROM registry_source_events WHERE id = $1`,
+        [id],
+      ),
+      this.pool.query<SourceItemRow>(
+        `SELECT source_event_id, id, kind, display_name, locator, media_type, artifact_id,
+                content_sha256, size_bytes, fetch_status, parse_status, mutable, captured_at, metadata
+         FROM registry_source_items WHERE source_event_id = $1 ORDER BY created_at, id`,
+        [id],
+      ),
+      this.pool.query<SourceRelationRow>(
+        `SELECT source_event_id, from_item_id, to_item_id, relation, position
+         FROM registry_source_relations WHERE source_event_id = $1
+         ORDER BY position NULLS LAST, created_at`,
+        [id],
+      ),
+    ]);
+    const row = eventResult.rows[0];
+    return row ? {
+      id: row.id,
+      channel: row.channel,
+      externalRef: row.external_ref,
+      sender: row.sender,
+      receivedAt: new Date(row.received_at).toISOString(),
+      rawArtifactId: row.raw_artifact_id,
+      items: itemsResult.rows.map(sourceItemFromRow),
+      relations: relationsResult.rows.map(sourceRelationFromRow),
+    } : null;
+  }
+
   async operationsSummary(): Promise<OperationsSummary> {
-    const [submissions, checks, workItems, followUps] = await Promise.all([
+    const [submissions, checks, workItems, followUps, fetchStatuses, parseStatuses, artifacts] = await Promise.all([
       this.pool.query<{ workflow_status: string; count: string }>(
         "SELECT workflow_status, COUNT(*)::text AS count FROM registry_submission_batches GROUP BY workflow_status",
       ),
@@ -471,13 +752,51 @@ export class PostgresRegistry implements RegistryRepository {
       this.pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM registry_follow_ups WHERE status <> 'closed'",
       ),
+      this.pool.query<{ fetch_status: string; count: string }>(
+        "SELECT fetch_status, COUNT(*)::text AS count FROM registry_source_items GROUP BY fetch_status",
+      ),
+      this.pool.query<{ parse_status: string; count: string }>(
+        "SELECT parse_status, COUNT(*)::text AS count FROM registry_source_items GROUP BY parse_status",
+      ),
+      this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_artifacts"),
     ]);
     return {
       submissionsByStatus: Object.fromEntries(submissions.rows.map((row) => [row.workflow_status, Number(row.count)])),
       checksByOutcome: Object.fromEntries(checks.rows.map((row) => [row.outcome, Number(row.count)])),
       pendingWorkItems: Number(workItems.rows[0]?.count ?? 0),
       openFollowUps: Number(followUps.rows[0]?.count ?? 0),
+      sourceItemsByFetchStatus: Object.fromEntries(fetchStatuses.rows.map((row) => [row.fetch_status, Number(row.count)])),
+      sourceItemsByParseStatus: Object.fromEntries(parseStatuses.rows.map((row) => [row.parse_status, Number(row.count)])),
+      artifacts: Number(artifacts.rows[0]?.count ?? 0),
     };
+  }
+
+  private async upsertVendor(client: PoolClient, vendor: SubmissionManifest["vendor"]): Promise<void> {
+    await client.query(
+      `INSERT INTO registry_vendors(id, name, short, description, aliases)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT(id) DO UPDATE SET
+         name = EXCLUDED.name,
+         short = EXCLUDED.short,
+         description = EXCLUDED.description,
+         aliases = EXCLUDED.aliases,
+         updated_at = now()`,
+      [vendor.id, vendor.name, vendor.short, vendor.description, json(vendor.aliases ?? [])],
+    );
+  }
+
+  private async enqueueWork(
+    client: PoolClient,
+    kind: string,
+    entityType: string,
+    entityId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO registry_work_items(id, kind, entity_type, entity_id, status, payload)
+       VALUES ($1, $2, $3, $4, 'queued', $5::jsonb)`,
+      [randomUUID(), kind, entityType, entityId, json(payload)],
+    );
   }
 
   private async insertStatusEvent(
@@ -518,6 +837,14 @@ function hashManifest(manifest: SubmissionManifest): string {
   return createHash("sha256").update(JSON.stringify(canonical(manifest))).digest("hex");
 }
 
+function hashSourceEnvelope(envelope: SourceEnvelopeInput): string {
+  return hashValue({ sourceEvent: envelope.sourceEvent, items: envelope.items, relations: envelope.relations ?? [] });
+}
+
+function hashValue(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
@@ -526,7 +853,7 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
-function taskFromRow(row: TaskRow): CatalogTask {
+function taskFromRow(row: TaskRow, sourceItemIds: string[] = []): CatalogTask {
   return {
     id: row.id,
     stableKey: row.stable_key,
@@ -542,7 +869,41 @@ function taskFromRow(row: TaskRow): CatalogTask {
       blocked: Number(row.blocked_count),
       notRun: Number(row.not_run_count),
     },
+    sourceItemIds,
   };
+}
+
+function sourceItemFromRow(row: SourceItemRow): CatalogSourceItem {
+  return {
+    id: row.id,
+    kind: row.kind,
+    displayName: row.display_name,
+    locator: row.locator,
+    mediaType: row.media_type,
+    artifactId: row.artifact_id,
+    contentSha256: row.content_sha256,
+    sizeBytes: row.size_bytes === null ? null : Number(row.size_bytes),
+    fetchStatus: row.fetch_status,
+    parseStatus: row.parse_status,
+    mutable: row.mutable,
+    capturedAt: row.captured_at === null ? null : new Date(row.captured_at).toISOString(),
+    metadata: row.metadata,
+  };
+}
+
+function sourceRelationFromRow(row: SourceRelationRow): CatalogSourceRelation {
+  return {
+    fromItemId: row.from_item_id,
+    toItemId: row.to_item_id,
+    relation: row.relation,
+    position: row.position,
+  };
+}
+
+function catalogVisibility(scope: CatalogScope): string[] {
+  if (scope === "research") return ["featured", "available"];
+  if (scope === "portal") return ["featured", "available", "log_only"];
+  return ["featured", "available", "log_only", "internal"];
 }
 
 function append<T>(map: Map<string, T[]>, key: string, value: T): void {

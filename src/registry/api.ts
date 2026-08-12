@@ -8,6 +8,7 @@ import {
   parseArtifact,
   parseCheckResult,
   parseFollowUp,
+  parseSourceEnvelope,
   parseStatusUpdate,
   parseSubmissionManifest,
   parseWorkCompletion,
@@ -60,32 +61,51 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   if (!role) return sendJson(response, 401, { error: "unauthorized" });
 
   if (method === "GET" && url.pathname === "/v1/catalog") {
-    const scope = url.searchParams.get("scope") === "all" && role === "admin" ? "all" : "research";
+    const scope = role === "admin" ? requestedScope(url) : "portal";
     return sendJson(response, 200, await options.repository.catalogSnapshot(scope));
   }
 
   const vendorMatch = url.pathname.match(/^\/v1\/vendors\/([^/]+)$/);
   if (method === "GET" && vendorMatch?.[1]) {
-    const value = await options.repository.getVendor(decodeURIComponent(vendorMatch[1]), role === "admin" ? requestedScope(url) : "research");
+    const value = await options.repository.getVendor(decodeURIComponent(vendorMatch[1]), role === "admin" ? requestedScope(url) : "portal");
     return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "vendor_not_found" });
   }
 
   const batchMatch = url.pathname.match(/^\/v1\/batches\/([^/]+)$/);
   if (method === "GET" && batchMatch?.[1]) {
-    const value = await options.repository.getBatch(decodeURIComponent(batchMatch[1]), role === "admin" ? requestedScope(url) : "research");
+    const value = await options.repository.getBatch(decodeURIComponent(batchMatch[1]), role === "admin" ? requestedScope(url) : "portal");
     return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "batch_not_found" });
   }
 
   const taskMatch = url.pathname.match(/^\/v1\/tasks\/([^/]+)$/);
   if (method === "GET" && taskMatch?.[1]) {
-    const value = await options.repository.getTask(decodeURIComponent(taskMatch[1]), role === "admin" ? requestedScope(url) : "research");
+    const value = await options.repository.getTask(decodeURIComponent(taskMatch[1]), role === "admin" ? requestedScope(url) : "portal");
     return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "task_not_found" });
+  }
+
+  const sourceEventMatch = url.pathname.match(/^\/v1\/source-events\/([^/]+)$/);
+  if (method === "GET" && sourceEventMatch?.[1]) {
+    const value = await options.repository.getSourceEvent(decodeURIComponent(sourceEventMatch[1]));
+    return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "source_event_not_found" });
+  }
+
+  const artifactDownloadMatch = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);
+  if (method === "GET" && artifactDownloadMatch?.[1]) {
+    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
+    const artifact = await options.repository.getArtifact(decodeURIComponent(artifactDownloadMatch[1]));
+    if (!artifact) return sendJson(response, 404, { error: "artifact_not_found" });
+    const originalName = typeof artifact.metadata?.originalName === "string" ? artifact.metadata.originalName : undefined;
+    return sendJson(response, 200, await options.artifactStore.createDownloadUrl(artifact.storageKey, originalName));
   }
 
   if (role !== "admin") return sendJson(response, 403, { error: "admin_token_required" });
 
   if (method === "POST" && url.pathname === "/v1/intake/submissions") {
     const result = await options.repository.ingestSubmission(parseSubmissionManifest(await readJson(request)));
+    return sendJson(response, result.created ? 201 : 200, result);
+  }
+  if (method === "POST" && url.pathname === "/v1/intake/source-events") {
+    const result = await options.repository.ingestSourceEnvelope(parseSourceEnvelope(await readJson(request)));
     return sendJson(response, result.created ? 201 : 200, result);
   }
   if (method === "POST" && url.pathname === "/v1/check-results") {
@@ -98,6 +118,13 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   }
   if (method === "POST" && url.pathname === "/v1/artifacts") {
     await options.repository.registerArtifact(parseArtifact(await readJson(request)));
+    return sendJson(response, 201, { recorded: true });
+  }
+  if (method === "POST" && url.pathname === "/v1/artifacts/confirm") {
+    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
+    const artifact = parseArtifact(await readJson(request));
+    await options.artifactStore.verifyObject({ key: artifact.storageKey, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes });
+    await options.repository.registerArtifact(artifact);
     return sendJson(response, 201, { recorded: true });
   }
   if (method === "POST" && url.pathname === "/v1/status") {
@@ -153,8 +180,9 @@ function safeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function requestedScope(url: URL): "research" | "all" {
-  return url.searchParams.get("scope") === "all" ? "all" : "research";
+function requestedScope(url: URL): "research" | "portal" | "all" {
+  const scope = url.searchParams.get("scope");
+  return scope === "research" || scope === "portal" ? scope : "all";
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {

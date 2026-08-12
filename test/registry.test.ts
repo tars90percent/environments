@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
-import type { SubmissionManifest } from "../src/registry/types.js";
-import { parseSubmissionManifest, ValidationError } from "../src/registry/validation.js";
+import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
+import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
+import { parseSourceEnvelope, parseSubmissionManifest, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -51,4 +52,48 @@ test("protects catalog reads separately from CASE writes", () => {
   assert.equal(registryRole("Bearer wrong", catalogToken, adminToken), null);
   assert.equal(registryRole(`Bearer ${catalogToken}`, catalogToken, adminToken), "catalog");
   assert.equal(registryRole(`Bearer ${adminToken}`, catalogToken, adminToken), "admin");
+});
+
+test("validates recursive source envelopes and their derivation links", () => {
+  const envelope: SourceEnvelopeInput = {
+    vendor: manifest.vendor,
+    sourceEvent: {
+      id: "feishu-message-one",
+      channel: "feishu",
+      externalRef: "feishu://message/one",
+      receivedAt: "2026-08-13T00:00:00.000Z",
+    },
+    items: [
+      {
+        id: "source-message-one",
+        kind: "message",
+        displayName: "Inbound vendor message",
+        locator: "feishu://message/one",
+        fetchStatus: "snapshotted",
+        parseStatus: "parsed",
+        mutable: false,
+      },
+      {
+        id: "source-sheet-one",
+        kind: "spreadsheet",
+        displayName: "Task index",
+        locator: "https://docs.google.com/spreadsheets/d/example/edit",
+        fetchStatus: "queued",
+        parseStatus: "not_requested",
+        mutable: true,
+      },
+    ],
+    relations: [{ fromItemId: "source-message-one", toItemId: "source-sheet-one", relation: "links_to", position: 0 }],
+  };
+  assert.equal(parseSourceEnvelope(envelope).relations?.[0]?.relation, "links_to");
+  assert.throws(
+    () => parseSourceEnvelope({ ...envelope, relations: [{ fromItemId: "source-message-one", toItemId: "missing", relation: "links_to" }] }),
+    ValidationError,
+  );
+});
+
+test("uses deterministic content-addressed object keys", () => {
+  const sha256 = "a".repeat(64);
+  assert.equal(contentAddressedStorageKey(sha256), `objects/sha256/aa/${sha256}`);
+  assert.throws(() => contentAddressedStorageKey("not-a-sha"));
 });

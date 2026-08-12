@@ -15,6 +15,7 @@ case-registry vendors
 case-registry vendor <vendor-id>
 case-registry batch <batch-id>
 case-registry task <task-version-id>
+case-registry source-event <source-event-id>
 case-registry catalog
 ```
 
@@ -26,6 +27,8 @@ Write through validated JSON documents:
 
 ```sh
 case-registry import /absolute/path/submission.json
+case-registry import-source /absolute/path/source-envelope.json
+case-registry store-file <source_payload|source_snapshot|submission_manifest|task_package|trajectory|check_evidence|extracted_text|other> /absolute/path/file
 case-registry record-check /absolute/path/check-result.json
 case-registry record-follow-up /absolute/path/follow-up.json
 case-registry register-artifact /absolute/path/artifact.json
@@ -35,3 +38,15 @@ case-registry complete-work /absolute/path/completion.json
 ```
 
 Never replace an existing submission batch. A corrected vendor delivery is a new batch linked through `revisesBatchId`. Keep deterministic check evidence separate from heuristic review and human research judgment. Do not expose service tokens or direct database credentials in replies.
+
+## Heterogeneous intake
+
+Treat every inbound message or email as a source event, not as a task batch. Preserve its original payload first, then represent everything discovered inside it as an immutable source graph:
+
+- messages, attachments, URLs, folders, Docs, Sheets, worksheets, rows, PDFs, archives, task packages, and container images are source items;
+- `contains`, `links_to`, `derived_from`, `describes`, `mirrors`, and `supersedes` are explicit relations;
+- mutable remote resources such as Google Drive folders and Sheets must be snapshotted on every submission or correction, even when the URL did not change;
+- normalized batches and task versions link back to the exact source event and source items they came from;
+- an unreachable resource remains recorded with its locator and `blocked` or `external_only` status. Never silently omit it.
+
+Use [`references/source-envelope.md`](references/source-envelope.md) for the envelope contract and the required capture order. `store-file` streams an original payload or snapshot into content-addressed object storage, verifies the stored object, and records its immutable artifact entry before it is referenced from an envelope.
