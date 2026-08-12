@@ -53,6 +53,7 @@ export type CatalogSourceRelation = {
 
 export type CatalogSourceEvent = {
   id: string;
+  role: "primary" | "supplement" | "correction" | "metadata" | "other" | null;
   channel: SourceChannel;
   externalRef: string;
   sender: string | null;

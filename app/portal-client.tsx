@@ -195,7 +195,7 @@ function SourceEvent({ event }: { event: CatalogSourceEvent }) {
   const originalUrl = safeExternalUrl(event.externalRef);
   return <section className="source-event">
     <header className="source-event-head">
-      <span className="source-channel">{event.channel.replace("_", " ")}</span>
+      <span className="source-channel">{event.role ?? event.channel.replace("_", " ")}</span>
       <span><strong>{event.sender ?? "Sender not recorded"}</strong><small>{formatTimestamp(event.receivedAt)}</small></span>
       <span className="source-actions">{originalUrl && <a href={originalUrl} rel="noreferrer" target="_blank">Open original</a>}{event.rawArtifactId && <a href={`/api/artifacts/${encodeURIComponent(event.rawArtifactId)}/download`}>Message snapshot</a>}</span>
     </header>
