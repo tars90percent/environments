@@ -4,6 +4,8 @@ import handler from "vinext/server/app-router-entry";
 
 interface Env {
   ASSETS: Fetcher;
+  CASE_REGISTRY_URL?: string;
+  CASE_REGISTRY_CATALOG_TOKEN?: string;
   DB: D1Database;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -28,6 +30,24 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/catalog") {
+      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      if (!env.CASE_REGISTRY_URL || !env.CASE_REGISTRY_CATALOG_TOKEN) {
+        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
+      }
+      try {
+        const upstream = await fetch(`${env.CASE_REGISTRY_URL.replace(/\/$/, "")}/v1/catalog`, {
+          headers: { authorization: `Bearer ${env.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
+        });
+        return new Response(upstream.body, {
+          status: upstream.status,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
+        });
+      } catch {
+        return Response.json({ error: "case_catalog_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+      }
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

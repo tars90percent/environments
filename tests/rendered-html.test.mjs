@@ -29,25 +29,25 @@ test("server-renders the vendor submission registry", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>小环境 — Vendor Sample Registry<\/title>/i);
-  assert.match(html, /Prototype registry/);
+  assert.match(html, /Read-only CASE catalog/);
   assert.match(html, /小环境/);
   assert.match(html, /Vendor sample registry/);
-  assert.match(html, /Submission history/);
-  assert.match(html, /Deeptune/);
-  assert.match(html, /Long-horizon revision B/);
-  assert.match(html, /Task categories/);
-  assert.match(html, /Protocols &amp; codecs/);
+  assert.match(html, /Loading registry/);
+  assert.doesNotMatch(html, /Deeptune|Prime Intellect|Long-horizon revision B/);
   assert.doesNotMatch(html, /Submission timeline|Observed package inventory|filesystem snapshot/);
   assert.doesNotMatch(html, /RECOMMENDATION|EXPECTED USABLE YIELD|high-signal|getting better|getting worse/i);
 });
 
-test("keeps external side effects out of the prototype source", async () => {
-  const source = await import("node:fs/promises").then(({ readFile }) =>
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-  );
+test("keeps the portal read-only and free of vendor snapshot data", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../app/portal-client.tsx", import.meta.url), "utf8");
+  const worker = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
-  assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /axios|lark-cli|open\.feishu\.cn|webhook/i);
   assert.match(source, /Researchers make those judgments/);
+  assert.match(source, /fetch\("\/api\/catalog"/);
+  assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
+  assert.match(worker, /CASE_REGISTRY_CATALOG_TOKEN/);
+  assert.doesNotMatch(worker, /method:\s*["']POST|method:\s*["']PUT|method:\s*["']PATCH|method:\s*["']DELETE/i);
   assert.doesNotMatch(source, /upstream|recommendation|usable yield/i);
 });

@@ -1,23 +1,25 @@
 # env-portal-proto — 小环境 vendor sample registry
 
-A local prototype for preserving vendor RL-environment submissions as an append-only hierarchy: vendor, dated batch, task category, then package evidence.
+A read-only researcher catalog for vendor RL-environment submissions. 小环境
+loads its vendor, dated batch, task category, task-version, status, and check
+records from CASE's canonical registry.
 
 The interface intentionally does not rank task quality, estimate learning signal, or recommend research decisions. It records package contents and submission-to-submission changes, then keeps the current deterministic intake criteria available as a separate reference.
 
 ## Safety boundary
 
-- Feishu is disconnected: there are no Feishu credentials, API calls, webhooks, or connector code.
-- Only high-level, workspace-derived submission metadata is represented in the frontend source; vendor payloads are not copied into the app.
-- Filters and evidence panels operate in local browser state only.
+- Feishu is disconnected: there are no Feishu credentials, writes, webhooks, or connector code.
+- No vendor snapshot data or source payloads are copied into the frontend.
+- The Sites worker uses a read-only catalog credential and proxies only `GET /v1/catalog`.
 - No vendor messages are sent and no procurement records are created or updated.
-- The prototype is privately deployed through Sites.
+- If CASE is unavailable, the portal shows no cached substitute and says so explicitly.
 
 ## What to inspect
 
 - Browse every vendor represented in the workspace.
 - Open dated submission batches without replacing earlier iterations.
 - Review task-category composition and observed deltas between submissions.
-- Inspect batch format labels and the dedicated deterministic-check reference.
+- Inspect task lists, workflow state, and recorded deterministic-check counts.
 - Read the exact criteria and interpretation boundary.
 
 ## Run locally
@@ -36,8 +38,11 @@ npm test
 npm run lint
 ```
 
-The test suite builds the application, checks the server-rendered safety banner and core hierarchy, and rejects network-call patterns in the page source.
+The test suite builds the application, checks the server-rendered CASE boundary,
+and rejects embedded vendor snapshots or mutating network methods.
 
 ## Deliberate omissions
 
-Authentication, persistence, file ingestion, live agent execution, event delivery, and Feishu synchronization are intentionally absent. The displayed metadata is a static workspace snapshot and must not be treated as an evaluation result.
+Authentication, persistence, file ingestion, agent execution, event delivery,
+and Feishu synchronization remain CASE responsibilities. The portal deliberately
+cannot edit the registry or turn recorded checks into a quality judgment.
