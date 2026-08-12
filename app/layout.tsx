@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TARS Environments — Evidence Registry",
-  description: "A deterministic evidence registry for RL environment and task packages.",
+  title: "小环境 — Vendor Sample Registry",
+  description: "An append-only registry of vendor RL environment sample submissions.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

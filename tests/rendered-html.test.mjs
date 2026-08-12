@@ -22,21 +22,22 @@ async function render() {
   );
 }
 
-test("server-renders the RL environment evidence registry", async () => {
+test("server-renders the vendor submission registry", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>TARS Environments — Evidence Registry<\/title>/i);
+  assert.match(html, /<title>小环境 — Vendor Sample Registry<\/title>/i);
   assert.match(html, /Prototype registry/);
-  assert.match(html, /atlas-kernel-pack/);
-  assert.match(html, /Deterministic package and execution evidence/);
-  assert.match(html, /does not rate task quality/i);
-  assert.match(html, /Clean builds/);
-  assert.match(html, /Gold baseline/);
-  assert.match(html, /Attached rollouts/);
-  assert.doesNotMatch(html, /RECOMMENDATION|EXPECTED USABLE YIELD|high-signal/i);
+  assert.match(html, /小环境/);
+  assert.match(html, /Vendor sample registry/);
+  assert.match(html, /Submission history/);
+  assert.match(html, /Deeptune/);
+  assert.match(html, /Long-horizon revision B/);
+  assert.match(html, /Task categories/);
+  assert.match(html, /Observed package inventory/);
+  assert.doesNotMatch(html, /RECOMMENDATION|EXPECTED USABLE YIELD|high-signal|getting better|getting worse/i);
 });
 
 test("keeps external side effects out of the prototype source", async () => {
@@ -46,6 +47,6 @@ test("keeps external side effects out of the prototype source", async () => {
 
   assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /axios|lark-cli|open\.feishu\.cn|webhook/i);
-  assert.match(source, /No research judgment recorded/);
+  assert.match(source, /Researchers make those judgments/);
   assert.doesNotMatch(source, /upstream|recommendation|usable yield/i);
 });
