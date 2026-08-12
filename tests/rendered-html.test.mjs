@@ -30,6 +30,7 @@ test("server-renders the vendor submission registry", async () => {
   const html = await response.text();
   assert.match(html, /<title>小环境 — RL Environment Registry<\/title>/i);
   assert.match(html, /小环境/);
+  assert.doesNotMatch(html, /<span>小<\/span>/);
   assert.match(html, /供应商样本库/);
   assert.match(html, /正在载入样本库/);
   assert.doesNotMatch(html, /Browse what CASE received/);

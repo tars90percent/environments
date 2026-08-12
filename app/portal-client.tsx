@@ -281,7 +281,7 @@ export default function PortalClient() {
 
   return <div className="app-shell">
     <header className="global-header">
-      <a className="wordmark" href="#top" onClick={() => setTab("vendors")}><span>小</span><strong>小环境</strong></a>
+      <a className="wordmark" href="#top" onClick={() => setTab("vendors")}><strong>小环境</strong></a>
       <nav className="global-nav" aria-label={language === "zh" ? "主要导航" : "Primary navigation"}>
         {(["vendors", "checks", "criteria"] as Tab[]).map((item) => <button className={tab === item ? "active" : ""} key={item} onClick={() => setTab(item)} type="button">{t.nav[item]}</button>)}
       </nav>
