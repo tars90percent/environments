@@ -93,9 +93,9 @@ export default function PortalClient() {
     <main id="top">
       <section className="registry-header">
         <div><p className="eyebrow">RL ENVIRONMENT SUBMISSIONS</p><h1>Vendor sample registry</h1><p>Browse what CASE received, how vendors revised it, and which deterministic checks have recorded evidence.</p></div>
-        <div className="registry-stats"><span><strong>{catalog?.totals.vendors ?? 0}</strong> vendors</span><span><strong>{catalog?.totals.batches ?? 0}</strong> batches</span><span><strong>{catalog?.totals.taskVersions ?? 0}</strong> task versions</span></div>
+        <div className="registry-stats"><span><strong>{catalog?.totals.vendors ?? "—"}</strong> vendors</span><span><strong>{catalog?.totals.batches ?? "—"}</strong> batches</span><span><strong>{catalog?.totals.taskVersions ?? "—"}</strong> task versions</span></div>
         <nav className="repo-tabs" aria-label="Registry sections">
-          {(["vendors", "checks", "criteria"] as Tab[]).map((item) => <button className={tab === item ? "active" : ""} key={item} onClick={() => setTab(item)} type="button">{item[0].toUpperCase() + item.slice(1)}{item === "vendors" && <span>{vendors.length}</span>}</button>)}
+          {(["vendors", "checks", "criteria"] as Tab[]).map((item) => <button className={tab === item ? "active" : ""} key={item} onClick={() => setTab(item)} type="button">{item[0].toUpperCase() + item.slice(1)}{item === "vendors" && <span>{catalogState === "loading" ? "…" : vendors.length}</span>}</button>)}
         </nav>
       </section>
 
