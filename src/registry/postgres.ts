@@ -593,7 +593,8 @@ export class PostgresRegistry implements RegistryRepository {
       this.pool.query<SourceItemRow>(
         `SELECT DISTINCT si.source_event_id, si.id, si.kind, si.display_name, si.locator,
                 si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
-                si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata
+                si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata,
+                si.created_at
          FROM registry_source_items si
          JOIN registry_batch_source_events bse ON bse.source_event_id = si.source_event_id
          JOIN registry_submission_batches b ON b.id = bse.batch_id
@@ -602,7 +603,8 @@ export class PostgresRegistry implements RegistryRepository {
         [visibility],
       ),
       this.pool.query<SourceRelationRow>(
-        `SELECT DISTINCT sr.source_event_id, sr.from_item_id, sr.to_item_id, sr.relation, sr.position
+        `SELECT DISTINCT sr.source_event_id, sr.from_item_id, sr.to_item_id, sr.relation, sr.position,
+                sr.created_at
          FROM registry_source_relations sr
          JOIN registry_batch_source_events bse ON bse.source_event_id = sr.source_event_id
          JOIN registry_submission_batches b ON b.id = bse.batch_id
