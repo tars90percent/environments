@@ -1,0 +1,264 @@
+import type {
+  ArtifactInput,
+  CheckResultInput,
+  FollowUpInput,
+  StatusUpdateInput,
+  SubmissionManifest,
+  WorkCompletionInput,
+} from "./types.js";
+
+const WORKFLOW_STATUSES = new Set([
+  "received",
+  "normalizing",
+  "checking",
+  "needs_vendor_fix",
+  "ready_for_research",
+  "superseded",
+  "quarantined",
+]);
+const VISIBILITIES = new Set(["featured", "available", "log_only", "internal"]);
+const OUTCOMES = new Set(["pass", "fail", "blocked", "not_run"]);
+
+export function parseSubmissionManifest(value: unknown): SubmissionManifest {
+  const root = object(value, "submission manifest");
+  const vendor = object(root.vendor, "vendor");
+  const sourceEvent = object(root.sourceEvent, "sourceEvent");
+  const batch = object(root.batch, "batch");
+  const delta = object(batch.delta, "batch.delta");
+  const categories = array(root.categories, "categories").map((item, index) => {
+    const category = object(item, `categories[${index}]`);
+    return {
+      id: string(category.id, `categories[${index}].id`),
+      name: string(category.name, `categories[${index}].name`),
+      description: string(category.description, `categories[${index}].description`),
+      count: nonNegativeInteger(category.count, `categories[${index}].count`),
+      examples: optionalStringArray(category.examples, `categories[${index}].examples`),
+    };
+  });
+  const categoryIds = new Set(categories.map((category) => category.id));
+  const tasks = root.tasks === undefined ? undefined : array(root.tasks, "tasks").map((item, index) => {
+    const task = object(item, `tasks[${index}]`);
+    const categoryId = string(task.categoryId, `tasks[${index}].categoryId`);
+    if (!categoryIds.has(categoryId)) {
+      throw new ValidationError(`tasks[${index}].categoryId does not name a submitted category`);
+    }
+    return {
+      id: string(task.id, `tasks[${index}].id`),
+      stableKey: string(task.stableKey, `tasks[${index}].stableKey`),
+      title: string(task.title, `tasks[${index}].title`),
+      summary: optionalString(task.summary, `tasks[${index}].summary`),
+      categoryId,
+      sourcePath: optionalString(task.sourcePath, `tasks[${index}].sourcePath`),
+      format: string(task.format, `tasks[${index}].format`),
+      contentSha256: optionalString(task.contentSha256, `tasks[${index}].contentSha256`),
+      workflowStatus: optionalEnum(task.workflowStatus, WORKFLOW_STATUSES, `tasks[${index}].workflowStatus`),
+      catalogVisibility: optionalEnum(task.catalogVisibility, VISIBILITIES, `tasks[${index}].catalogVisibility`),
+      metadata: optionalObject(task.metadata, `tasks[${index}].metadata`),
+    };
+  });
+
+  return {
+    vendor: {
+      id: identifier(vendor.id, "vendor.id"),
+      name: string(vendor.name, "vendor.name"),
+      short: string(vendor.short, "vendor.short"),
+      description: string(vendor.description, "vendor.description"),
+      aliases: optionalStringArray(vendor.aliases, "vendor.aliases"),
+    },
+    sourceEvent: {
+      id: identifier(sourceEvent.id, "sourceEvent.id"),
+      channel: enumValue(sourceEvent.channel, new Set(["email", "feishu", "website", "workspace", "other"]), "sourceEvent.channel"),
+      externalRef: string(sourceEvent.externalRef, "sourceEvent.externalRef"),
+      sender: optionalString(sourceEvent.sender, "sourceEvent.sender"),
+      receivedAt: timestamp(sourceEvent.receivedAt, "sourceEvent.receivedAt"),
+      rawArtifactId: optionalString(sourceEvent.rawArtifactId, "sourceEvent.rawArtifactId"),
+      metadata: optionalObject(sourceEvent.metadata, "sourceEvent.metadata"),
+    },
+    batch: {
+      id: identifier(batch.id, "batch.id"),
+      date: date(batch.date, "batch.date"),
+      label: string(batch.label, "batch.label"),
+      sourceLabel: string(batch.sourceLabel, "batch.sourceLabel"),
+      taskCount: nonNegativeInteger(batch.taskCount, "batch.taskCount"),
+      formats: stringArray(batch.formats, "batch.formats"),
+      workflowStatus: enumValue(batch.workflowStatus, WORKFLOW_STATUSES, "batch.workflowStatus"),
+      catalogVisibility: enumValue(batch.catalogVisibility, VISIBILITIES, "batch.catalogVisibility"),
+      revisesBatchId: optionalString(batch.revisesBatchId, "batch.revisesBatchId"),
+      delta: {
+        retained: optionalNonNegativeInteger(delta.retained, "batch.delta.retained"),
+        added: nonNegativeInteger(delta.added, "batch.delta.added"),
+        removed: nonNegativeInteger(delta.removed, "batch.delta.removed"),
+        changedFiles: optionalNonNegativeInteger(delta.changedFiles, "batch.delta.changedFiles"),
+        note: string(delta.note, "batch.delta.note"),
+      },
+      metadata: optionalObject(batch.metadata, "batch.metadata"),
+    },
+    categories,
+    tasks,
+  } as SubmissionManifest;
+}
+
+export function parseArtifact(value: unknown): ArtifactInput {
+  const input = object(value, "artifact");
+  return {
+    id: identifier(input.id, "id"),
+    kind: enumValue(input.kind, new Set(["submission", "task_package", "trajectory", "check_evidence", "other"]), "kind"),
+    storageKey: string(input.storageKey, "storageKey"),
+    sha256: sha256(input.sha256, "sha256"),
+    sizeBytes: input.sizeBytes === undefined ? undefined : nonNegativeInteger(input.sizeBytes, "sizeBytes"),
+    contentType: optionalString(input.contentType, "contentType"),
+    metadata: optionalObject(input.metadata, "metadata"),
+  } as ArtifactInput;
+}
+
+export function parseStatusUpdate(value: unknown): StatusUpdateInput {
+  const input = object(value, "status update");
+  return {
+    entityType: enumValue(input.entityType, new Set(["submission_batch", "task_version"]), "entityType"),
+    entityId: identifier(input.entityId, "entityId"),
+    workflowStatus: enumValue(input.workflowStatus, WORKFLOW_STATUSES, "workflowStatus"),
+    catalogVisibility: enumValue(input.catalogVisibility, VISIBILITIES, "catalogVisibility"),
+    reason: string(input.reason, "reason"),
+    actor: string(input.actor, "actor"),
+  } as StatusUpdateInput;
+}
+
+export function parseWorkCompletion(value: unknown): WorkCompletionInput {
+  const input = object(value, "work completion");
+  return {
+    id: identifier(input.id, "id"),
+    workerId: string(input.workerId, "workerId"),
+    outcome: enumValue(input.outcome, new Set(["completed", "retry", "failed"]), "outcome"),
+    error: optionalString(input.error, "error"),
+  } as WorkCompletionInput;
+}
+
+export function parseCheckResult(value: unknown): CheckResultInput {
+  const input = object(value, "check result");
+  return {
+    id: identifier(input.id, "id"),
+    taskVersionId: identifier(input.taskVersionId, "taskVersionId"),
+    definitionId: identifier(input.definitionId, "definitionId"),
+    definitionVersion: positiveInteger(input.definitionVersion, "definitionVersion"),
+    kind: enumValue(input.kind, new Set(["deterministic", "heuristic"]), "kind"),
+    name: string(input.name, "name"),
+    description: string(input.description, "description"),
+    required: boolean(input.required, "required"),
+    outcome: enumValue(input.outcome, OUTCOMES, "outcome"),
+    summary: string(input.summary, "summary"),
+    runner: object(input.runner, "runner"),
+    evidence: object(input.evidence, "evidence"),
+    startedAt: timestamp(input.startedAt, "startedAt"),
+    completedAt: timestamp(input.completedAt, "completedAt"),
+  } as CheckResultInput;
+}
+
+export function parseFollowUp(value: unknown): FollowUpInput {
+  const input = object(value, "follow-up");
+  return {
+    id: identifier(input.id, "id"),
+    batchId: identifier(input.batchId, "batchId"),
+    channel: enumValue(input.channel, new Set(["email", "feishu", "internal", "other"]), "channel"),
+    recipient: string(input.recipient, "recipient"),
+    status: enumValue(input.status, new Set(["drafted", "sent", "replied", "closed"]), "status"),
+    reason: string(input.reason, "reason"),
+    evidenceCheckRunIds: stringArray(input.evidenceCheckRunIds, "evidenceCheckRunIds"),
+    sentAt: input.sentAt === undefined ? undefined : timestamp(input.sentAt, "sentAt"),
+    externalRef: optionalString(input.externalRef, "externalRef"),
+  } as FollowUpInput;
+}
+
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
+function object(value: unknown, name: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError(`${name} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function optionalObject(value: unknown, name: string): Record<string, unknown> | undefined {
+  return value === undefined ? undefined : object(value, name);
+}
+
+function array(value: unknown, name: string): unknown[] {
+  if (!Array.isArray(value)) throw new ValidationError(`${name} must be an array`);
+  return value;
+}
+
+function string(value: unknown, name: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new ValidationError(`${name} must be a non-empty string`);
+  return value.trim();
+}
+
+function optionalString(value: unknown, name: string): string | undefined {
+  return value === undefined || value === null ? undefined : string(value, name);
+}
+
+function identifier(value: unknown, name: string): string {
+  const parsed = string(value, name);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(parsed)) {
+    throw new ValidationError(`${name} contains unsupported characters`);
+  }
+  return parsed;
+}
+
+function boolean(value: unknown, name: string): boolean {
+  if (typeof value !== "boolean") throw new ValidationError(`${name} must be a boolean`);
+  return value;
+}
+
+function nonNegativeInteger(value: unknown, name: string): number {
+  if (!Number.isInteger(value) || (value as number) < 0) throw new ValidationError(`${name} must be a non-negative integer`);
+  return value as number;
+}
+
+function positiveInteger(value: unknown, name: string): number {
+  if (!Number.isInteger(value) || (value as number) < 1) throw new ValidationError(`${name} must be a positive integer`);
+  return value as number;
+}
+
+function optionalNonNegativeInteger(value: unknown, name: string): number | undefined {
+  return value === undefined ? undefined : nonNegativeInteger(value, name);
+}
+
+function stringArray(value: unknown, name: string): string[] {
+  return array(value, name).map((item, index) => string(item, `${name}[${index}]`));
+}
+
+function optionalStringArray(value: unknown, name: string): string[] | undefined {
+  return value === undefined ? undefined : stringArray(value, name);
+}
+
+function enumValue<T extends string>(value: unknown, allowed: Set<T>, name: string): T {
+  const parsed = string(value, name) as T;
+  if (!allowed.has(parsed)) throw new ValidationError(`${name} must be one of: ${[...allowed].join(", ")}`);
+  return parsed;
+}
+
+function optionalEnum<T extends string>(value: unknown, allowed: Set<T>, name: string): T | undefined {
+  return value === undefined ? undefined : enumValue(value, allowed, name);
+}
+
+function timestamp(value: unknown, name: string): string {
+  const parsed = string(value, name);
+  if (Number.isNaN(Date.parse(parsed))) throw new ValidationError(`${name} must be an ISO timestamp`);
+  return new Date(parsed).toISOString();
+}
+
+function date(value: unknown, name: string): string {
+  const parsed = string(value, name);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed) || Number.isNaN(Date.parse(`${parsed}T00:00:00Z`))) {
+    throw new ValidationError(`${name} must be YYYY-MM-DD`);
+  }
+  return parsed;
+}
+
+function sha256(value: unknown, name: string): string {
+  const parsed = string(value, name).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(parsed)) throw new ValidationError(`${name} must be a SHA-256 hex digest`);
+  return parsed;
+}

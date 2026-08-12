@@ -23,8 +23,15 @@ RUN npx --yes skills add larksuite/cli --yes --global \
 
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
+COPY skills ./skills
 RUN npm run build \
-    && npm prune --omit=dev
+    && npm prune --omit=dev \
+    && chmod 0755 /app/dist/registry-cli.js \
+    && ln -sfn /app/dist/registry-cli.js /usr/local/bin/case-registry \
+    && mkdir -p /root/.agents/skills/case-registry \
+    && cp /app/skills/case-registry/SKILL.md /root/.agents/skills/case-registry/SKILL.md \
+    && test -x /usr/local/bin/case-registry \
+    && test -f /root/.agents/skills/case-registry/SKILL.md
 
 ENV NODE_ENV=production
 

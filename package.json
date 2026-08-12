@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "A Feishu teammate powered by Codex.",
+  "bin": {
+    "case-registry": "dist/registry-cli.js"
+  },
   "scripts": {
     "dev": "node --watch --import tsx src/index.ts",
     "build": "node node_modules/typescript/bin/tsc -p tsconfig.build.json",
@@ -15,11 +18,15 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1108.0",
+    "@aws-sdk/s3-request-presigner": "^3.1108.0",
     "@larksuite/cli": "1.0.85",
-    "@openai/codex-sdk": "0.147.0"
+    "@openai/codex-sdk": "0.147.0",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "latest",
+    "@types/pg": "^8.21.0",
     "tsx": "latest",
     "typescript": "latest"
   }

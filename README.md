@@ -1,6 +1,13 @@
-# Feishu Codex Agent
+# CASE
 
 An early, chat-only prototype of a Feishu teammate powered by Codex.
+
+CASE also owns the canonical RL-environment sample registry used by its own
+tools and by read-only human surfaces such as 小环境. PostgreSQL holds vendor,
+submission, task-version, check, trajectory, status, follow-up, and durable
+work-queue records. S3-compatible object storage holds immutable packages and
+evidence. The portal is deliberately only a catalog client; it does not own or
+mutate procurement state.
 
 The pilot intentionally starts with a narrow boundary:
 
@@ -35,6 +42,27 @@ npm start
 ```
 
 Then send the bot a direct message in Feishu. Stop the service with Ctrl-C.
+
+When the registry variables in `.env.example` are configured, the same process
+also serves the CASE registry API on `PORT`. It runs built-in migrations at
+startup. CASE and trusted operators use `CASE_REGISTRY_ADMIN_TOKEN`; read-only
+catalog clients use the separate `CASE_REGISTRY_CATALOG_TOKEN`.
+
+The installed `case-registry` command gives CASE and Codex the same operations:
+
+```sh
+case-registry operations
+case-registry catalog
+case-registry import /absolute/path/submission.json
+case-registry lease-work case-checker
+case-registry record-check /absolute/path/check-result.json
+case-registry set-status /absolute/path/status.json
+```
+
+An intake manifest creates an immutable submission batch and queues a check
+work item. A corrected vendor package is always a new batch linked through
+`revisesBatchId`. Deterministic results, heuristic results, and human research
+judgment remain distinct records.
 
 Send `/new` as a message, or select the app's native `/new` slash command, to
 disconnect that Feishu chat from its current Codex thread. The next ordinary

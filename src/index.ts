@@ -6,6 +6,9 @@ import { prepareLarkRuntimeEnv } from "./lark-runtime.js";
 import { isEligiblePilotMessage } from "./pilot-policy.js";
 import { StateStore } from "./state.js";
 import type { FeishuMessageEvent } from "./types.js";
+import { ArtifactStore } from "./registry/artifacts.js";
+import { startRegistryServer, type RegistryServer } from "./registry/api.js";
+import { PostgresRegistry } from "./registry/postgres.js";
 
 validateConfig();
 
@@ -23,6 +26,22 @@ const chatQueues = new Map<string, Promise<void>>();
 
 await state.load();
 await agent.initialize();
+
+let registryServer: RegistryServer | undefined;
+let registry: PostgresRegistry | undefined;
+if (config.registryDatabaseUrl && config.registryCatalogToken && config.registryAdminToken) {
+  registry = new PostgresRegistry(config.registryDatabaseUrl);
+  await registry.initialize();
+  const artifactStore = config.registryS3 ? new ArtifactStore(config.registryS3) : undefined;
+  registryServer = await startRegistryServer({
+    repository: registry,
+    artifactStore,
+    catalogToken: config.registryCatalogToken,
+    adminToken: config.registryAdminToken,
+    port: config.registryPort,
+  });
+  console.log(`CASE registry listening on port ${config.registryPort}`);
+}
 
 function eligible(event: FeishuMessageEvent): boolean {
   return isEligiblePilotMessage(
@@ -83,6 +102,8 @@ function enqueue(event: FeishuMessageEvent): Promise<void> {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     gateway.stop();
+    void registryServer?.close();
+    void registry?.close();
     process.exitCode = 0;
   });
 }
