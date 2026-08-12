@@ -268,10 +268,6 @@ export default function Home() {
               <section className="submission-history" aria-labelledby="history-title">
                 <div className="section-title"><div><h3 id="history-title">Submission history</h3><p>Every observed batch remains separate. Deltas describe package changes, not research quality.</p></div><span>Newest first</span></div>
 
-                <div className="timeline" aria-label="Submission timeline">
-                  {[...selectedVendor.batches].reverse().map((batch, index) => <div key={batch.id}><span className="timeline-dot" /><strong>{batch.date.slice(5)}</strong><small>{batch.taskCount} tasks</small>{index < selectedVendor.batches.length - 1 && <i />}</div>)}
-                </div>
-
                 <div className="batch-list">
                   {selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => toggleBatch(batch.id)} />)}
                 </div>
@@ -313,8 +309,6 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle }: { batch: Batch; is
         {batch.categories.map((category) => <div key={category.name}><span className="category-count">{category.count}</span><span><strong>{category.name}</strong><small>{category.description}</small></span><span className="example-list">{category.examples.map((example) => <i key={example}>{example}</i>)}</span></div>)}
       </div>
 
-      <div className="batch-section-head"><h4>Observed package inventory</h4><span>filesystem snapshot</span></div>
-      <div className="inventory-list">{batch.inventory.map((item) => <span key={item}><i aria-hidden="true" />{item}</span>)}</div>
     </div>}
   </article>;
 }

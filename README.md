@@ -17,7 +17,7 @@ The interface intentionally does not rank task quality, estimate learning signal
 - Browse every vendor represented in the workspace.
 - Open dated submission batches without replacing earlier iterations.
 - Review task-category composition and observed deltas between submissions.
-- Inspect high-level package inventories and format labels.
+- Inspect batch format labels and the dedicated deterministic-check reference.
 - Read the exact criteria and interpretation boundary.
 
 ## Run locally

@@ -36,7 +36,8 @@ test("server-renders the vendor submission registry", async () => {
   assert.match(html, /Deeptune/);
   assert.match(html, /Long-horizon revision B/);
   assert.match(html, /Task categories/);
-  assert.match(html, /Observed package inventory/);
+  assert.match(html, /Protocols &amp; codecs/);
+  assert.doesNotMatch(html, /Submission timeline|Observed package inventory|filesystem snapshot/);
   assert.doesNotMatch(html, /RECOMMENDATION|EXPECTED USABLE YIELD|high-signal|getting better|getting worse/i);
 });
 
