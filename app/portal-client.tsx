@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { CatalogBatch, CatalogSnapshot, CatalogTask, CatalogVendor, WorkflowStatus } from "./catalog";
+import type { CatalogBatch, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, WorkflowStatus } from "./catalog";
 
 type Tab = "vendors" | "checks" | "criteria";
 
@@ -23,6 +23,26 @@ const statusLabels: Record<WorkflowStatus, string> = {
   ready_for_research: "Ready for research",
   superseded: "Superseded",
   quarantined: "Quarantined",
+};
+
+const fetchLabels: Record<SourceFetchStatus, string> = {
+  not_requested: "Not fetched",
+  queued: "Fetch queued",
+  fetching: "Fetching",
+  snapshotted: "Snapshot saved",
+  external_only: "External link",
+  blocked: "Fetch blocked",
+  failed: "Fetch failed",
+};
+
+const parseLabels: Record<SourceParseStatus, string> = {
+  not_requested: "Not parsed",
+  queued: "Parse queued",
+  parsing: "Parsing",
+  parsed: "Parsed",
+  partial: "Partly parsed",
+  blocked: "Parse blocked",
+  failed: "Parse failed",
 };
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`) {
@@ -158,8 +178,54 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle }: { batch: CatalogBa
       <div className="delta-block"><div className="delta-grid">{batch.delta.retained !== undefined && <span><strong>{batch.delta.retained}</strong><small>retained</small></span>}<span><strong>{batch.delta.added}</strong><small>added</small></span><span><strong>{batch.delta.removed}</strong><small>removed</small></span>{batch.delta.changedFiles !== undefined && <span><strong>{batch.delta.changedFiles}</strong><small>files differ</small></span>}</div><p>{batch.delta.note}</p></div>
       <div className="batch-section-head"><h4>Task categories</h4><span>{plural(batch.categories.length, "category", "categories")}</span></div>
       <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} task={task} />) : <span className="empty-task-list">Task records not yet normalized</span>}</div></section>)}</div>
+      <SubmissionSources sourceEvents={batch.sourceEvents ?? []} />
     </div>}
   </article>;
+}
+
+function SubmissionSources({ sourceEvents }: { sourceEvents: CatalogSourceEvent[] }) {
+  if (!sourceEvents.length) return <><div className="batch-section-head"><h4>Original payload</h4><span>No source snapshot linked yet</span></div><div className="source-empty">This batch predates source-level intake. Its original message, links, and files have not yet been attached.</div></>;
+  return <>
+    <div className="batch-section-head"><h4>Original payload</h4><span>{plural(sourceEvents.length, "intake event")}</span></div>
+    <div className="source-events">{sourceEvents.map((event) => <SourceEvent key={event.id} event={event} />)}</div>
+  </>;
+}
+
+function SourceEvent({ event }: { event: CatalogSourceEvent }) {
+  const originalUrl = safeExternalUrl(event.externalRef);
+  return <section className="source-event">
+    <header className="source-event-head">
+      <span className="source-channel">{event.channel.replace("_", " ")}</span>
+      <span><strong>{event.sender ?? "Sender not recorded"}</strong><small>{formatTimestamp(event.receivedAt)}</small></span>
+      <span className="source-actions">{originalUrl && <a href={originalUrl} rel="noreferrer" target="_blank">Open original</a>}{event.rawArtifactId && <a href={`/api/artifacts/${encodeURIComponent(event.rawArtifactId)}/download`}>Message snapshot</a>}</span>
+    </header>
+    <div className="source-items">{event.items.length ? event.items.map((item) => <SourceItem key={item.id} item={item} />) : <div className="source-empty">No linked files or URLs recorded.</div>}</div>
+  </section>;
+}
+
+function SourceItem({ item }: { item: CatalogSourceItem }) {
+  const originalUrl = safeExternalUrl(item.locator);
+  const captured = item.capturedAt ? ` · captured ${formatTimestamp(item.capturedAt)}` : "";
+  return <div className="source-item">
+    <span className="source-kind">{item.kind.replace("_", " ")}</span>
+    <span className="source-name"><strong>{item.displayName}</strong><small>{fetchLabels[item.fetchStatus]} · {parseLabels[item.parseStatus]}{item.mutable ? " · mutable source" : ""}{captured}</small></span>
+    <span className="source-actions">{originalUrl && <a href={originalUrl} rel="noreferrer" target="_blank">View source</a>}{item.artifactId && <a href={`/api/artifacts/${encodeURIComponent(item.artifactId)}/download`}>Download snapshot</a>}</span>
+  </div>;
+}
+
+function safeExternalUrl(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatTimestamp(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function TaskRow({ task }: { task: CatalogTask }) {

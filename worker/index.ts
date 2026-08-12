@@ -49,6 +49,30 @@ const worker = {
       }
     }
 
+    const artifactDownloadMatch = url.pathname.match(/^\/api\/artifacts\/([^/]+)\/download$/);
+    if (artifactDownloadMatch?.[1]) {
+      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      if (!env.CASE_REGISTRY_URL || !env.CASE_REGISTRY_CATALOG_TOKEN) {
+        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
+      }
+      try {
+        const artifactId = decodeURIComponent(artifactDownloadMatch[1]);
+        const upstream = await fetch(`${env.CASE_REGISTRY_URL.replace(/\/$/, "")}/v1/artifacts/${encodeURIComponent(artifactId)}/download-url`, {
+          headers: { authorization: `Bearer ${env.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
+        });
+        if (!upstream.ok) {
+          return Response.json({ error: "artifact_unavailable" }, { status: upstream.status, headers: { "cache-control": "no-store" } });
+        }
+        const payload = await upstream.json() as { url?: unknown };
+        if (typeof payload.url !== "string") throw new Error("CASE returned no artifact URL");
+        const downloadUrl = new URL(payload.url);
+        if (downloadUrl.protocol !== "https:") throw new Error("CASE returned an unsafe artifact URL");
+        return Response.redirect(downloadUrl.href, 302);
+      } catch {
+        return Response.json({ error: "artifact_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+      }
+    }
+
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
       return handleImageOptimization(request, {

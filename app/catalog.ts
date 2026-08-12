@@ -9,6 +9,12 @@ export type WorkflowStatus =
 
 export type CatalogVisibility = "featured" | "available" | "log_only" | "internal";
 
+export type SourceChannel = "email" | "feishu" | "slack" | "website" | "vendor_portal" | "workspace" | "upload" | "other";
+export type SourceItemKind = "message" | "attachment" | "url" | "folder" | "document" | "spreadsheet" | "worksheet" | "row" | "pdf" | "archive" | "file" | "task_package" | "container_image" | "web_page" | "other";
+export type SourceFetchStatus = "not_requested" | "queued" | "fetching" | "snapshotted" | "external_only" | "blocked" | "failed";
+export type SourceParseStatus = "not_requested" | "queued" | "parsing" | "parsed" | "partial" | "blocked" | "failed";
+export type SourceRelationKind = "contains" | "links_to" | "derived_from" | "describes" | "mirrors" | "supersedes";
+
 export type CatalogTask = {
   id: string;
   stableKey: string;
@@ -19,6 +25,41 @@ export type CatalogTask = {
   workflowStatus: WorkflowStatus;
   catalogVisibility: CatalogVisibility;
   checks: { pass: number; fail: number; blocked: number; notRun: number };
+  sourceItemIds: string[];
+};
+
+export type CatalogSourceItem = {
+  id: string;
+  kind: SourceItemKind;
+  displayName: string;
+  locator: string | null;
+  mediaType: string | null;
+  artifactId: string | null;
+  contentSha256: string | null;
+  sizeBytes: number | null;
+  fetchStatus: SourceFetchStatus;
+  parseStatus: SourceParseStatus;
+  mutable: boolean;
+  capturedAt: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type CatalogSourceRelation = {
+  fromItemId: string;
+  toItemId: string;
+  relation: SourceRelationKind;
+  position: number | null;
+};
+
+export type CatalogSourceEvent = {
+  id: string;
+  channel: SourceChannel;
+  externalRef: string;
+  sender: string | null;
+  receivedAt: string;
+  rawArtifactId: string | null;
+  items: CatalogSourceItem[];
+  relations: CatalogSourceRelation[];
 };
 
 export type CatalogCategory = {
@@ -41,6 +82,7 @@ export type CatalogBatch = {
   catalogVisibility: CatalogVisibility;
   revisesBatchId: string | null;
   delta: { retained?: number; added: number; removed: number; changedFiles?: number; note: string };
+  sourceEvents: CatalogSourceEvent[];
   categories: CatalogCategory[];
 };
 
