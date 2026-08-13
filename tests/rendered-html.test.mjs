@@ -39,7 +39,7 @@ test("server-renders the environment catalog", async () => {
   assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/auth/login");
 });
 
-test("keeps the portal read-only and free of vendor snapshot data", async () => {
+test("keeps the portal narrowly scoped and free of vendor snapshot data", async () => {
   const { readFile } = await import("node:fs/promises");
   const source = await readFile(new URL("../app/portal-client.tsx", import.meta.url), "utf8");
   const worker = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
@@ -51,6 +51,9 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
   assert.match(source, /Original sources/);
   assert.match(source, /Open live source/);
   assert.match(source, /Download captured copy/);
+  assert.match(source, /Researcher response/);
+  assert.match(source, /Interested in the full set/);
+  assert.match(source, /Selected task categories/);
   assert.doesNotMatch(source, /className="vendor-mark/);
   assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次|Update history|RL Environment Catalog|强化学习环境目录/);
   assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);
@@ -63,7 +66,11 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
   assert.match(source, /\/auth\/logout/);
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
   assert.match(worker, /CASE_REGISTRY_CATALOG_TOKEN/);
+  assert.match(worker, /CASE_REGISTRY_REVIEW_TOKEN/);
   assert.match(worker, /hasPortalSession/);
   assert.doesNotMatch(worker, /method:\s*["']PUT|method:\s*["']PATCH|method:\s*["']DELETE/i);
+  assert.match(worker, /\/api\\\/submissions\\\/\(\[\^\/\]\+\)\\\/reviews/);
+  assert.match(worker, /reviewer:\s*\{/);
+  assert.match(worker, /openId:\s*session\.openId/);
   assert.doesNotMatch(source, /upstream|recommendation|usable yield/i);
 });

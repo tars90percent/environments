@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import type { CatalogBatch, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, WorkflowStatus } from "./catalog";
+import type { CatalogBatch, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, SubmissionReview, SubmissionReviewScope, SubmissionReviewSignal, WorkflowStatus } from "./catalog";
 
 type Language = "zh" | "en";
 
@@ -48,6 +48,31 @@ const copy = {
     downloadSnapshot: "下载留存副本",
     mutable: "可变来源",
     captured: "抓取于",
+    response: {
+      title: "研究反馈",
+      note: "反馈以本次提交为单位保存。若意见只针对部分任务类别，可以缩小范围。",
+      interested: "有意采购完整数据集",
+      needsRevision: "修改后再看",
+      notInterested: "不感兴趣",
+      commentOnly: "仅留言",
+      wholeSubmission: "整次提交",
+      selectedCategories: "指定任务类别",
+      chooseCategories: "选择适用的任务类别",
+      commentLabel: "说明",
+      commentOptional: "表达采购兴趣时可选；其他反馈需要说明。",
+      commentPlaceholder: "哪些地方有价值、缺少什么，或供应商需要修改什么？",
+      submit: "提交反馈",
+      submitting: "正在提交…",
+      saved: "反馈已保存。",
+      history: "已有反馈",
+      none: "尚无研究员反馈",
+      loadError: "暂时无法载入反馈。",
+      submitError: "暂时无法保存反馈。",
+      categoryRequired: "请至少选择一个任务类别。",
+      commentRequired: "请补充说明。",
+      scopedTo: "适用于",
+      signals: { interested: "有意采购", needs_revision: "需要修改", not_interested: "不感兴趣", comment: "留言" },
+    },
     delta: { retained: "保留", added: "新增", removed: "移除", changedFiles: "文件变化" },
     searchEmpty: { eyebrow: "搜索", title: "没有匹配的样本", body: "请尝试供应商、提交记录、类别或任务名称。" },
     loading: { eyebrow: "CASE 目录", title: "正在载入样本库…", body: "正在从 CASE 获取最新的供应商、提交记录、任务与核验记录。" },
@@ -124,6 +149,31 @@ const copy = {
     downloadSnapshot: "Download captured copy",
     mutable: "mutable source",
     captured: "captured",
+    response: {
+      title: "Researcher response",
+      note: "Responses are recorded at the submission level. Narrow the scope only when your feedback applies to particular task categories.",
+      interested: "Interested in the full set",
+      needsRevision: "Revisit after changes",
+      notInterested: "Not interested",
+      commentOnly: "Comment only",
+      wholeSubmission: "Entire submission",
+      selectedCategories: "Selected task categories",
+      chooseCategories: "Choose the categories this applies to",
+      commentLabel: "Comment",
+      commentOptional: "Optional when signaling interest; required for every other response.",
+      commentPlaceholder: "What is valuable, what is missing, or what should the vendor change?",
+      submit: "Submit response",
+      submitting: "Submitting…",
+      saved: "Response saved.",
+      history: "Recorded responses",
+      none: "No researcher responses yet",
+      loadError: "Responses could not be loaded right now.",
+      submitError: "Your response could not be saved right now.",
+      categoryRequired: "Select at least one task category.",
+      commentRequired: "Add a comment for this response.",
+      scopedTo: "Applies to",
+      signals: { interested: "Interested", needs_revision: "Needs revision", not_interested: "Not interested", comment: "Comment" },
+    },
     delta: { retained: "retained", added: "added", removed: "removed", changedFiles: "files differ" },
     searchEmpty: { eyebrow: "SEARCH", title: "No matching samples", body: "Try a vendor, submission, category, or task name." },
     loading: { eyebrow: "CASE CATALOG", title: "Loading registry…", body: "Fetching the current vendor, submission, task, and check records from CASE." },
@@ -315,8 +365,102 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { bat
       <div className="batch-section-head"><h4>{t.taskCategories}</h4><span>{batch.categories.length} {batch.categories.length === 1 ? t.category : t.categories}</span></div>
       <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
       <SubmissionSources sourceEvents={batch.sourceEvents ?? []} t={t} language={language} />
+      <SubmissionReviewPanel batch={batch} t={t} language={language} />
     </div>}
   </article>;
+}
+
+function SubmissionReviewPanel({ batch, t, language }: { batch: CatalogBatch; t: UiCopy; language: Language }) {
+  const [reviews, setReviews] = useState<SubmissionReview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [signal, setSignal] = useState<SubmissionReviewSignal>("interested");
+  const [scope, setScope] = useState<SubmissionReviewScope>("submission");
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "error" | "success"; text: string }>();
+
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/submissions/${encodeURIComponent(batch.id)}/reviews`, { headers: { accept: "application/json" }, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        return await response.json() as { reviews: SubmissionReview[] };
+      })
+      .then((payload) => { if (active) setReviews(payload.reviews); })
+      .catch(() => { if (active) setNotice({ kind: "error", text: t.response.loadError }); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [batch.id, t.response.loadError]);
+
+  function toggleCategory(categoryId: string) {
+    setCategoryIds((current) => current.includes(categoryId) ? current.filter((id) => id !== categoryId) : [...current, categoryId]);
+  }
+
+  async function submitReview() {
+    setNotice(undefined);
+    if (scope === "categories" && !categoryIds.length) {
+      setNotice({ kind: "error", text: t.response.categoryRequired });
+      return;
+    }
+    if (signal !== "interested" && !comment.trim()) {
+      setNotice({ kind: "error", text: t.response.commentRequired });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await fetch(`/api/submissions/${encodeURIComponent(batch.id)}/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ signal, scope, categoryIds: scope === "categories" ? categoryIds : [], comment: comment.trim() }),
+      });
+      const payload = await response.json() as { review?: SubmissionReview; message?: string };
+      if (!response.ok || !payload.review) throw new Error(payload.message);
+      setReviews((current) => [payload.review!, ...current]);
+      setComment("");
+      setNotice({ kind: "success", text: t.response.saved });
+    } catch {
+      setNotice({ kind: "error", text: t.response.submitError });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <section className="review-panel" aria-labelledby={`review-${batch.id}`}>
+    <div className="review-heading">
+      <div><h4 id={`review-${batch.id}`}>{t.response.title}</h4><p>{t.response.note}</p></div>
+      <span>{loading ? "…" : `${reviews.length}`}</span>
+    </div>
+    <div className="review-form">
+      <div className="signal-options" role="group" aria-label={t.response.title}>
+        {([
+          ["interested", t.response.interested],
+          ["needs_revision", t.response.needsRevision],
+          ["not_interested", t.response.notInterested],
+          ["comment", t.response.commentOnly],
+        ] as const).map(([value, label]) => <button aria-pressed={signal === value} className={signal === value ? "active" : ""} key={value} onClick={() => setSignal(value)} type="button">{label}</button>)}
+      </div>
+      <div className="scope-options" role="group" aria-label={t.response.scopedTo}>
+        <button aria-pressed={scope === "submission"} className={scope === "submission" ? "active" : ""} onClick={() => setScope("submission")} type="button">{t.response.wholeSubmission}</button>
+        <button aria-pressed={scope === "categories"} className={scope === "categories" ? "active" : ""} onClick={() => setScope("categories")} type="button">{t.response.selectedCategories}</button>
+      </div>
+      {scope === "categories" && <fieldset className="category-options"><legend>{t.response.chooseCategories}</legend>{batch.categories.map((category) => <label key={category.id}><input checked={categoryIds.includes(category.id)} onChange={() => toggleCategory(category.id)} type="checkbox" /><span>{category.name}</span></label>)}</fieldset>}
+      <div className="review-comment"><span><strong>{t.response.commentLabel}</strong><small>{t.response.commentOptional}</small></span><textarea aria-label={t.response.commentLabel} maxLength={5000} onChange={(event) => setComment(event.target.value)} placeholder={t.response.commentPlaceholder} rows={3} value={comment} /></div>
+      <div className="review-submit"><button disabled={submitting} onClick={() => void submitReview()} type="button">{submitting ? t.response.submitting : t.response.submit}</button>{notice && <span className={notice.kind}>{notice.text}</span>}</div>
+    </div>
+    <div className="review-history">
+      <div className="review-history-head"><strong>{t.response.history}</strong></div>
+      {!loading && !reviews.length && <p className="review-empty">{t.response.none}</p>}
+      {reviews.map((review) => {
+        const categoryNames = batch.categories.filter((category) => review.categoryIds.includes(category.id)).map((category) => category.name);
+        return <article className="review-record" key={review.id}>
+          <header><span className={`review-signal signal-${review.signal}`}>{t.response.signals[review.signal]}</span><strong>{review.reviewer.name}</strong><time>{formatTimestamp(review.createdAt, language)}</time></header>
+          {review.scope === "categories" && <small>{t.response.scopedTo}: {categoryNames.join(", ")}</small>}
+          {review.comment && <p>{review.comment}</p>}
+        </article>;
+      })}
+    </div>
+  </section>;
 }
 
 function SubmissionSources({ sourceEvents, t, language }: { sourceEvents: CatalogSourceEvent[]; t: UiCopy; language: Language }) {

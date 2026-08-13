@@ -8,6 +8,19 @@ export type WorkflowStatus =
   | "quarantined";
 
 export type CatalogVisibility = "featured" | "available" | "log_only" | "internal";
+export type SubmissionReviewSignal = "interested" | "needs_revision" | "not_interested" | "comment";
+export type SubmissionReviewScope = "submission" | "categories";
+
+export type SubmissionReview = {
+  id: string;
+  batchId: string;
+  signal: SubmissionReviewSignal;
+  scope: SubmissionReviewScope;
+  categoryIds: string[];
+  reviewer: { name: string };
+  comment: string;
+  createdAt: string;
+};
 
 export type SourceChannel = "email" | "feishu" | "slack" | "website" | "vendor_portal" | "workspace" | "upload" | "other";
 export type SourceItemKind = "message" | "attachment" | "url" | "folder" | "document" | "spreadsheet" | "worksheet" | "row" | "pdf" | "archive" | "file" | "task_package" | "container_image" | "web_page" | "other";
