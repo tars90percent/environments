@@ -75,6 +75,8 @@ Do not add task-level voting. If one task drives a submission-level judgment, na
 
 The portal uses a read-only catalog credential and a separate credential that can only list or append submission reviews. It cannot change vendors, submissions, tasks, statuses, checks, or intake records. If CASE is unavailable, the portal should fail clearly rather than serve a cached competing truth.
 
+Production login uses a dedicated MiniMax custom Feishu application named `小环境` (App ID `cli_aaf7c9f277385cee`), not CASE's bot application. Its availability is organization-wide, its OAuth callback is `https://env-portal-proto-production.up.railway.app/auth/callback`, and it requests only the ordinary identifier grant needed for per-user login. The App Secret is a Railway runtime secret and must never be committed.
+
 The portal source lives in the separate private repository [`tars90percent/env-portal-proto`](https://github.com/tars90percent/env-portal-proto). Production is currently deployed to [env-portal-proto-production.up.railway.app](https://env-portal-proto-production.up.railway.app/).
 
 ### Current implementation boundary
