@@ -1,11 +1,11 @@
 # env-portal-proto — 小环境 RL environment catalog
 
-A read-only researcher catalog for vendor RL-environment submissions, hosted on
+A read-only researcher catalog for vendor RL-environment samples, hosted on
 Railway and available to authenticated members of TARS's Feishu organization.
-小环境 loads its vendor, dated batch, task category, task-version, status, and
-check records from CASE's canonical registry.
+小环境 loads its vendors, dated updates, task categories, task versions,
+statuses, original-source records, and checks from CASE's canonical registry.
 
-The interface intentionally does not rank task quality, estimate learning signal, or recommend research decisions. It records package contents and submission-to-submission changes, then keeps the current deterministic intake criteria available as a separate reference.
+The interface intentionally does not rank task quality, estimate learning signal, or recommend research decisions. It records package contents and update-to-update changes, then shows the current deterministic intake criteria alongside each task.
 
 ## Safety boundary
 
@@ -21,8 +21,9 @@ The interface intentionally does not rank task quality, estimate learning signal
 ## What to inspect
 
 - Browse every vendor represented in the workspace.
-- Open dated submission batches without replacing earlier iterations.
-- Review task-category composition and observed deltas between submissions.
+- Open dated updates without replacing earlier observations.
+- Review task-category composition and observed deltas between updates.
+- Follow the original Drive, Sheet, document, or message link and download CASE's captured copy when one exists.
 - Inspect task lists, workflow state, and recorded deterministic-check counts.
 - Read the exact criteria and interpretation boundary.
 

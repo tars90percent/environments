@@ -14,54 +14,49 @@ export type PortalUser = {
 const copy = {
   zh: {
     vendors: "供应商",
-    search: "搜索供应商、批次、类别和任务",
+    search: "搜索供应商、更新记录、类别和任务",
     language: "EN",
     languageLabel: "Switch to English",
     accountLabel: "研究员账户",
     signOut: "退出登录",
     eyebrow: "环境与任务样本",
     title: "强化学习环境目录",
-    stats: { vendors: "家供应商", batches: "个批次", tasks: "个任务版本" },
+    stats: { vendors: "家供应商", updates: "次更新", tasks: "个任务版本" },
     vendor: "供应商",
-    batch: "批次",
-    batches: "批次",
+    update: "次更新",
+    updates: "次更新",
     records: "条记录",
-    submissionBatch: "个提交批次",
     taskRecords: "条任务记录",
-    history: "提交历史",
-    historyNote: "每次收到的批次都会单独保留。差异只描述文件变化，不代表研究质量。",
+    history: "更新记录",
+    historyNote: "每次收到的交付，或 CASE 观察到持续维护来源发生变化，都会形成一条带日期的更新记录。差异只描述内容变化，不代表研究质量。",
     newest: "最新在前",
-    latest: "最新提交",
+    latest: "最新更新",
     taskCategories: "任务类别",
     category: "个类别",
     categories: "个类别",
     noTasks: "任务记录尚未标准化",
-    originalPayload: "原始载荷",
-    intakeEvent: "次接收事件",
-    intakeEvents: "次接收事件",
-    noSource: "尚未关联来源快照",
-    legacySource: "这个批次早于来源级接收流程，原始消息、链接和文件尚未挂接。",
+    originalSources: "原始来源",
+    sourceNote: "保留实时链接，并在 CASE 已抓取时同时保留当时的副本。",
+    sourceRecord: "条来源记录",
+    sourceRecords: "条来源记录",
+    noSource: "尚未关联原始来源",
+    legacySource: "这条更新记录早于来源级接收流程，原始消息、链接和文件尚未挂接。",
     noLinks: "没有记录关联文件或链接。",
     senderUnknown: "未记录发送人",
-    openOriginal: "打开原消息",
-    messageSnapshot: "消息快照",
-    viewSource: "查看来源",
-    downloadSnapshot: "下载快照",
+    openOriginal: "打开原始记录",
+    messageSnapshot: "下载消息快照",
+    viewSource: "打开实时来源",
+    downloadSnapshot: "下载留存副本",
     mutable: "可变来源",
     captured: "抓取于",
     delta: { retained: "保留", added: "新增", removed: "移除", changedFiles: "文件变化" },
-    searchEmpty: { eyebrow: "搜索", title: "没有匹配的样本", body: "请尝试供应商、批次、类别或任务名称。" },
-    loading: { eyebrow: "CASE 目录", title: "正在载入样本库…", body: "正在从 CASE 获取最新的供应商、批次、任务与核验记录。" },
+    searchEmpty: { eyebrow: "搜索", title: "没有匹配的样本", body: "请尝试供应商、更新记录、类别或任务名称。" },
+    loading: { eyebrow: "CASE 目录", title: "正在载入样本库…", body: "正在从 CASE 获取最新的供应商、更新记录、任务与核验记录。" },
     unavailable: { eyebrow: "CASE 目录", title: "样本库暂不可用", fallback: "暂时无法载入共享目录。", tail: "小环境不会展示缓存的供应商数据，因为它不是事实来源。" },
     checks: {
       eyebrow: "已记录证据",
       title: "确定性核验",
       note: "这里只显示 CASE 已记录的结果，不代表质量分数或接收决定。",
-      vendor: "供应商",
-      batch: "批次",
-      tasks: "任务",
-      status: "状态",
-      results: "核验结果",
       none: "没有已记录的核验结果",
       pass: "通过",
       fail: "失败",
@@ -117,54 +112,49 @@ const copy = {
   },
   en: {
     vendors: "Vendors",
-    search: "Search vendors, batches, categories, and tasks",
+    search: "Search vendors, updates, categories, and tasks",
     language: "中",
     languageLabel: "切换至中文",
     accountLabel: "Researcher account",
     signOut: "Sign out",
     eyebrow: "ENVIRONMENT & TASK SAMPLES",
     title: "RL Environment Catalog",
-    stats: { vendors: "vendors", batches: "batches", tasks: "task versions" },
+    stats: { vendors: "vendors", updates: "updates", tasks: "task versions" },
     vendor: "Vendor",
-    batch: "batch",
-    batches: "batches",
+    update: "update",
+    updates: "updates",
     records: "records",
-    submissionBatch: "submission batches",
     taskRecords: "task records",
-    history: "Submission history",
-    historyNote: "Every received batch remains separate. Deltas describe package changes, never research quality.",
+    history: "Update history",
+    historyNote: "Each delivery—or change CASE observes in a continuously maintained source—becomes a dated update. Deltas describe content changes, never research quality.",
     newest: "Newest first",
-    latest: "Latest submission",
+    latest: "Latest update",
     taskCategories: "Task categories",
     category: "category",
     categories: "categories",
     noTasks: "Task records not yet normalized",
-    originalPayload: "Original payload",
-    intakeEvent: "intake event",
-    intakeEvents: "intake events",
-    noSource: "No source snapshot linked yet",
-    legacySource: "This batch predates source-level intake. Its original message, links, and files have not yet been attached.",
+    originalSources: "Original sources",
+    sourceNote: "Live links are preserved alongside CASE's captured copies when available.",
+    sourceRecord: "source record",
+    sourceRecords: "source records",
+    noSource: "No original source linked yet",
+    legacySource: "This update predates source-level intake. Its original message, links, and files have not yet been attached.",
     noLinks: "No linked files or URLs recorded.",
     senderUnknown: "Sender not recorded",
-    openOriginal: "Open original",
-    messageSnapshot: "Message snapshot",
-    viewSource: "View source",
-    downloadSnapshot: "Download snapshot",
+    openOriginal: "Open original record",
+    messageSnapshot: "Download message snapshot",
+    viewSource: "Open live source",
+    downloadSnapshot: "Download captured copy",
     mutable: "mutable source",
     captured: "captured",
     delta: { retained: "retained", added: "added", removed: "removed", changedFiles: "files differ" },
-    searchEmpty: { eyebrow: "SEARCH", title: "No matching samples", body: "Try a vendor, batch, category, or task name." },
-    loading: { eyebrow: "CASE CATALOG", title: "Loading registry…", body: "Fetching the current vendor, batch, task, and check records from CASE." },
+    searchEmpty: { eyebrow: "SEARCH", title: "No matching samples", body: "Try a vendor, update, category, or task name." },
+    loading: { eyebrow: "CASE CATALOG", title: "Loading registry…", body: "Fetching the current vendor, update, task, and check records from CASE." },
     unavailable: { eyebrow: "CASE CATALOG", title: "Registry unavailable", fallback: "The shared catalog could not be loaded.", tail: "No cached vendor data is shown because 小环境 is not a source of truth." },
     checks: {
       eyebrow: "RECORDED EVIDENCE",
       title: "Deterministic checks",
       note: "Only results recorded by CASE are shown. They are not quality scores or acceptance decisions.",
-      vendor: "Vendor",
-      batch: "Batch",
-      tasks: "Tasks",
-      status: "Status",
-      results: "Check results",
       none: "No check results recorded",
       pass: "pass",
       fail: "fail",
@@ -317,7 +307,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
         <h1>{t.title}</h1>
         <div className="registry-stats">
           <span><strong>{catalog?.totals.vendors ?? "—"}</strong>{t.stats.vendors}</span>
-          <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.batches}</span>
+          <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.updates}</span>
           <span><strong>{catalog?.totals.taskVersions ?? "—"}</strong>{t.stats.tasks}</span>
         </div>
       </section>
@@ -350,14 +340,14 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, expanded
       <div className="vendor-list">
         {matchingVendors.map((vendor) => {
           const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
-          return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span className="vendor-mark">{vendor.short}</span><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.batch : t.batches} · {count} {t.records}</small></span></button>;
+          return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.update : t.updates} · {count} {t.records}</small></span></button>;
         })}
         {matchingVendors.length === 0 && <div className="sidebar-empty">{t.searchEmpty.title}</div>}
       </div>
     </aside>
 
     <section className="vendor-main" aria-labelledby="vendor-name">
-      <header className="vendor-profile"><span className="vendor-mark large">{selectedVendor.short}</span><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {t.submissionBatch}</span><span>{records} {t.taskRecords}</span><span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span></div></div></header>
+      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.update : t.updates}</span><span>{records} {t.taskRecords}</span><span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span></div></div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="batch-list">{selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} expandedTasks={expandedTasks} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} onToggleTask={onToggleTask} t={t} language={language} />)}</div>
@@ -387,9 +377,10 @@ function BatchCard({ batch, expandedTasks, isExpanded, isLatest, onToggle, onTog
 }
 
 function SubmissionSources({ sourceEvents, t, language }: { sourceEvents: CatalogSourceEvent[]; t: UiCopy; language: Language }) {
-  if (!sourceEvents.length) return <><div className="batch-section-head"><h4>{t.originalPayload}</h4><span>{t.noSource}</span></div><div className="source-empty">{t.legacySource}</div></>;
+  if (!sourceEvents.length) return <><div className="batch-section-head"><h4>{t.originalSources}</h4><span>{t.noSource}</span></div><div className="source-empty">{t.legacySource}</div></>;
   return <>
-    <div className="batch-section-head"><h4>{t.originalPayload}</h4><span>{sourceEvents.length} {sourceEvents.length === 1 ? t.intakeEvent : t.intakeEvents}</span></div>
+    <div className="batch-section-head"><h4>{t.originalSources}</h4><span>{sourceEvents.length} {sourceEvents.length === 1 ? t.sourceRecord : t.sourceRecords}</span></div>
+    <p className="source-note">{t.sourceNote}</p>
     <div className="source-events">{sourceEvents.map((event) => <SourceEvent key={event.id} event={event} t={t} language={language} />)}</div>
   </>;
 }
@@ -399,7 +390,7 @@ function SourceEvent({ event, t, language }: { event: CatalogSourceEvent; t: UiC
   return <section className="source-event">
     <header className="source-event-head">
       <span className="source-channel">{event.role ? t.role[event.role] : event.channel.replace("_", " ")}</span>
-      <span><strong>{event.sender ?? t.senderUnknown}</strong><small>{formatTimestamp(event.receivedAt, language)}</small></span>
+      <span><strong>{event.sender ?? t.senderUnknown}</strong><small>{formatTimestamp(event.receivedAt, language)}</small>{originalUrl && <code className="source-locator" title={originalUrl}>{formatSourceLocator(originalUrl)}</code>}</span>
       <span className="source-actions">{originalUrl && <a href={originalUrl} rel="noreferrer" target="_blank">{t.openOriginal}</a>}{event.rawArtifactId && <a href={`/api/artifacts/${encodeURIComponent(event.rawArtifactId)}/download`}>{t.messageSnapshot}</a>}</span>
     </header>
     <div className="source-items">{event.items.length ? event.items.map((item) => <SourceItem key={item.id} item={item} t={t} language={language} />) : <div className="source-empty">{t.noLinks}</div>}</div>
@@ -411,7 +402,7 @@ function SourceItem({ item, t, language }: { item: CatalogSourceItem; t: UiCopy;
   const captured = item.capturedAt ? ` · ${t.captured} ${formatTimestamp(item.capturedAt, language)}` : "";
   return <div className="source-item">
     <span className="source-kind">{item.kind.replace("_", " ")}</span>
-    <span className="source-name"><strong>{item.displayName}</strong><small>{t.fetch[item.fetchStatus as SourceFetchStatus]} · {t.parse[item.parseStatus as SourceParseStatus]}{item.mutable ? ` · ${t.mutable}` : ""}{captured}</small></span>
+    <span className="source-name"><strong>{item.displayName}</strong><small>{t.fetch[item.fetchStatus as SourceFetchStatus]} · {t.parse[item.parseStatus as SourceParseStatus]}{item.mutable ? ` · ${t.mutable}` : ""}{captured}</small>{originalUrl && <code className="source-locator" title={originalUrl}>{formatSourceLocator(originalUrl)}</code>}</span>
     <span className="source-actions">{originalUrl && <a href={originalUrl} rel="noreferrer" target="_blank">{t.viewSource}</a>}{item.artifactId && <a href={`/api/artifacts/${encodeURIComponent(item.artifactId)}/download`}>{t.downloadSnapshot}</a>}</span>
   </div>;
 }
@@ -448,4 +439,10 @@ function safeExternalUrl(value: string | null) {
 function formatTimestamp(value: string, language: Language) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.valueOf()) ? value : new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+
+function formatSourceLocator(value: string) {
+  const url = new URL(value);
+  const path = `${url.pathname}${url.search}`;
+  return `${url.hostname}${path === "/" ? "" : path}`;
 }

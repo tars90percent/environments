@@ -48,6 +48,12 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
   assert.match(source, /Researchers make those judgments/);
   assert.match(source, /强化学习环境目录/);
   assert.match(source, /RL Environment Catalog/);
+  assert.match(source, /Update history/);
+  assert.match(source, /Original sources/);
+  assert.match(source, /Open live source/);
+  assert.match(source, /Download captured copy/);
+  assert.doesNotMatch(source, /className="vendor-mark/);
+  assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次/);
   assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);
   assert.match(source, /className="task-details"/);
   assert.match(source, /Switch to English/);
