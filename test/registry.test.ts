@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseSourceEnvelope, parseSubmissionManifest, ValidationError } from "../src/registry/validation.js";
+import { parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -47,11 +47,29 @@ test("validates a complete immutable submission manifest", () => {
 
 test("protects catalog reads separately from CASE writes", () => {
   const catalogToken = "catalog-token-with-at-least-32-characters";
+  const reviewToken = "review-token-with-at-least-32-characters!";
   const adminToken = "admin-token-with-at-least-32-characters!!";
-  assert.equal(registryRole(undefined, catalogToken, adminToken), null);
-  assert.equal(registryRole("Bearer wrong", catalogToken, adminToken), null);
-  assert.equal(registryRole(`Bearer ${catalogToken}`, catalogToken, adminToken), "catalog");
-  assert.equal(registryRole(`Bearer ${adminToken}`, catalogToken, adminToken), "admin");
+  assert.equal(registryRole(undefined, catalogToken, reviewToken, adminToken), null);
+  assert.equal(registryRole("Bearer wrong", catalogToken, reviewToken, adminToken), null);
+  assert.equal(registryRole(`Bearer ${catalogToken}`, catalogToken, reviewToken, adminToken), "catalog");
+  assert.equal(registryRole(`Bearer ${reviewToken}`, catalogToken, reviewToken, adminToken), "review");
+  assert.equal(registryRole(`Bearer ${adminToken}`, catalogToken, reviewToken, adminToken), "admin");
+});
+
+test("validates append-only submission reviews and category scope", () => {
+  const review = {
+    id: "review-one",
+    batchId: manifest.batch.id,
+    signal: "not_interested",
+    scope: "categories",
+    categoryIds: [manifest.categories[0]?.id],
+    reviewer: { openId: "ou_researcher", tenantKey: "tenant_one", name: "Researcher One" },
+    comment: "The systems tasks are too shallow for the target use case.",
+  };
+  assert.equal(parseSubmissionReview(review).signal, "not_interested");
+  assert.throws(() => parseSubmissionReview({ ...review, categoryIds: [] }), ValidationError);
+  assert.throws(() => parseSubmissionReview({ ...review, signal: "needs_revision", comment: "" }), ValidationError);
+  assert.throws(() => parseSubmissionReview({ ...review, scope: "submission", categoryIds: [manifest.categories[0]?.id] }), ValidationError);
 });
 
 test("validates recursive source envelopes and their derivation links", () => {

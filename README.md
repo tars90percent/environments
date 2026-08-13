@@ -46,7 +46,8 @@ Then send the bot a direct message in Feishu. Stop the service with Ctrl-C.
 When the registry variables in `.env.example` are configured, the same process
 also serves the CASE registry API on `PORT`. It runs built-in migrations at
 startup. CASE and trusted operators use `CASE_REGISTRY_ADMIN_TOKEN`; read-only
-catalog clients use the separate `CASE_REGISTRY_CATALOG_TOKEN`.
+catalog clients use `CASE_REGISTRY_CATALOG_TOKEN`; authenticated human surfaces
+write append-only researcher reviews with the narrower `CASE_REGISTRY_REVIEW_TOKEN`.
 
 The installed `case-registry` command gives CASE and Codex the same operations:
 
@@ -56,6 +57,8 @@ case-registry catalog
 case-registry import /absolute/path/submission.json
 case-registry lease-work case-checker
 case-registry record-check /absolute/path/check-result.json
+case-registry submission-reviews <submission-id>
+case-registry record-submission-review /absolute/path/review.json
 case-registry set-status /absolute/path/status.json
 ```
 

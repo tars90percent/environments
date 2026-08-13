@@ -50,6 +50,15 @@ switch (command) {
   case "record-follow-up":
     output(await request("POST", "/v1/follow-ups", await jsonFile(argument)));
     break;
+  case "submission-reviews":
+    output(await request("GET", `/v1/submissions/${encode(argument, "submission id")}/reviews`));
+    break;
+  case "record-submission-review": {
+    const review = await jsonFile(argument) as { batchId?: unknown };
+    if (typeof review.batchId !== "string" || !review.batchId) fail("review batchId is required");
+    output(await request("POST", `/v1/submissions/${encodeURIComponent(review.batchId)}/reviews`, review));
+    break;
+  }
   case "register-artifact":
     output(await request("POST", "/v1/artifacts", await jsonFile(argument)));
     break;
@@ -63,7 +72,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|operations|import|import-source|store-file|record-check|record-follow-up|register-artifact|set-status|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {

@@ -13,6 +13,8 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionReview,
+  SubmissionReviewInput,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -24,6 +26,8 @@ export interface RegistryRepository {
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   recordCheckResult(input: CheckResultInput): Promise<void>;
   recordFollowUp(input: FollowUpInput): Promise<void>;
+  recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview>;
+  listSubmissionReviews(batchId: string): Promise<SubmissionReview[]>;
   registerArtifact(input: ArtifactInput): Promise<void>;
   updateStatus(input: StatusUpdateInput): Promise<void>;
   leaseWorkItem(workerId: string, leaseSeconds: number): Promise<WorkItem | null>;

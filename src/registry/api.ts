@@ -11,6 +11,7 @@ import {
   parseSourceEnvelope,
   parseStatusUpdate,
   parseSubmissionManifest,
+  parseSubmissionReview,
   parseWorkCompletion,
   ValidationError,
 } from "./validation.js";
@@ -19,6 +20,7 @@ type RegistryServerOptions = {
   repository: RegistryRepository;
   artifactStore?: ArtifactStore;
   catalogToken: string;
+  reviewToken: string;
   adminToken: string;
   port: number;
   host?: string;
@@ -59,6 +61,21 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
 
   const role = authenticate(request, options);
   if (!role) return sendJson(response, 401, { error: "unauthorized" });
+
+  const submissionReviewsMatch = url.pathname.match(/^\/v1\/submissions\/([^/]+)\/reviews$/);
+  if (submissionReviewsMatch?.[1]) {
+    if (role === "catalog") return sendJson(response, 403, { error: "review_token_required" });
+    const batchId = decodeURIComponent(submissionReviewsMatch[1]);
+    if (method === "GET") return sendJson(response, 200, { reviews: await options.repository.listSubmissionReviews(batchId) });
+    if (method === "POST") {
+      const review = parseSubmissionReview(await readJson(request));
+      if (review.batchId !== batchId) throw new RequestError(400, "batch_id_mismatch");
+      return sendJson(response, 201, { review: await options.repository.recordSubmissionReview(review) });
+    }
+    return sendJson(response, 405, { error: "method_not_allowed" });
+  }
+
+  if (role === "review") return sendJson(response, 403, { error: "review_scope_only" });
 
   if (method === "GET" && url.pathname === "/v1/catalog") {
     const scope = role === "admin" ? requestedScope(url) : "portal";
@@ -162,14 +179,15 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   return sendJson(response, 404, { error: "not_found" });
 }
 
-function authenticate(request: IncomingMessage, options: RegistryServerOptions): "catalog" | "admin" | null {
-  return registryRole(request.headers.authorization, options.catalogToken, options.adminToken);
+function authenticate(request: IncomingMessage, options: RegistryServerOptions): "catalog" | "review" | "admin" | null {
+  return registryRole(request.headers.authorization, options.catalogToken, options.reviewToken, options.adminToken);
 }
 
-export function registryRole(header: string | undefined, catalogToken: string, adminToken: string): "catalog" | "admin" | null {
+export function registryRole(header: string | undefined, catalogToken: string, reviewToken: string, adminToken: string): "catalog" | "review" | "admin" | null {
   if (!header?.startsWith("Bearer ")) return null;
   const token = header.slice("Bearer ".length);
   if (safeEqual(token, adminToken)) return "admin";
+  if (safeEqual(token, reviewToken)) return "review";
   if (safeEqual(token, catalogToken)) return "catalog";
   return null;
 }

@@ -16,6 +16,7 @@ case-registry vendor <vendor-id>
 case-registry batch <batch-id>
 case-registry task <task-version-id>
 case-registry source-event <source-event-id>
+case-registry submission-reviews <submission-id>
 case-registry catalog
 ```
 
@@ -31,6 +32,7 @@ case-registry import-source /absolute/path/source-envelope.json
 case-registry store-file <source_payload|source_snapshot|submission_manifest|task_package|trajectory|check_evidence|extracted_text|other> /absolute/path/file
 case-registry record-check /absolute/path/check-result.json
 case-registry record-follow-up /absolute/path/follow-up.json
+case-registry record-submission-review /absolute/path/review.json
 case-registry register-artifact /absolute/path/artifact.json
 case-registry set-status /absolute/path/status.json
 case-registry lease-work <worker-id>
@@ -38,6 +40,8 @@ case-registry complete-work /absolute/path/completion.json
 ```
 
 Never replace an existing submission batch. A corrected vendor delivery is a new batch linked through `revisesBatchId`. Keep deterministic check evidence separate from heuristic review and human research judgment. Do not expose service tokens or direct database credentials in replies.
+
+Human reviews are append-only records attached to a submission. Use `scope: "submission"` with no category ids for the whole submission, or `scope: "categories"` with one or more category ids for a scoped judgment. Preserve each researcher's identity and each later review separately; do not overwrite earlier judgments.
 
 ## Heterogeneous intake
 

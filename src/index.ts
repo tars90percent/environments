@@ -29,7 +29,7 @@ await agent.initialize();
 
 let registryServer: RegistryServer | undefined;
 let registry: PostgresRegistry | undefined;
-if (config.registryDatabaseUrl && config.registryCatalogToken && config.registryAdminToken) {
+if (config.registryDatabaseUrl && config.registryCatalogToken && config.registryReviewToken && config.registryAdminToken) {
   registry = new PostgresRegistry(config.registryDatabaseUrl);
   await registry.initialize();
   const artifactStore = config.registryS3 ? new ArtifactStore(config.registryS3) : undefined;
@@ -37,6 +37,7 @@ if (config.registryDatabaseUrl && config.registryCatalogToken && config.registry
     repository: registry,
     artifactStore,
     catalogToken: config.registryCatalogToken,
+    reviewToken: config.registryReviewToken,
     adminToken: config.registryAdminToken,
     port: config.registryPort,
   });

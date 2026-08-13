@@ -5,6 +5,7 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionReviewInput,
   WorkCompletionInput,
 } from "./types.js";
 
@@ -270,6 +271,34 @@ export function parseFollowUp(value: unknown): FollowUpInput {
   } as FollowUpInput;
 }
 
+export function parseSubmissionReview(value: unknown): SubmissionReviewInput {
+  const input = object(value, "submission review");
+  const reviewer = object(input.reviewer, "reviewer");
+  const signal = enumValue(input.signal, new Set<SubmissionReviewInput["signal"]>(["interested", "not_interested", "needs_revision", "comment"]), "signal");
+  const scope = enumValue(input.scope, new Set<SubmissionReviewInput["scope"]>(["submission", "categories"]), "scope");
+  const categoryIds = stringArray(input.categoryIds, "categoryIds").map((value, index) => identifier(value, `categoryIds[${index}]`));
+  if (new Set(categoryIds).size !== categoryIds.length) throw new ValidationError("categoryIds must be unique");
+  if (scope === "submission" && categoryIds.length) throw new ValidationError("submission-scoped reviews cannot select categories");
+  if (scope === "categories" && !categoryIds.length) throw new ValidationError("category-scoped reviews must select at least one category");
+  const comment = input.comment === undefined || input.comment === null ? undefined : boundedString(input.comment, "comment", 5_000);
+  if (signal !== "interested" && !comment) throw new ValidationError(`${signal} reviews require a comment`);
+  return {
+    id: identifier(input.id, "id"),
+    batchId: identifier(input.batchId, "batchId"),
+    signal,
+    scope,
+    categoryIds,
+    reviewer: {
+      openId: identifier(reviewer.openId, "reviewer.openId"),
+      unionId: reviewer.unionId === undefined || reviewer.unionId === null ? undefined : identifier(reviewer.unionId, "reviewer.unionId"),
+      tenantKey: identifier(reviewer.tenantKey, "reviewer.tenantKey"),
+      name: boundedString(reviewer.name, "reviewer.name", 200),
+    },
+    comment,
+    metadata: optionalObject(input.metadata, "metadata"),
+  };
+}
+
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -294,6 +323,12 @@ function array(value: unknown, name: string): unknown[] {
 function string(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) throw new ValidationError(`${name} must be a non-empty string`);
   return value.trim();
+}
+
+function boundedString(value: unknown, name: string, maximum: number): string {
+  const parsed = string(value, name);
+  if (parsed.length > maximum) throw new ValidationError(`${name} must contain at most ${maximum} characters`);
+  return parsed;
 }
 
 function optionalString(value: unknown, name: string): string | undefined {

@@ -249,6 +249,30 @@ export type FollowUpInput = {
   externalRef?: string;
 };
 
+export type SubmissionReviewSignal = "interested" | "not_interested" | "needs_revision" | "comment";
+export type SubmissionReviewScope = "submission" | "categories";
+
+export type SubmissionReviewInput = {
+  id: string;
+  batchId: string;
+  signal: SubmissionReviewSignal;
+  scope: SubmissionReviewScope;
+  categoryIds: string[];
+  reviewer: {
+    openId: string;
+    unionId?: string;
+    tenantKey: string;
+    name: string;
+  };
+  comment?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type SubmissionReview = SubmissionReviewInput & {
+  comment: string;
+  createdAt: string;
+};
+
 export type CatalogTask = {
   id: string;
   stableKey: string;

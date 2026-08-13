@@ -305,6 +305,32 @@ const migrations: Migration[] = [
         ON registry_artifacts(sha256);
     `,
   },
+  {
+    id: "004_submission_reviews",
+    sql: `
+      CREATE TABLE IF NOT EXISTS registry_submission_reviews (
+        id text PRIMARY KEY,
+        batch_id text NOT NULL REFERENCES registry_submission_batches(id) ON DELETE CASCADE,
+        signal text NOT NULL,
+        scope text NOT NULL,
+        category_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+        reviewer_open_id text NOT NULL,
+        reviewer_union_id text,
+        reviewer_tenant_key text NOT NULL,
+        reviewer_name text NOT NULL,
+        comment text NOT NULL DEFAULT '',
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (signal IN ('interested', 'not_interested', 'needs_revision', 'comment')),
+        CHECK (scope IN ('submission', 'categories'))
+      );
+
+      CREATE INDEX IF NOT EXISTS registry_submission_reviews_batch_idx
+        ON registry_submission_reviews(batch_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS registry_submission_reviews_reviewer_idx
+        ON registry_submission_reviews(reviewer_open_id, created_at DESC);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

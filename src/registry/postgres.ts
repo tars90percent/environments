@@ -20,6 +20,8 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionReview,
+  SubmissionReviewInput,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -94,6 +96,20 @@ type SourceRelationRow = {
   to_item_id: string;
   relation: CatalogSourceRelation["relation"];
   position: number | null;
+};
+type SubmissionReviewRow = {
+  id: string;
+  batch_id: string;
+  signal: SubmissionReview["signal"];
+  scope: SubmissionReview["scope"];
+  category_ids: string[];
+  reviewer_open_id: string;
+  reviewer_union_id: string | null;
+  reviewer_tenant_key: string;
+  reviewer_name: string;
+  comment: string;
+  metadata: Record<string, unknown>;
+  created_at: string | Date;
 };
 
 export class PostgresRegistry implements RegistryRepository {
@@ -393,6 +409,71 @@ export class PostgresRegistry implements RegistryRepository {
       [input.id, input.batchId, input.channel, input.recipient, input.status, input.reason,
         json(input.evidenceCheckRunIds), input.sentAt ?? null, input.externalRef ?? null],
     );
+  }
+
+  async recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const batch = await client.query<{ id: string }>(
+        "SELECT id FROM registry_submission_batches WHERE id = $1",
+        [input.batchId],
+      );
+      if (!batch.rowCount) throw new RegistryNotFoundError(`submission_batch ${input.batchId} does not exist`);
+
+      if (input.categoryIds.length) {
+        const categories = await client.query<{ category_id: string }>(
+          `SELECT category_id FROM registry_batch_categories
+           WHERE batch_id = $1 AND category_id = ANY($2::text[])`,
+          [input.batchId, input.categoryIds],
+        );
+        if (categories.rowCount !== input.categoryIds.length) {
+          throw new RegistryNotFoundError(`One or more review categories do not belong to submission ${input.batchId}`);
+        }
+      }
+
+      const inserted = await client.query<SubmissionReviewRow>(
+        `INSERT INTO registry_submission_reviews(
+           id, batch_id, signal, scope, category_ids, reviewer_open_id, reviewer_union_id,
+           reviewer_tenant_key, reviewer_name, comment, metadata
+         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11::jsonb)
+         RETURNING id, batch_id, signal, scope, category_ids, reviewer_open_id, reviewer_union_id,
+                   reviewer_tenant_key, reviewer_name, comment, metadata, created_at`,
+        [input.id, input.batchId, input.signal, input.scope, json(input.categoryIds), input.reviewer.openId,
+          input.reviewer.unionId ?? null, input.reviewer.tenantKey, input.reviewer.name, input.comment ?? "",
+          json(input.metadata ?? {})],
+      );
+      await this.insertStatusEvent(client, "submission_batch", input.batchId, "review.recorded", input.reviewer.openId, {
+        reviewId: input.id,
+        signal: input.signal,
+        scope: input.scope,
+        categoryIds: input.categoryIds,
+      });
+      await client.query("COMMIT");
+      return submissionReviewFromRow(inserted.rows[0]!);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listSubmissionReviews(batchId: string): Promise<SubmissionReview[]> {
+    const batch = await this.pool.query<{ id: string }>(
+      "SELECT id FROM registry_submission_batches WHERE id = $1",
+      [batchId],
+    );
+    if (!batch.rowCount) throw new RegistryNotFoundError(`submission_batch ${batchId} does not exist`);
+    const result = await this.pool.query<SubmissionReviewRow>(
+      `SELECT id, batch_id, signal, scope, category_ids, reviewer_open_id, reviewer_union_id,
+              reviewer_tenant_key, reviewer_name, comment, metadata, created_at
+       FROM registry_submission_reviews
+       WHERE batch_id = $1
+       ORDER BY created_at DESC, id DESC`,
+      [batchId],
+    );
+    return result.rows.map(submissionReviewFromRow);
   }
 
   async registerArtifact(input: ArtifactInput): Promise<void> {
@@ -902,6 +983,25 @@ function sourceRelationFromRow(row: SourceRelationRow): CatalogSourceRelation {
     toItemId: row.to_item_id,
     relation: row.relation,
     position: row.position,
+  };
+}
+
+function submissionReviewFromRow(row: SubmissionReviewRow): SubmissionReview {
+  return {
+    id: row.id,
+    batchId: row.batch_id,
+    signal: row.signal,
+    scope: row.scope,
+    categoryIds: row.category_ids,
+    reviewer: {
+      openId: row.reviewer_open_id,
+      unionId: row.reviewer_union_id ?? undefined,
+      tenantKey: row.reviewer_tenant_key,
+      name: row.reviewer_name,
+    },
+    comment: row.comment,
+    metadata: row.metadata,
+    createdAt: new Date(row.created_at).toISOString(),
   };
 }
 
