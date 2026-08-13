@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import type { CatalogBatch, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, WorkflowStatus } from "./catalog";
 
 type Tab = "vendors" | "checks" | "criteria";
 type Language = "zh" | "en";
+
+export type PortalUser = {
+  name: string;
+  avatarUrl?: string;
+};
 
 const copy = {
   zh: {
@@ -12,6 +18,8 @@ const copy = {
     search: "搜索供应商、批次、类别和任务",
     language: "EN",
     languageLabel: "Switch to English",
+    accountLabel: "研究员账户",
+    signOut: "退出登录",
     eyebrow: "强化学习环境样本",
     title: "供应商样本库",
     stats: { vendors: "家供应商", batches: "个批次", tasks: "个任务版本" },
@@ -113,6 +121,8 @@ const copy = {
     search: "Search vendors, batches, categories, and tasks",
     language: "中",
     languageLabel: "切换至中文",
+    accountLabel: "Researcher account",
+    signOut: "Sign out",
     eyebrow: "RL ENVIRONMENT SAMPLES",
     title: "Vendor sample registry",
     stats: { vendors: "vendors", batches: "batches", tasks: "task versions" },
@@ -213,7 +223,7 @@ const copy = {
 
 type UiCopy = (typeof copy)[Language];
 
-export default function PortalClient() {
+export default function PortalClient({ user }: { user: PortalUser }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
   const [catalogState, setCatalogState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [unavailableReason, setUnavailableReason] = useState<string>();
@@ -288,7 +298,12 @@ export default function PortalClient() {
       <div className="header-tools">
         <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label={t.search} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} value={query} /></label>
         <button aria-label={t.languageLabel} className="language-switch" onClick={toggleLanguage} type="button">{t.language}</button>
-        <span className="avatar" aria-label={language === "zh" ? "研究员账户" : "Researcher profile"}>R</span>
+        <details className="account-menu">
+          <summary aria-label={t.accountLabel} className="avatar">
+            {user.avatarUrl ? <Image alt="" height={38} src={user.avatarUrl} unoptimized width={38} /> : user.name.slice(0, 1).toUpperCase()}
+          </summary>
+          <div className="account-popover"><strong>{user.name}</strong><a href="/auth/logout">{t.signOut}</a></div>
+        </details>
       </div>
     </header>
 

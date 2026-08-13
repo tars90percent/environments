@@ -1,5 +1,16 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after, before } from "node:test";
+
+const authEnv = {
+  FEISHU_APP_ID: "cli_test",
+  FEISHU_APP_SECRET: "test-secret",
+  FEISHU_ALLOWED_TENANT_KEY: "tenant_test",
+  PORTAL_BASE_URL: "https://portal.example.com",
+  PORTAL_SESSION_SECRET: "test-session-secret-that-is-long-enough",
+};
+
+before(() => Object.assign(process.env, authEnv));
+after(() => Object.keys(authEnv).forEach((key) => delete process.env[key]));
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -24,19 +35,8 @@ async function render() {
 
 test("server-renders the vendor submission registry", async () => {
   const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, /<title>小环境 — RL Environment Registry<\/title>/i);
-  assert.match(html, /小环境/);
-  assert.doesNotMatch(html, /<span>小<\/span>/);
-  assert.match(html, /供应商样本库/);
-  assert.match(html, /正在载入样本库/);
-  assert.doesNotMatch(html, /Browse what CASE received/);
-  assert.doesNotMatch(html, /Deeptune|Prime Intellect|Long-horizon revision B/);
-  assert.doesNotMatch(html, /Submission timeline|Observed package inventory|filesystem snapshot/);
-  assert.doesNotMatch(html, /RECOMMENDATION|EXPECTED USABLE YIELD|high-signal|getting better|getting worse/i);
+  assert.equal(response.status, 307);
+  assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/auth/login");
 });
 
 test("keeps the portal read-only and free of vendor snapshot data", async () => {
@@ -50,8 +50,10 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
   assert.match(source, /Switch to English/);
   assert.doesNotMatch(source, /className="criteria-aside"/);
   assert.match(source, /fetch\("\/api\/catalog"/);
+  assert.match(source, /\/auth\/logout/);
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
   assert.match(worker, /CASE_REGISTRY_CATALOG_TOKEN/);
-  assert.doesNotMatch(worker, /method:\s*["']POST|method:\s*["']PUT|method:\s*["']PATCH|method:\s*["']DELETE/i);
+  assert.match(worker, /hasPortalSession/);
+  assert.doesNotMatch(worker, /method:\s*["']PUT|method:\s*["']PATCH|method:\s*["']DELETE/i);
   assert.doesNotMatch(source, /upstream|recommendation|usable yield/i);
 });

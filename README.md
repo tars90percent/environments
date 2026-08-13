@@ -1,16 +1,20 @@
 # env-portal-proto — 小环境 vendor sample registry
 
-A read-only researcher catalog for vendor RL-environment submissions. 小环境
-loads its vendor, dated batch, task category, task-version, status, and check
-records from CASE's canonical registry.
+A read-only researcher catalog for vendor RL-environment submissions, hosted on
+Railway and available to authenticated members of TARS's Feishu organization.
+小环境 loads its vendor, dated batch, task category, task-version, status, and
+check records from CASE's canonical registry.
 
 The interface intentionally does not rank task quality, estimate learning signal, or recommend research decisions. It records package contents and submission-to-submission changes, then keeps the current deterministic intake criteria available as a separate reference.
 
 ## Safety boundary
 
-- Feishu is disconnected: there are no Feishu credentials, writes, webhooks, or connector code.
+- Feishu OAuth is used only for organization membership and display identity.
+- The Feishu app secret and CASE catalog credential stay in Railway runtime secrets.
+- The application compares the verified `tenant_key` with one configured organization; it does not infer membership from email domains.
 - No vendor snapshot data or source payloads are copied into the frontend.
-- The Sites worker uses a read-only catalog credential and proxies only `GET /v1/catalog`.
+- The portal server uses a read-only catalog credential and proxies only CASE catalog reads.
+- Catalog and artifact endpoints require the same signed, HTTP-only researcher session as the page.
 - No vendor messages are sent and no procurement records are created or updated.
 - If CASE is unavailable, the portal shows no cached substitute and says so explicitly.
 
@@ -43,6 +47,6 @@ and rejects embedded vendor snapshots or mutating network methods.
 
 ## Deliberate omissions
 
-Authentication, persistence, file ingestion, agent execution, event delivery,
-and Feishu synchronization remain CASE responsibilities. The portal deliberately
-cannot edit the registry or turn recorded checks into a quality judgment.
+Persistence, file ingestion, agent execution, event delivery, and Feishu
+synchronization remain CASE responsibilities. The portal deliberately cannot
+edit the registry or turn recorded checks into a quality judgment.
