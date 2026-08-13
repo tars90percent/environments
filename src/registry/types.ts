@@ -162,6 +162,16 @@ export type SourceEnvelopeInput = {
   }>;
 };
 
+export type TaskSourceLinksInput = {
+  links: Array<{
+    taskVersionId: string;
+    sourceItemId: string;
+    role: "normalized_from" | "discovered_in" | "metadata" | "other";
+  }>;
+  reason: string;
+  actor: string;
+};
+
 export type SubmissionCategoryInput = {
   id: string;
   name: string;

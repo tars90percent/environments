@@ -69,6 +69,7 @@ case-registry record-check /absolute/path/check-result.json
 case-registry submission-reviews <submission-id>
 case-registry record-submission-review /absolute/path/review.json
 case-registry set-status /absolute/path/status.json
+case-registry link-task-sources /absolute/path/task-source-links.json
 case-intake capture-feishu-plan /absolute/path/plan.json
 case-mail-intake capture-mail-plan /absolute/path/plan.json
 ```

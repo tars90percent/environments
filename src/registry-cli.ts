@@ -68,6 +68,9 @@ switch (command) {
   case "set-status":
     output(await request("POST", "/v1/status", await jsonFile(argument)));
     break;
+  case "link-task-sources":
+    output(await request("POST", "/v1/task-source-links", await jsonFile(argument)));
+    break;
   case "lease-work":
     output(await request("POST", "/v1/work/lease", { workerId: required(argument, "worker id"), leaseSeconds: 900 }));
     break;
@@ -75,7 +78,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|record-vendor-event|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|record-vendor-event|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {

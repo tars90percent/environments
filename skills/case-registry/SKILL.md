@@ -36,6 +36,7 @@ case-registry record-follow-up /absolute/path/follow-up.json
 case-registry record-submission-review /absolute/path/review.json
 case-registry register-artifact /absolute/path/artifact.json
 case-registry set-status /absolute/path/status.json
+case-registry link-task-sources /absolute/path/task-source-links.json
 case-registry lease-work <worker-id>
 case-registry complete-work /absolute/path/completion.json
 case-intake capture-feishu-plan /absolute/path/plan.json
@@ -45,6 +46,8 @@ case-mail-intake capture-mail-plan /absolute/path/plan.json
 Never replace an existing submission batch. A corrected vendor delivery is a new batch linked through `revisesBatchId`. Keep deterministic check evidence separate from heuristic review and human research judgment. Do not expose service tokens or direct database credentials in replies.
 
 `vendors` includes contacted organizations that do not yet have a submission. `vendor <vendor-id>` returns the vendor directory record, any normalized submissions, and append-only vendor history. Record contact, sample, evaluation, commercial, delivery, acceptance, payment, and relationship events with `record-vendor-event`; link every event to the exact source events and submissions that support it. Do not represent a purchase or delivery by mutating a single current-stage label.
+
+Use `link-task-sources` when immutable sample artifacts were captured after task normalization. It only appends provenance links from existing task versions to existing source items; it does not rewrite either record.
 
 Use `case-intake capture-feishu-plan` for a reviewed list of Feishu file resources. It downloads each exact message/file-key pair through CASE's renewable user login, stores the bytes content-addressably, creates per-message source records, and groups them into visible `unchecked` submissions. The command never opens or executes downloaded vendor material. Re-running the same immutable plan is idempotent.
 

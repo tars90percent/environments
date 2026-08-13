@@ -22,6 +22,7 @@ import type {
   SubmissionManifest,
   SubmissionReview,
   SubmissionReviewInput,
+  TaskSourceLinksInput,
   VendorDirectoryEntry,
   VendorEvent,
   VendorEventInput,
@@ -686,6 +687,37 @@ export class PostgresRegistry implements RegistryRepository {
         reason: input.reason,
       });
       await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async linkTaskSources(input: TaskSourceLinksInput): Promise<{ linked: number }> {
+    const client = await this.pool.connect();
+    let linked = 0;
+    try {
+      await client.query("BEGIN");
+      for (const link of input.links) {
+        const result = await client.query(
+          `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
+           VALUES ($1, $2, $3)
+           ON CONFLICT(task_version_id, source_item_id, role) DO NOTHING
+           RETURNING task_version_id`,
+          [link.taskVersionId, link.sourceItemId, link.role],
+        );
+        if (!result.rowCount) continue;
+        linked += 1;
+        await this.insertStatusEvent(client, "task_version", link.taskVersionId, "source.linked", input.actor, {
+          sourceItemId: link.sourceItemId,
+          role: link.role,
+          reason: input.reason,
+        });
+      }
+      await client.query("COMMIT");
+      return { linked };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

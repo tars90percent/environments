@@ -15,6 +15,7 @@ import type {
   SubmissionManifest,
   SubmissionReview,
   SubmissionReviewInput,
+  TaskSourceLinksInput,
   VendorDirectoryEntry,
   VendorEvent,
   VendorEventInput,
@@ -36,6 +37,7 @@ export interface RegistryRepository {
   listSubmissionReviews(batchId: string): Promise<SubmissionReview[]>;
   registerArtifact(input: ArtifactInput): Promise<void>;
   updateStatus(input: StatusUpdateInput): Promise<void>;
+  linkTaskSources(input: TaskSourceLinksInput): Promise<{ linked: number }>;
   leaseWorkItem(workerId: string, leaseSeconds: number): Promise<WorkItem | null>;
   completeWorkItem(input: WorkCompletionInput): Promise<void>;
   catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot>;

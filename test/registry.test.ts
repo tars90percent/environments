@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -149,4 +149,15 @@ test("uses deterministic content-addressed object keys", () => {
   const sha256 = "a".repeat(64);
   assert.equal(contentAddressedStorageKey(sha256), `objects/sha256/aa/${sha256}`);
   assert.throws(() => contentAddressedStorageKey("not-a-sha"));
+});
+
+test("validates append-only task-to-source repairs", () => {
+  const input = {
+    links: [{ taskVersionId: "task-version-one", sourceItemId: "source-package-one", role: "normalized_from" }],
+    reason: "Attach an immutable package captured after the original normalization pass.",
+    actor: "case",
+  };
+  assert.equal(parseTaskSourceLinks(input).links.length, 1);
+  assert.throws(() => parseTaskSourceLinks({ ...input, links: [] }), ValidationError);
+  assert.throws(() => parseTaskSourceLinks({ ...input, links: [...input.links, ...input.links] }), ValidationError);
 });

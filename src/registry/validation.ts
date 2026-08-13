@@ -6,6 +6,7 @@ import type {
   StatusUpdateInput,
   SubmissionManifest,
   SubmissionReviewInput,
+  TaskSourceLinksInput,
   VendorEventInput,
   WorkCompletionInput,
 } from "./types.js";
@@ -243,6 +244,26 @@ export function parseStatusUpdate(value: unknown): StatusUpdateInput {
     reason: string(input.reason, "reason"),
     actor: string(input.actor, "actor"),
   } as StatusUpdateInput;
+}
+
+export function parseTaskSourceLinks(value: unknown): TaskSourceLinksInput {
+  const input = object(value, "task source links");
+  const links = array(input.links, "links").map((value, index) => {
+    const link = object(value, `links[${index}]`);
+    return {
+      taskVersionId: identifier(link.taskVersionId, `links[${index}].taskVersionId`),
+      sourceItemId: identifier(link.sourceItemId, `links[${index}].sourceItemId`),
+      role: enumValue(link.role, new Set(["normalized_from", "discovered_in", "metadata", "other"]), `links[${index}].role`),
+    };
+  });
+  if (!links.length) throw new ValidationError("links must contain at least one task-source link");
+  const unique = new Set(links.map((link) => `${link.taskVersionId}\u0000${link.sourceItemId}\u0000${link.role}`));
+  if (unique.size !== links.length) throw new ValidationError("links must not contain duplicates");
+  return {
+    links,
+    reason: string(input.reason, "reason"),
+    actor: string(input.actor, "actor"),
+  } as TaskSourceLinksInput;
 }
 
 export function parseWorkCompletion(value: unknown): WorkCompletionInput {

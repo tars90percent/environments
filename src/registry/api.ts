@@ -12,6 +12,7 @@ import {
   parseStatusUpdate,
   parseSubmissionManifest,
   parseSubmissionReview,
+  parseTaskSourceLinks,
   parseVendorEvent,
   parseWorkCompletion,
   ValidationError,
@@ -172,6 +173,9 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   if (method === "POST" && url.pathname === "/v1/status") {
     await options.repository.updateStatus(parseStatusUpdate(await readJson(request)));
     return sendJson(response, 200, { updated: true });
+  }
+  if (method === "POST" && url.pathname === "/v1/task-source-links") {
+    return sendJson(response, 200, await options.repository.linkTaskSources(parseTaskSourceLinks(await readJson(request))));
   }
   if (method === "POST" && url.pathname === "/v1/work/lease") {
     const body = asObject(await readJson(request));
