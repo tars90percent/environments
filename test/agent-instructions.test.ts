@@ -22,3 +22,11 @@ test("installs the source-controlled guide into the persistent agent workspace",
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("the CASE guide develops taste while reserving final authority", async () => {
+  const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
+  assert.match(guide, /Develop taste rather than suppressing it/);
+  assert.match(guide, /Final authority .* currently rests with the designated post-training researchers/);
+  assert.match(guide, /Base is a legacy reference, not your canonical memory/);
+  assert.doesNotMatch(guide, /not a research taste model/);
+});
