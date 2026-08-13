@@ -10,6 +10,7 @@ The interface intentionally does not rank task quality, estimate learning signal
 ## Safety boundary
 
 - Feishu OAuth is used only for organization membership and display identity.
+- Production uses the dedicated MiniMax custom app `小环境` (`cli_aaf7c9f277385cee`), with the Railway callback `https://env-portal-proto-production.up.railway.app/auth/callback` and organization-wide availability. It is separate from CASE's bot app.
 - The Feishu app secret and CASE credentials stay in Railway runtime secrets.
 - The application compares the verified `tenant_key` with one configured organization; it does not infer membership from email domains.
 - No vendor snapshot data or source payloads are copied into the frontend.
