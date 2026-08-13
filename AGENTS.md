@@ -12,8 +12,7 @@ This file contains durable operating rules and system boundaries. It is not a ve
 
 Before making a current claim, read the best live evidence available:
 
-- **Research demand and current requirements:** [`数据采购` Wiki](https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ) and its linked, dated requirement documents.
-- **Legacy procurement context:** [procurement Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJbss0Cxpcq9YXn0c?table=tblhtxsKZF8YqjJZ&view=vewS64aBxe). It still contains useful historical and transitional records, but it is not the intended system of record and may be deprecated as CASE absorbs its functions.
+- **Research demand and current requirements:** the latest dated requirement or decision from the designated post-training researcher. The [`数据采购` Wiki](https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ) and its linked requirement documents remain useful working sources, but time-sensitive claims must be checked against newer researcher communications and preserved with their source in CASE.
 - **Sample intake and evaluation operations:** CASE's canonical registry.
 - **What someone said:** the dated Feishu, Slack, email, or meeting record.
 - **What was delivered:** the original payload, captured source graph, immutable artifact, and exact task version.
@@ -58,13 +57,11 @@ The portal uses a read-only catalog credential and a separate append-only review
 
 The vendor/submission overview, Feishu login, and submission-review data flow exist. Individual task-detail and download experiences are still being developed. Do not describe a planned screen or adapter as implemented.
 
-### Procurement Base
+### Legacy procurement Base
 
-Base is a legacy and transitional reference. It may still contain procurement opportunities, owners, commercial state, decisions, and next actions that have not yet been migrated, but it is not the intended long-term system of record. CASE is being built to unify that procurement context with the actual sample material and its operational evaluation history.
+The [`数据采购` Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJbss0Cxpcq9YXn0c?table=tblhtxsKZF8YqjJZ&view=vewS64aBxe) is deprecated. It remains a read-only historical reference while useful decisions, vendor context, and source links are migrated into CASE. It is not a current system of record, a required workflow step, or evidence that a vendor status remains current.
 
-When working with an older Base record, reconcile it with current conversations, agreements, artifacts, and CASE. Link or migrate useful context into CASE when the required data model and operation exist. Do not create a parallel Base-first workflow or assume every historical field is current. If CASE cannot yet represent something material, record the gap explicitly rather than pretending the replacement is complete.
-
-Creating a Base row automatically sends a **“新增数据采购项目”** card to the sourcing chat. **Never create a Base row without explicit user confirmation.** Updating an existing row within the requested scope is allowed. Before every Base write, distinguish creation from update.
+Consult the Base only when reconstructing historical context, then verify the fact against its dated source and record the recovered evidence in CASE. Do not update it unless the user explicitly requests legacy maintenance. Creating a Base row also sends a **“新增数据采购项目”** card to the sourcing chat and therefore always requires explicit user confirmation.
 
 ## Intake contract
 
@@ -101,7 +98,7 @@ Unless a dated requirement document specifies otherwise, a coding-environment sa
 - exact model and harness versions, per-run reward and turn count, and computed pass rate;
 - the model, harness, pass-rate, turn-count, and sample-volume targets agreed for that procurement need.
 
-The number of trajectories, model identities, benchmark priorities, and target ranges are live requirements. Read the relevant Wiki document and receiving-researcher agreement at evaluation time; do not infer them from memory or this file.
+The number of trajectories, model identities, benchmark priorities, and target ranges are live requirements. Read the latest dated receiving-researcher requirement and its preserved source in CASE at evaluation time; use the Wiki and its linked documents as working context, but check time-sensitive details against newer researcher communications.
 
 For document or rubric data, deterministically flag blank files, error pages, advertising contamination, unusable text or missing OCR, and malformed or incorrect rubrics. A broken environment, ambiguous prompt, or faulty grader is a defect, not useful difficulty.
 
@@ -110,13 +107,13 @@ Before purchase, verify provenance, consent where required, permitted uses, priv
 ## Operating workflow
 
 1. Identify the research decision and the post-training researcher who currently holds final authority for it.
-2. Read the current Wiki requirement, CASE records, and any relevant legacy Base record.
+2. Read the latest dated researcher requirement, the relevant Wiki context, and the corresponding CASE records. Consult the deprecated Base only when reconstructing unmigrated history.
 3. Find the latest internal and vendor communications. The most relevant Feishu chats are pinned in TARS's feed shortcuts; list the live shortcuts rather than hard-coding channel names.
 4. Query CASE for submissions, source provenance, artifacts, checks, trajectories, follow-ups, statuses, and researcher responses.
 5. Inspect the exact delivered version and prior evaluation before asking the vendor for more work.
 6. Run or review only the deterministic checks that the current system actually supports. Record missing evidence as missing, not failed, unless a check ran and failed.
 7. Form an evidence-based assessment and recommendation where useful, then ask the designated post-training researchers for the final upstreaming or purchasing decision. Preserve both the recommendation and their response without collapsing disagreement.
-8. Record sample evidence, assessments, operational history, material decisions, and next actions in CASE when supported. Update the legacy Base only when specifically required during the transition.
+8. Record sample evidence, assessments, operational history, material decisions, and next actions in CASE when supported.
 
 Do not restart completed evaluation work unless the sample, requirement, harness, or target model changed.
 
