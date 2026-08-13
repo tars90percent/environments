@@ -1,4 +1,5 @@
 export type WorkflowStatus =
+  | "unchecked"
   | "received"
   | "normalizing"
   | "checking"
@@ -91,6 +92,7 @@ export type CatalogBatch = {
   label: string;
   source: string;
   taskCount: number;
+  declaredTaskCount: number;
   formats: string[];
   workflowStatus: WorkflowStatus;
   catalogVisibility: CatalogVisibility;

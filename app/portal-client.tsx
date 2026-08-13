@@ -26,6 +26,10 @@ const copy = {
     submissions: "次提交",
     records: "条记录",
     taskRecords: "条任务记录",
+    sampleFiles: "个样本文件",
+    declaredTasks: "个申报任务",
+    noSamples: "尚无样本",
+    noSubmissions: "CASE 尚未记录这家供应商的样本提交。原始联系与来源历史仍由 CASE 保留。",
     history: "提交记录",
     historyNote: "每次收到的交付，或 CASE 对持续维护来源进行的定期记录，都会作为一条带日期的提交记录保留。差异只描述内容变化，不代表研究质量。",
     newest: "最新在前",
@@ -85,6 +89,7 @@ const copy = {
       notRun: "未运行",
     },
     status: {
+      unchecked: "未核验",
       received: "已接收",
       normalizing: "标准化中",
       checking: "核验中",
@@ -127,6 +132,10 @@ const copy = {
     submissions: "submissions",
     records: "records",
     taskRecords: "task records",
+    sampleFiles: "sample files",
+    declaredTasks: "declared tasks",
+    noSamples: "no samples yet",
+    noSubmissions: "CASE has not recorded a sample submission from this vendor yet. Its contact and source history is still retained by CASE.",
     history: "Submission history",
     historyNote: "Each delivery—or dated observation CASE makes of a continuously maintained source—is retained as a submission record. Deltas describe content changes, never research quality.",
     newest: "Newest first",
@@ -186,6 +195,7 @@ const copy = {
       notRun: "not run",
     },
     status: {
+      unchecked: "Unchecked",
       received: "Received",
       normalizing: "Normalizing",
       checking: "Checking",
@@ -333,17 +343,19 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect
       <div className="vendor-list">
         {matchingVendors.map((vendor) => {
           const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
-          return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {count} {t.records}</small></span></button>;
+          const sampleFiles = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
+          const inventory = count > 0 ? `${count} ${t.records}` : sampleFiles > 0 ? `${sampleFiles} ${t.sampleFiles}` : t.noSamples;
+          return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {inventory}</small></span></button>;
         })}
         {matchingVendors.length === 0 && <div className="sidebar-empty">{t.searchEmpty.title}</div>}
       </div>
     </aside>
 
     <section className="vendor-main" aria-labelledby="vendor-name">
-      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span><span>{records} {t.taskRecords}</span><span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span></div></div></header>
+      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span><span>{records} {t.taskRecords}</span>{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div></div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
-        <div className="batch-list">{selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} t={t} language={language} />)}</div>
+        <div className="batch-list">{selectedVendor.batches.length ? selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} t={t} language={language} />) : <div className="submission-empty">{t.noSubmissions}</div>}</div>
       </section>
     </section>
   </div>;
@@ -354,7 +366,7 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { bat
     <button aria-expanded={isExpanded} className="batch-summary" onClick={onToggle} type="button">
       <span className="batch-date"><strong>{batch.date}</strong>{isLatest && <small>{t.latest}</small>}</span>
       <span className="batch-name"><strong>{batch.label}</strong><code>{batch.source}</code></span>
-      <span className="batch-count"><strong>{batch.taskCount}</strong><small>{t.taskRecords}</small></span>
+      <span className="batch-count"><strong>{batch.taskCount || batch.delta.changedFiles || batch.declaredTaskCount || 0}</strong><small>{batch.taskCount ? t.taskRecords : batch.delta.changedFiles ? t.sampleFiles : t.declaredTasks}</small></span>
       <span className="format-stack">{batch.formats.map((format) => <i key={format}>{format}</i>)}</span>
       <StatusBadge status={batch.workflowStatus} label={t.status[batch.workflowStatus]} />
       <span aria-hidden="true" className="disclosure">{isExpanded ? "▴" : "▾"}</span>
