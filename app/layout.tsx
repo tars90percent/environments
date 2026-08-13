@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://env-portal-proto.zwu.chatgpt.site"),
+  metadataBase: new URL("https://env-portal-proto-production.up.railway.app"),
   title: "小环境 — RL Environment Registry",
   description: "供应商强化学习环境样本库 · Vendor RL environment sample registry.",
   openGraph: {
