@@ -337,6 +337,8 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect
   language: Language;
 }) {
   const records = selectedVendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
+  const sampleFiles = selectedVendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
+  const declaredTasks = selectedVendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
   return <div className="portal-grid">
     <aside className="vendor-sidebar" aria-label={t.vendors}>
       <div className="sidebar-head"><strong>{t.vendors}</strong><span>{matchingVendors.length}</span></div>
@@ -344,7 +346,8 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect
         {matchingVendors.map((vendor) => {
           const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
           const sampleFiles = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
-          const inventory = count > 0 ? `${count} ${t.records}` : sampleFiles > 0 ? `${sampleFiles} ${t.sampleFiles}` : t.noSamples;
+          const declaredTasks = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
+          const inventory = [count > 0 ? `${count} ${t.records}` : "", sampleFiles > 0 ? `${sampleFiles} ${t.sampleFiles}` : "", declaredTasks > 0 ? `${declaredTasks} ${t.declaredTasks}` : ""].filter(Boolean).join(" · ") || t.noSamples;
           return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {inventory}</small></span></button>;
         })}
         {matchingVendors.length === 0 && <div className="sidebar-empty">{t.searchEmpty.title}</div>}
@@ -352,7 +355,7 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect
     </aside>
 
     <section className="vendor-main" aria-labelledby="vendor-name">
-      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span><span>{records} {t.taskRecords}</span>{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div></div></header>
+      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span>{records > 0 && <span>{records} {t.taskRecords}</span>}{sampleFiles > 0 && <span>{sampleFiles} {t.sampleFiles}</span>}{declaredTasks > 0 && <span>{declaredTasks} {t.declaredTasks}</span>}{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div></div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="batch-list">{selectedVendor.batches.length ? selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} t={t} language={language} />) : <div className="submission-empty">{t.noSubmissions}</div>}</div>
