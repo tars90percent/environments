@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import type { CatalogBatch, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, WorkflowStatus } from "./catalog";
 
-type Tab = "vendors" | "checks" | "criteria";
 type Language = "zh" | "en";
 
 export type PortalUser = {
@@ -14,14 +13,14 @@ export type PortalUser = {
 
 const copy = {
   zh: {
-    nav: { vendors: "供应商", checks: "核验", criteria: "条件" },
+    vendors: "供应商",
     search: "搜索供应商、批次、类别和任务",
     language: "EN",
     languageLabel: "Switch to English",
     accountLabel: "研究员账户",
     signOut: "退出登录",
-    eyebrow: "强化学习环境样本",
-    title: "供应商样本库",
+    eyebrow: "环境与任务样本",
+    title: "强化学习环境目录",
     stats: { vendors: "家供应商", batches: "个批次", tasks: "个任务版本" },
     vendor: "供应商",
     batch: "批次",
@@ -56,8 +55,8 @@ const copy = {
     unavailable: { eyebrow: "CASE 目录", title: "样本库暂不可用", fallback: "暂时无法载入共享目录。", tail: "小环境不会展示缓存的供应商数据，因为它不是事实来源。" },
     checks: {
       eyebrow: "已记录证据",
-      title: "确定性核验覆盖",
-      note: "这些数量来自 CASE 已完成的记录，不是质量分数或接收决定。",
+      title: "确定性核验",
+      note: "这里只显示 CASE 已记录的结果，不代表质量分数或接收决定。",
       vendor: "供应商",
       batch: "批次",
       tasks: "任务",
@@ -71,8 +70,8 @@ const copy = {
     },
     criteriaIntro: {
       eyebrow: "当前接收规范",
-      title: "已记录的条件",
-      note: "这里只列出目前明确规定的环境与任务接收条件。",
+      title: "接收条件",
+      note: "这些是目前明确规定的环境与任务接收条件，不是研究质量判断。",
       count: "7 项条件",
       boundary: "解释边界",
       p1: "记录只说明收到了什么、发生了哪些变化，以及哪些确定性核验有证据。",
@@ -117,14 +116,14 @@ const copy = {
     role: { primary: "主要提交", supplement: "补充提交", correction: "修订", metadata: "元数据", other: "其他" },
   },
   en: {
-    nav: { vendors: "Vendors", checks: "Checks", criteria: "Criteria" },
+    vendors: "Vendors",
     search: "Search vendors, batches, categories, and tasks",
     language: "中",
     languageLabel: "切换至中文",
     accountLabel: "Researcher account",
     signOut: "Sign out",
-    eyebrow: "RL ENVIRONMENT SAMPLES",
-    title: "Vendor sample registry",
+    eyebrow: "ENVIRONMENT & TASK SAMPLES",
+    title: "RL Environment Catalog",
     stats: { vendors: "vendors", batches: "batches", tasks: "task versions" },
     vendor: "Vendor",
     batch: "batch",
@@ -159,8 +158,8 @@ const copy = {
     unavailable: { eyebrow: "CASE CATALOG", title: "Registry unavailable", fallback: "The shared catalog could not be loaded.", tail: "No cached vendor data is shown because 小环境 is not a source of truth." },
     checks: {
       eyebrow: "RECORDED EVIDENCE",
-      title: "Deterministic check coverage",
-      note: "Counts reflect completed CASE records. They are not quality scores or acceptance decisions.",
+      title: "Deterministic checks",
+      note: "Only results recorded by CASE are shown. They are not quality scores or acceptance decisions.",
       vendor: "Vendor",
       batch: "Batch",
       tasks: "Tasks",
@@ -174,8 +173,8 @@ const copy = {
     },
     criteriaIntro: {
       eyebrow: "CURRENT INTAKE CONTRACT",
-      title: "Documented criteria",
-      note: "Only the conditions currently specified for environment and task intake are listed here.",
+      title: "Intake criteria",
+      note: "These are the currently documented intake conditions, not judgments of research quality.",
       count: "7 criteria",
       boundary: "Interpretation boundary",
       p1: "A record says what was delivered, what changed, and which deterministic checks have evidence.",
@@ -228,10 +227,10 @@ export default function PortalClient({ user }: { user: PortalUser }) {
   const [catalogState, setCatalogState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [unavailableReason, setUnavailableReason] = useState<string>();
   const [language, setLanguage] = useState<Language>("zh");
-  const [tab, setTab] = useState<Tab>("vendors");
   const [selectedVendorId, setSelectedVendorId] = useState("");
   const [query, setQuery] = useState("");
   const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const vendors = useMemo(() => catalog?.vendors ?? [], [catalog]);
   const t = copy[language];
 
@@ -272,14 +271,22 @@ export default function PortalClient({ user }: { user: PortalUser }) {
 
   function selectVendor(vendor: CatalogVendor) {
     setSelectedVendorId(vendor.id);
-    setTab("vendors");
     setExpandedBatches(new Set());
+    setExpandedTasks(new Set());
   }
 
   function toggleBatch(batchId: string) {
     setExpandedBatches((current) => {
       const next = new Set(current);
       if (next.has(batchId)) next.delete(batchId); else next.add(batchId);
+      return next;
+    });
+  }
+
+  function toggleTask(taskId: string) {
+    setExpandedTasks((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
       return next;
     });
   }
@@ -291,10 +298,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
 
   return <div className="app-shell">
     <header className="global-header">
-      <a className="wordmark" href="#top" onClick={() => setTab("vendors")}><strong>小环境</strong></a>
-      <nav className="global-nav" aria-label={language === "zh" ? "主要导航" : "Primary navigation"}>
-        {(["vendors", "checks", "criteria"] as Tab[]).map((item) => <button className={tab === item ? "active" : ""} key={item} onClick={() => setTab(item)} type="button">{t.nav[item]}</button>)}
-      </nav>
+      <a className="wordmark" href="#top"><strong>小环境</strong></a>
       <div className="header-tools">
         <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label={t.search} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} value={query} /></label>
         <button aria-label={t.languageLabel} className="language-switch" onClick={toggleLanguage} type="button">{t.language}</button>
@@ -321,28 +325,28 @@ export default function PortalClient({ user }: { user: PortalUser }) {
       <div className="page-body">
         {catalogState === "loading" && <StateCard value={t.loading} />}
         {catalogState === "unavailable" && <StateCard value={{ ...t.unavailable, body: `${unavailableReason ?? t.unavailable.fallback} ${t.unavailable.tail}` }} />}
-        {catalogState === "ready" && tab === "vendors" && selectedVendor && <VendorView matchingVendors={matchingVendors} selectedVendor={selectedVendor} expandedBatches={expandedBatches} onSelect={selectVendor} onToggle={toggleBatch} t={t} language={language} />}
-        {catalogState === "ready" && tab === "vendors" && !selectedVendor && <StateCard value={t.searchEmpty} />}
-        {catalogState === "ready" && catalog && tab === "checks" && <ChecksView catalog={catalog} t={t} language={language} />}
-        {tab === "criteria" && <CriteriaView t={t} />}
+        {catalogState === "ready" && selectedVendor && <VendorView matchingVendors={matchingVendors} selectedVendor={selectedVendor} expandedBatches={expandedBatches} expandedTasks={expandedTasks} onSelect={selectVendor} onToggleBatch={toggleBatch} onToggleTask={toggleTask} t={t} language={language} />}
+        {catalogState === "ready" && !selectedVendor && <StateCard value={t.searchEmpty} />}
       </div>
     </main>
   </div>;
 }
 
-function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect, onToggle, t, language }: {
+function VendorView({ matchingVendors, selectedVendor, expandedBatches, expandedTasks, onSelect, onToggleBatch, onToggleTask, t, language }: {
   matchingVendors: CatalogVendor[];
   selectedVendor: CatalogVendor;
   expandedBatches: Set<string>;
+  expandedTasks: Set<string>;
   onSelect(vendor: CatalogVendor): void;
-  onToggle(batchId: string): void;
+  onToggleBatch(batchId: string): void;
+  onToggleTask(taskId: string): void;
   t: UiCopy;
   language: Language;
 }) {
   const records = selectedVendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
   return <div className="portal-grid">
-    <aside className="vendor-sidebar" aria-label={t.nav.vendors}>
-      <div className="sidebar-head"><strong>{t.nav.vendors}</strong><span>{matchingVendors.length}</span></div>
+    <aside className="vendor-sidebar" aria-label={t.vendors}>
+      <div className="sidebar-head"><strong>{t.vendors}</strong><span>{matchingVendors.length}</span></div>
       <div className="vendor-list">
         {matchingVendors.map((vendor) => {
           const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
@@ -356,13 +360,13 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect
       <header className="vendor-profile"><span className="vendor-mark large">{selectedVendor.short}</span><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {t.submissionBatch}</span><span>{records} {t.taskRecords}</span><span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span></div></div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
-        <div className="batch-list">{selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggle(batch.id)} t={t} language={language} />)}</div>
+        <div className="batch-list">{selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} expandedTasks={expandedTasks} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} onToggleTask={onToggleTask} t={t} language={language} />)}</div>
       </section>
     </section>
   </div>;
 }
 
-function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { batch: CatalogBatch; isExpanded: boolean; isLatest: boolean; onToggle(): void; t: UiCopy; language: Language }) {
+function BatchCard({ batch, expandedTasks, isExpanded, isLatest, onToggle, onToggleTask, t, language }: { batch: CatalogBatch; expandedTasks: Set<string>; isExpanded: boolean; isLatest: boolean; onToggle(): void; onToggleTask(taskId: string): void; t: UiCopy; language: Language }) {
   return <article className="batch-card">
     <button aria-expanded={isExpanded} className="batch-summary" onClick={onToggle} type="button">
       <span className="batch-date"><strong>{batch.date}</strong>{isLatest && <small>{t.latest}</small>}</span>
@@ -376,7 +380,7 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { bat
     {isExpanded && <div className="batch-body">
       <div className="delta-block"><div className="delta-grid">{batch.delta.retained !== undefined && <span><strong>{batch.delta.retained}</strong><small>{t.delta.retained}</small></span>}<span><strong>{batch.delta.added}</strong><small>{t.delta.added}</small></span><span><strong>{batch.delta.removed}</strong><small>{t.delta.removed}</small></span>{batch.delta.changedFiles !== undefined && <span><strong>{batch.delta.changedFiles}</strong><small>{t.delta.changedFiles}</small></span>}</div><p>{batch.delta.note}</p></div>
       <div className="batch-section-head"><h4>{t.taskCategories}</h4><span>{batch.categories.length} {batch.categories.length === 1 ? t.category : t.categories}</span></div>
-      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
+      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow isExpanded={expandedTasks.has(task.id)} key={task.id} onToggle={() => onToggleTask(task.id)} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
       <SubmissionSources sourceEvents={batch.sourceEvents ?? []} t={t} language={language} />
     </div>}
   </article>;
@@ -412,22 +416,15 @@ function SourceItem({ item, t, language }: { item: CatalogSourceItem; t: UiCopy;
   </div>;
 }
 
-function TaskRow({ task, t }: { task: CatalogTask; t: UiCopy }) {
+function TaskRow({ task, isExpanded, onToggle, t }: { task: CatalogTask; isExpanded: boolean; onToggle(): void; t: UiCopy }) {
   const checks = task.checks.pass + task.checks.fail + task.checks.blocked + task.checks.notRun;
-  return <div className="task-row"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></div>;
-}
-
-function ChecksView({ catalog, t, language }: { catalog: CatalogSnapshot; t: UiCopy; language: Language }) {
-  const rows = catalog.vendors.flatMap((vendor) => vendor.batches.map((batch) => {
-    const tasks = batch.categories.flatMap((category) => category.tasks);
-    return { vendor: vendor.name, batch, checks: sumChecks(tasks) };
-  }));
-  return <section aria-labelledby="checks-title"><div className="content-title"><div><p className="eyebrow">{t.checks.eyebrow}</p><h2 id="checks-title">{t.checks.title}</h2><p>{t.checks.note}</p></div><code>CASE · {formatTimestamp(catalog.generatedAt, language)}</code></div><div className="checks-card batch-index"><div className="checks-row checks-head"><span>{t.checks.vendor}</span><span>{t.checks.batch}</span><span>{t.checks.tasks}</span><span>{t.checks.status}</span><span>{t.checks.results}</span></div>{rows.map(({ vendor, batch, checks }) => <div className="checks-row" key={batch.id}><strong>{vendor}</strong><span><b>{batch.date}</b><small>{batch.label}</small></span><span>{batch.taskCount}</span><StatusBadge status={batch.workflowStatus} label={t.status[batch.workflowStatus]} /><span>{checks.total ? `${checks.pass} ${t.checks.pass} · ${checks.fail} ${t.checks.fail} · ${checks.blocked} ${t.checks.blocked} · ${checks.notRun} ${t.checks.notRun}` : t.checks.none}</span></div>)}</div></section>;
-}
-
-function sumChecks(tasks: CatalogTask[]) {
-  const value = tasks.reduce((sum, task) => ({ pass: sum.pass + task.checks.pass, fail: sum.fail + task.checks.fail, blocked: sum.blocked + task.checks.blocked, notRun: sum.notRun + task.checks.notRun }), { pass: 0, fail: 0, blocked: 0, notRun: 0 });
-  return { ...value, total: value.pass + value.fail + value.blocked + value.notRun };
+  return <article className={`task-card${isExpanded ? " expanded" : ""}`}>
+    <button aria-expanded={isExpanded} className="task-row" onClick={onToggle} type="button"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /><span className="task-disclosure">{isExpanded ? "−" : "+"}</span></button>
+    {isExpanded && <div className="task-details">
+      <section className="task-evidence"><p className="detail-kicker">{t.checks.eyebrow}</p><h5>{t.checks.title}</h5><p>{t.checks.note}</p><div className="check-counts"><span><strong>{task.checks.pass}</strong>{t.checks.pass}</span><span><strong>{task.checks.fail}</strong>{t.checks.fail}</span><span><strong>{task.checks.blocked}</strong>{t.checks.blocked}</span><span><strong>{task.checks.notRun}</strong>{t.checks.notRun}</span></div></section>
+      <section className="task-criteria"><p className="detail-kicker">{t.criteriaIntro.eyebrow}</p><h5>{t.criteriaIntro.title}</h5><p>{t.criteriaIntro.note}</p><ol>{t.criteria.map(([title, text], index) => <li key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><strong>{title}</strong><small>{text}</small></div></li>)}</ol></section>
+    </div>}
+  </article>;
 }
 
 function StatusBadge({ status, label }: { status: WorkflowStatus; label: string }) {
@@ -436,10 +433,6 @@ function StatusBadge({ status, label }: { status: WorkflowStatus; label: string 
 
 function StateCard({ value }: { value: { eyebrow: string; title: string; body: string } }) {
   return <section className="state-card"><p className="eyebrow">{value.eyebrow}</p><h2>{value.title}</h2><p>{value.body}</p></section>;
-}
-
-function CriteriaView({ t }: { t: UiCopy }) {
-  return <section aria-labelledby="criteria-title"><div className="content-title"><div><p className="eyebrow">{t.criteriaIntro.eyebrow}</p><h2 id="criteria-title">{t.criteriaIntro.title}</h2><p>{t.criteriaIntro.note}</p></div><span className="criteria-count">{t.criteriaIntro.count}</span></div><div className="criteria-layout"><ol className="criteria-list">{t.criteria.map(([title, text], index) => <li key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{text}</p></div></li>)}</ol></div></section>;
 }
 
 function safeExternalUrl(value: string | null) {

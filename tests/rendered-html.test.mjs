@@ -33,7 +33,7 @@ async function render() {
   );
 }
 
-test("server-renders the vendor submission registry", async () => {
+test("server-renders the environment catalog", async () => {
   const response = await render();
   assert.equal(response.status, 307);
   assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/auth/login");
@@ -46,7 +46,10 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
 
   assert.doesNotMatch(source, /axios|lark-cli|open\.feishu\.cn|webhook/i);
   assert.match(source, /Researchers make those judgments/);
-  assert.match(source, /供应商样本库/);
+  assert.match(source, /强化学习环境目录/);
+  assert.match(source, /RL Environment Catalog/);
+  assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);
+  assert.match(source, /className="task-details"/);
   assert.match(source, /Switch to English/);
   assert.doesNotMatch(source, /className="criteria-aside"/);
   assert.match(source, /fetch\("\/api\/catalog"/);

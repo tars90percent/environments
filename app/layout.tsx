@@ -14,17 +14,17 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://env-portal-proto-production.up.railway.app"),
-  title: "小环境 — RL Environment Registry",
-  description: "供应商强化学习环境样本库 · Vendor RL environment sample registry.",
+  title: "小环境 — RL Environment Catalog",
+  description: "强化学习环境与任务样本目录 · RL environment and task sample catalog.",
   openGraph: {
-    title: "小环境 — RL Environment Registry",
-    description: "供应商强化学习环境样本库 · Vendor RL environment sample registry.",
-    images: [{ url: "/og.png", width: 1731, height: 909, alt: "小环境 RL Environment Registry" }],
+    title: "小环境 — RL Environment Catalog",
+    description: "强化学习环境与任务样本目录 · RL environment and task sample catalog.",
+    images: [{ url: "/og.png", width: 1731, height: 909, alt: "小环境 RL Environment Catalog" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "小环境 — RL Environment Registry",
-    description: "供应商强化学习环境样本库 · Vendor RL environment sample registry.",
+    title: "小环境 — RL Environment Catalog",
+    description: "强化学习环境与任务样本目录 · RL environment and task sample catalog.",
     images: ["/og.png"],
   },
   icons: {

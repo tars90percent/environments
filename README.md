@@ -1,4 +1,4 @@
-# env-portal-proto — 小环境 vendor sample registry
+# env-portal-proto — 小环境 RL environment catalog
 
 A read-only researcher catalog for vendor RL-environment submissions, hosted on
 Railway and available to authenticated members of TARS's Feishu organization.
