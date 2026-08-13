@@ -22,6 +22,9 @@ import type {
   SubmissionManifest,
   SubmissionReview,
   SubmissionReviewInput,
+  VendorDirectoryEntry,
+  VendorEvent,
+  VendorEventInput,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -110,6 +113,31 @@ type SubmissionReviewRow = {
   comment: string;
   metadata: Record<string, unknown>;
   created_at: string | Date;
+};
+type VendorEventRow = {
+  id: string;
+  vendor_id: string;
+  kind: VendorEvent["kind"];
+  event_type: string;
+  summary: string;
+  actor: string;
+  occurred_at: string | Date;
+  source_event_ids: string[];
+  batch_ids: string[];
+  metadata: Record<string, unknown>;
+  created_at: string | Date;
+};
+type VendorDirectoryRow = {
+  id: string;
+  name: string;
+  short: string;
+  description: string;
+  aliases: string[];
+  source_event_count: string;
+  submission_count: string;
+  vendor_event_count: string;
+  latest_activity_at: string | Date | null;
+  updated_at: string | Date;
 };
 
 export class PostgresRegistry implements RegistryRepository {
@@ -253,6 +281,123 @@ export class PostgresRegistry implements RegistryRepository {
     } finally {
       client.release();
     }
+  }
+
+  async recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }> {
+    const payloadSha256 = hashValue(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const vendor = await client.query<{ id: string }>("SELECT id FROM registry_vendors WHERE id = $1", [input.vendorId]);
+      if (!vendor.rowCount) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
+
+      const existing = await client.query<{ payload_sha256: string }>(
+        "SELECT payload_sha256 FROM registry_vendor_events WHERE id = $1",
+        [input.id],
+      );
+      if (existing.rows[0]?.payload_sha256 && existing.rows[0].payload_sha256 !== payloadSha256) {
+        throw new RegistryConflictError(`Vendor event ${input.id} already exists with different immutable contents`);
+      }
+      if (existing.rowCount) {
+        await client.query("COMMIT");
+        return { eventId: input.id, created: false };
+      }
+
+      if (input.sourceEventIds.length) {
+        const sources = await client.query<{ id: string }>(
+          "SELECT id FROM registry_source_events WHERE vendor_id = $1 AND id = ANY($2::text[])",
+          [input.vendorId, input.sourceEventIds],
+        );
+        if (sources.rowCount !== input.sourceEventIds.length) {
+          throw new RegistryNotFoundError(`One or more source events do not belong to vendor ${input.vendorId}`);
+        }
+      }
+      if (input.batchIds.length) {
+        const batches = await client.query<{ id: string }>(
+          "SELECT id FROM registry_submission_batches WHERE vendor_id = $1 AND id = ANY($2::text[])",
+          [input.vendorId, input.batchIds],
+        );
+        if (batches.rowCount !== input.batchIds.length) {
+          throw new RegistryNotFoundError(`One or more submissions do not belong to vendor ${input.vendorId}`);
+        }
+      }
+
+      await client.query(
+        `INSERT INTO registry_vendor_events(
+           id, vendor_id, kind, event_type, summary, actor, occurred_at,
+           source_event_ids, batch_ids, metadata, payload_sha256
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11)`,
+        [input.id, input.vendorId, input.kind, input.eventType, input.summary, input.actor, input.occurredAt,
+          json(input.sourceEventIds), json(input.batchIds), json(input.metadata ?? {}), payloadSha256],
+      );
+      await client.query("COMMIT");
+      return { eventId: input.id, created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listVendorEvents(vendorId: string): Promise<VendorEvent[]> {
+    const result = await this.pool.query<VendorEventRow>(
+      `SELECT id, vendor_id, kind, event_type, summary, actor, occurred_at,
+              source_event_ids, batch_ids, metadata, created_at
+       FROM registry_vendor_events
+       WHERE vendor_id = $1
+       ORDER BY occurred_at DESC, created_at DESC, id`,
+      [vendorId],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      vendorId: row.vendor_id,
+      kind: row.kind,
+      eventType: row.event_type,
+      summary: row.summary,
+      actor: row.actor,
+      occurredAt: new Date(row.occurred_at).toISOString(),
+      sourceEventIds: row.source_event_ids,
+      batchIds: row.batch_ids,
+      metadata: row.metadata,
+      createdAt: new Date(row.created_at).toISOString(),
+    }));
+  }
+
+  async vendorDirectory(): Promise<VendorDirectoryEntry[]> {
+    const result = await this.pool.query<VendorDirectoryRow>(
+      `SELECT v.id, v.name, v.short, v.description, v.aliases, v.updated_at,
+              COALESCE(se.event_count, 0)::text AS source_event_count,
+              COALESCE(sb.batch_count, 0)::text AS submission_count,
+              COALESCE(ve.event_count, 0)::text AS vendor_event_count,
+              GREATEST(se.latest_at, sb.latest_at, ve.latest_at) AS latest_activity_at
+       FROM registry_vendors v
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS event_count, MAX(received_at) AS latest_at
+         FROM registry_source_events WHERE vendor_id = v.id
+       ) se ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS batch_count, MAX(submission_date::timestamptz) AS latest_at
+         FROM registry_submission_batches WHERE vendor_id = v.id
+       ) sb ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS event_count, MAX(occurred_at) AS latest_at
+         FROM registry_vendor_events WHERE vendor_id = v.id
+       ) ve ON true
+       ORDER BY v.name, v.id`,
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      short: row.short,
+      description: row.description,
+      aliases: row.aliases,
+      sourceEventCount: Number(row.source_event_count),
+      submissionCount: Number(row.submission_count),
+      vendorEventCount: Number(row.vendor_event_count),
+      latestActivityAt: row.latest_activity_at ? new Date(row.latest_activity_at).toISOString() : null,
+      updatedAt: new Date(row.updated_at).toISOString(),
+    }));
   }
 
   async ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }> {
@@ -825,7 +970,10 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async operationsSummary(): Promise<OperationsSummary> {
-    const [submissions, checks, workItems, followUps, fetchStatuses, parseStatuses, artifacts] = await Promise.all([
+    const [vendorCount, sourceEventCount, vendorEventCount, submissions, checks, workItems, followUps, fetchStatuses, parseStatuses, artifacts] = await Promise.all([
+      this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_vendors"),
+      this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_source_events"),
+      this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_vendor_events"),
       this.pool.query<{ workflow_status: string; count: string }>(
         "SELECT workflow_status, COUNT(*)::text AS count FROM registry_submission_batches GROUP BY workflow_status",
       ),
@@ -847,6 +995,9 @@ export class PostgresRegistry implements RegistryRepository {
       this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_artifacts"),
     ]);
     return {
+      vendors: Number(vendorCount.rows[0]?.count ?? 0),
+      sourceEvents: Number(sourceEventCount.rows[0]?.count ?? 0),
+      vendorEvents: Number(vendorEventCount.rows[0]?.count ?? 0),
       submissionsByStatus: Object.fromEntries(submissions.rows.map((row) => [row.workflow_status, Number(row.count)])),
       checksByOutcome: Object.fromEntries(checks.rows.map((row) => [row.outcome, Number(row.count)])),
       pendingWorkItems: Number(workItems.rows[0]?.count ?? 0),

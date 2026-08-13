@@ -72,6 +72,44 @@ export type RegistryVendorInput = {
   aliases?: string[];
 };
 
+export type VendorEventKind =
+  | "contact"
+  | "sample"
+  | "evaluation"
+  | "commercial"
+  | "delivery"
+  | "acceptance"
+  | "payment"
+  | "relationship"
+  | "note";
+
+export type VendorEventInput = {
+  id: string;
+  vendorId: string;
+  kind: VendorEventKind;
+  eventType: string;
+  summary: string;
+  actor: string;
+  occurredAt: string;
+  sourceEventIds: string[];
+  batchIds: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type VendorEvent = VendorEventInput & {
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type VendorDirectoryEntry = RegistryVendorInput & {
+  aliases: string[];
+  sourceEventCount: number;
+  submissionCount: number;
+  vendorEventCount: number;
+  latestActivityAt: string | null;
+  updatedAt: string;
+};
+
 export type SourceEventInput = {
   id: string;
   channel: SourceChannel;
@@ -369,6 +407,9 @@ export type CatalogSnapshot = {
 };
 
 export type OperationsSummary = {
+  vendors: number;
+  sourceEvents: number;
+  vendorEvents: number;
   submissionsByStatus: Record<string, number>;
   checksByOutcome: Record<string, number>;
   pendingWorkItems: number;

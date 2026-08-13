@@ -62,6 +62,8 @@ The installed `case-registry` command gives CASE and Codex the same operations:
 case-registry operations
 case-registry catalog
 case-registry import /absolute/path/submission.json
+case-registry import-source /absolute/path/source-envelope.json
+case-registry record-vendor-event /absolute/path/vendor-event.json
 case-registry lease-work case-checker
 case-registry record-check /absolute/path/check-result.json
 case-registry submission-reviews <submission-id>
@@ -73,6 +75,11 @@ An intake manifest creates an immutable submission batch and queues a check
 work item. A corrected vendor package is always a new batch linked through
 `revisesBatchId`. Deterministic results, heuristic results, and human research
 judgment remain distinct records.
+
+The vendor directory also retains contacted organizations before they have a
+submission. Append-only vendor events preserve contact, evaluation, commercial,
+delivery, acceptance, payment, and relationship history with links to the
+source events and submissions that support each fact.
 
 Send `/new` as a message, or select the app's native `/new` slash command, to
 disconnect that Feishu chat from its current Codex thread. The next ordinary

@@ -18,10 +18,10 @@ switch (command) {
     output(await request("GET", "/v1/catalog?scope=all"));
     break;
   case "vendors":
-    output((await request("GET", "/v1/catalog?scope=all") as { vendors: unknown[] }).vendors);
+    output((await request("GET", "/v1/vendor-directory") as { vendors: unknown[] }).vendors);
     break;
   case "vendor":
-    output(await request("GET", `/v1/vendors/${encode(argument, "vendor id")}?scope=all`));
+    output(await request("GET", `/v1/vendor-records/${encode(argument, "vendor id")}`));
     break;
   case "batch":
     output(await request("GET", `/v1/batches/${encode(argument, "batch id")}?scope=all`));
@@ -40,6 +40,9 @@ switch (command) {
     break;
   case "import-source":
     output(await request("POST", "/v1/intake/source-events", await jsonFile(argument)));
+    break;
+  case "record-vendor-event":
+    output(await request("POST", "/v1/vendor-events", await jsonFile(argument)));
     break;
   case "store-file":
     output(await storeFile(required(argument, "artifact kind"), required(arguments_[1], "file path")));
@@ -72,7 +75,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|record-vendor-event|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {

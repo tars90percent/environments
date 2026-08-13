@@ -15,6 +15,9 @@ import type {
   SubmissionManifest,
   SubmissionReview,
   SubmissionReviewInput,
+  VendorDirectoryEntry,
+  VendorEvent,
+  VendorEventInput,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -24,6 +27,9 @@ export interface RegistryRepository {
   close(): Promise<void>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
+  recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }>;
+  listVendorEvents(vendorId: string): Promise<VendorEvent[]>;
+  vendorDirectory(): Promise<VendorDirectoryEntry[]>;
   recordCheckResult(input: CheckResultInput): Promise<void>;
   recordFollowUp(input: FollowUpInput): Promise<void>;
   recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview>;

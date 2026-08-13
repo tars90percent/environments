@@ -11,7 +11,7 @@ This file contains stable operating rules. Do not turn it into a vendor tracker.
 For current facts, consult the source that governs them:
 
 - **Research demand and requirements:** [`数据采购` Wiki](https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ) and its linked, dated requirement documents.
-- **Legacy procurement context:** [procurement Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJbss0Cxpcq9YXn0c?table=tblhtxsKZF8YqjJZ&view=vewS64aBxe). It persists during the transition but is not the intended system of record and may eventually be deprecated.
+- **Legacy procurement context:** the deprecated [procurement Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJbss0Cxpcq9YXn0c?table=tblhtxsKZF8YqjJZ&view=vewS64aBxe), consulted read-only only when reconstructing unmigrated history.
 - **Sample operations:** the CASE registry, queried with `case-registry` or its API.
 - **What someone said:** the dated Feishu, Slack, email, or meeting record.
 - **What was delivered:** the original payload, captured source graph, immutable artifacts, and exact task version.
@@ -37,13 +37,13 @@ Develop taste rather than suppressing it. You may form, explain, and improve evi
 
 Your assessments can guide triage, vendor feedback, and researcher attention. Final authority to upstream tasks or environments into training runs, or to purchase additional data, currently rests with the designated post-training researchers. Preserve their decision separately from your recommendation, including disagreement and rationale.
 
-Creating a procurement Base row sends a **“新增数据采购项目”** card to the sourcing chat. Never create a Base row without explicit user confirmation. Updating an existing row within the requested scope is allowed; distinguish creation from update before every write.
+Do not update the deprecated Base unless the user explicitly requests legacy maintenance. Creating a procurement Base row sends a **“新增数据采购项目”** card to the sourcing chat and always requires explicit user confirmation.
 
-Base is a legacy reference, not your canonical memory. Reconcile older Base entries with current conversations, agreements, artifacts, and CASE. Migrate or link useful context into CASE when the necessary operation exists. If CASE cannot yet represent a material commercial field, record that system gap; do not silently fall back to a permanent Base-first workflow or imply that migration is complete.
+Base is a legacy reference, not your canonical memory. Reconcile older Base entries with current conversations, agreements, artifacts, and CASE, then migrate or link useful context into CASE. If CASE cannot yet represent a material commercial field, record that system gap; do not silently fall back to Base or imply that migration is complete.
 
 ## CASE registry and storage
 
-The CASE registry is canonical for vendors, source events, source items and relations, dated submissions, categories, task versions, artifacts, checks, trajectories, follow-ups, work items, statuses, and researcher responses.
+The CASE registry is canonical for vendors, source events, source items and relations, dated submissions, categories, task versions, artifacts, checks, trajectories, follow-ups, work items, statuses, append-only vendor and procurement events, and researcher responses.
 
 - PostgreSQL stores structured operational records.
 - S3-compatible object storage stores immutable original payloads, snapshots, task packages, trajectories, extracted material, and check evidence.

@@ -6,6 +6,7 @@ import type {
   StatusUpdateInput,
   SubmissionManifest,
   SubmissionReviewInput,
+  VendorEventInput,
   WorkCompletionInput,
 } from "./types.js";
 
@@ -28,6 +29,7 @@ const SOURCE_ITEM_KINDS = new Set([
 const SOURCE_FETCH_STATUSES = new Set(["not_requested", "queued", "fetching", "snapshotted", "external_only", "blocked", "failed"]);
 const SOURCE_PARSE_STATUSES = new Set(["not_requested", "queued", "parsing", "parsed", "partial", "blocked", "failed"]);
 const SOURCE_RELATIONS = new Set(["contains", "links_to", "derived_from", "describes", "mirrors", "supersedes"]);
+const VENDOR_EVENT_KINDS = new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
@@ -201,6 +203,22 @@ export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {
   } as SourceEnvelopeInput;
 }
 
+export function parseVendorEvent(value: unknown): VendorEventInput {
+  const input = object(value, "vendor event");
+  return {
+    id: identifier(input.id, "id"),
+    vendorId: identifier(input.vendorId, "vendorId"),
+    kind: enumValue(input.kind, VENDOR_EVENT_KINDS, "kind"),
+    eventType: identifier(input.eventType, "eventType"),
+    summary: boundedString(input.summary, "summary", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+    occurredAt: timestamp(input.occurredAt, "occurredAt"),
+    sourceEventIds: uniqueIdentifiers(input.sourceEventIds, "sourceEventIds"),
+    batchIds: uniqueIdentifiers(input.batchIds, "batchIds"),
+    metadata: optionalObject(input.metadata, "metadata"),
+  } as VendorEventInput;
+}
+
 export function parseArtifact(value: unknown): ArtifactInput {
   const input = object(value, "artifact");
   return {
@@ -341,6 +359,12 @@ function identifier(value: unknown, name: string): string {
     throw new ValidationError(`${name} contains unsupported characters`);
   }
   return parsed;
+}
+
+function uniqueIdentifiers(value: unknown, name: string): string[] {
+  const values = stringArray(value, name).map((item, index) => identifier(item, `${name}[${index}]`));
+  if (new Set(values).size !== values.length) throw new ValidationError(`${name} must be unique`);
+  return values;
 }
 
 function boolean(value: unknown, name: string): boolean {

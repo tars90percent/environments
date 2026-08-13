@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, ValidationError } from "../src/registry/validation.js";
+import { parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -108,6 +108,24 @@ test("validates recursive source envelopes and their derivation links", () => {
     () => parseSourceEnvelope({ ...envelope, relations: [{ fromItemId: "source-message-one", toItemId: "missing", relation: "links_to" }] }),
     ValidationError,
   );
+});
+
+test("validates append-only vendor and procurement events", () => {
+  const event = {
+    id: "vendor-one:purchase-authorized:2026-08-13",
+    vendorId: "vendor-one",
+    kind: "commercial",
+    eventType: "purchase_authorized",
+    summary: "Researcher authorized a ten-task starter order.",
+    actor: "Researcher One",
+    occurredAt: "2026-08-13T00:00:00.000Z",
+    sourceEventIds: ["feishu-message-one"],
+    batchIds: [],
+    metadata: { quantity: 10, currency: "USD" },
+  };
+  assert.equal(parseVendorEvent(event).eventType, "purchase_authorized");
+  assert.throws(() => parseVendorEvent({ ...event, sourceEventIds: ["same", "same"] }), ValidationError);
+  assert.throws(() => parseVendorEvent({ ...event, kind: "quality_score" }), ValidationError);
 });
 
 test("uses deterministic content-addressed object keys", () => {

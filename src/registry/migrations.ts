@@ -331,6 +331,31 @@ const migrations: Migration[] = [
         ON registry_submission_reviews(reviewer_open_id, created_at DESC);
     `,
   },
+  {
+    id: "005_vendor_history",
+    sql: `
+      CREATE TABLE IF NOT EXISTS registry_vendor_events (
+        id text PRIMARY KEY,
+        vendor_id text NOT NULL REFERENCES registry_vendors(id),
+        kind text NOT NULL,
+        event_type text NOT NULL,
+        summary text NOT NULL,
+        actor text NOT NULL,
+        occurred_at timestamptz NOT NULL,
+        source_event_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+        batch_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+        payload_sha256 text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (kind IN ('contact', 'sample', 'evaluation', 'commercial', 'delivery', 'acceptance', 'payment', 'relationship', 'note'))
+      );
+
+      CREATE INDEX IF NOT EXISTS registry_vendor_events_vendor_idx
+        ON registry_vendor_events(vendor_id, occurred_at DESC, created_at DESC);
+      CREATE INDEX IF NOT EXISTS registry_vendor_events_type_idx
+        ON registry_vendor_events(event_type, occurred_at DESC);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

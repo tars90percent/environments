@@ -29,6 +29,7 @@ Write through validated JSON documents:
 ```sh
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
+case-registry record-vendor-event /absolute/path/vendor-event.json
 case-registry store-file <source_payload|source_snapshot|submission_manifest|task_package|trajectory|check_evidence|extracted_text|other> /absolute/path/file
 case-registry record-check /absolute/path/check-result.json
 case-registry record-follow-up /absolute/path/follow-up.json
@@ -40,6 +41,8 @@ case-registry complete-work /absolute/path/completion.json
 ```
 
 Never replace an existing submission batch. A corrected vendor delivery is a new batch linked through `revisesBatchId`. Keep deterministic check evidence separate from heuristic review and human research judgment. Do not expose service tokens or direct database credentials in replies.
+
+`vendors` includes contacted organizations that do not yet have a submission. `vendor <vendor-id>` returns the vendor directory record, any normalized submissions, and append-only vendor history. Record contact, sample, evaluation, commercial, delivery, acceptance, payment, and relationship events with `record-vendor-event`; link every event to the exact source events and submissions that support it. Do not represent a purchase or delivery by mutating a single current-stage label.
 
 Human reviews are append-only records attached to a submission. Use `scope: "submission"` with no category ids for the whole submission, or `scope: "categories"` with one or more category ids for a scoped judgment. Preserve each researcher's identity and each later review separately; do not overwrite earlier judgments.
 

@@ -12,6 +12,7 @@ import {
   parseStatusUpdate,
   parseSubmissionManifest,
   parseSubmissionReview,
+  parseVendorEvent,
   parseWorkCompletion,
   ValidationError,
 } from "./validation.js";
@@ -116,6 +117,30 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   }
 
   if (role !== "admin") return sendJson(response, 403, { error: "admin_token_required" });
+
+  if (method === "GET" && url.pathname === "/v1/vendor-directory") {
+    return sendJson(response, 200, { vendors: await options.repository.vendorDirectory() });
+  }
+  const vendorRecordMatch = url.pathname.match(/^\/v1\/vendor-records\/([^/]+)$/);
+  if (method === "GET" && vendorRecordMatch?.[1]) {
+    const vendorId = decodeURIComponent(vendorRecordMatch[1]);
+    const vendor = (await options.repository.vendorDirectory()).find((entry) => entry.id === vendorId);
+    if (!vendor) return sendJson(response, 404, { error: "vendor_not_found" });
+    const [catalog, events] = await Promise.all([
+      options.repository.getVendor(vendorId, "all"),
+      options.repository.listVendorEvents(vendorId),
+    ]);
+    return sendJson(response, 200, { vendor, submissions: catalog?.batches ?? [], events });
+  }
+  const vendorEventsMatch = url.pathname.match(/^\/v1\/vendor-events\/([^/]+)$/);
+  if (method === "GET" && vendorEventsMatch?.[1]) {
+    const vendorId = decodeURIComponent(vendorEventsMatch[1]);
+    return sendJson(response, 200, { events: await options.repository.listVendorEvents(vendorId) });
+  }
+  if (method === "POST" && url.pathname === "/v1/vendor-events") {
+    const result = await options.repository.recordVendorEvent(parseVendorEvent(await readJson(request)));
+    return sendJson(response, result.created ? 201 : 200, result);
+  }
 
   if (method === "POST" && url.pathname === "/v1/intake/submissions") {
     const result = await options.repository.ingestSubmission(parseSubmissionManifest(await readJson(request)));
