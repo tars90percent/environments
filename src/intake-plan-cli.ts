@@ -237,6 +237,7 @@ async function runLark(arguments_: string[], cwd: string): Promise<void> {
   const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(executable, arguments_, {
       cwd,
+      detached: process.platform !== "win32",
       env: {
         ...larkEnv,
         LARKSUITE_CLI_NO_UPDATE_NOTIFIER: "1",
@@ -246,15 +247,36 @@ async function runLark(arguments_: string[], cwd: string): Promise<void> {
     });
     let stdout = "";
     let stderr = "";
-    const timeout = setTimeout(() => child.kill("SIGTERM"), 5 * 60_000);
+    let forceTimeout: NodeJS.Timeout | undefined;
+    const timeout = setTimeout(() => {
+      terminateChildTree(child.pid, "SIGTERM", child);
+      forceTimeout = setTimeout(() => terminateChildTree(child.pid, "SIGKILL", child), 10_000);
+      forceTimeout.unref();
+    }, 5 * 60_000);
     child.stdout.on("data", (chunk) => { stdout += String(chunk); });
     child.stderr.on("data", (chunk) => { stderr += String(chunk); });
     child.once("error", reject);
-    child.once("close", (code) => { clearTimeout(timeout); resolve({ code, stdout, stderr }); });
+    child.once("close", (code) => {
+      clearTimeout(timeout);
+      if (forceTimeout) clearTimeout(forceTimeout);
+      resolve({ code, stdout, stderr });
+    });
   });
   if (result.code !== 0) throw new Error(`Feishu resource download failed: ${result.stderr || result.stdout}`);
   const value = JSON.parse(result.stdout) as { ok?: unknown };
   if (value.ok !== true) throw new Error("Feishu resource download did not report success");
+}
+
+function terminateChildTree(pid: number | undefined, signal: NodeJS.Signals, child: ReturnType<typeof spawn>): void {
+  if (!pid || process.platform === "win32") {
+    child.kill(signal);
+    return;
+  }
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
 }
 
 async function batchExists(batchId: string): Promise<boolean> {

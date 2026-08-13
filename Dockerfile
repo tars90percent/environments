@@ -27,11 +27,15 @@ COPY src ./src
 COPY skills ./skills
 RUN npm run build \
     && npm prune --omit=dev \
-    && chmod 0755 /app/dist/registry-cli.js \
+    && chmod 0755 /app/dist/registry-cli.js /app/dist/intake-plan-cli.js /app/dist/mail-intake-plan-cli.js \
     && ln -sfn /app/dist/registry-cli.js /usr/local/bin/case-registry \
+    && ln -sfn /app/dist/intake-plan-cli.js /usr/local/bin/case-intake \
+    && ln -sfn /app/dist/mail-intake-plan-cli.js /usr/local/bin/case-mail-intake \
     && mkdir -p /root/.agents/skills/case-registry \
     && cp /app/skills/case-registry/SKILL.md /root/.agents/skills/case-registry/SKILL.md \
     && test -x /usr/local/bin/case-registry \
+    && test -x /usr/local/bin/case-intake \
+    && test -x /usr/local/bin/case-mail-intake \
     && test -f /root/.agents/skills/case-registry/SKILL.md
 
 ENV NODE_ENV=production
