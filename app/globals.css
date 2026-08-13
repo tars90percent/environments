@@ -47,7 +47,7 @@ code { font-family: var(--font-geist-mono, ui-monospace), SFMono-Regular, Consol
 main { min-height: 100vh; padding-top: 78px; }
 .registry-header { width: min(1380px, calc(100% - 64px)); margin: 0 auto; padding: 78px 0 62px; }
 .eyebrow { margin: 0 0 15px; color: var(--blue); font: 620 10px/1 var(--font-geist-mono, ui-monospace), monospace; letter-spacing: .13em; text-transform: uppercase; }
-.registry-header h1 { max-width: 900px; margin: 0; font-size: clamp(48px, 5.4vw, 76px); line-height: 1.01; letter-spacing: -.055em; font-weight: 520; }
+.registry-header h1 { max-width: 900px; margin: 0; font-size: clamp(36px, 3.8vw, 52px); line-height: 1.06; letter-spacing: -.045em; font-weight: 520; }
 .registry-stats { display: grid; grid-template-columns: repeat(3, minmax(150px, 210px)); gap: 14px; margin-top: 52px; }
 .registry-stats span { min-height: 92px; padding: 19px 21px; display: flex; flex-direction: column; justify-content: space-between; border-radius: 20px; background: var(--surface); color: var(--muted); font-size: 12px; }
 .registry-stats strong { color: var(--ink); font-size: 30px; line-height: 1; font-weight: 540; letter-spacing: -.04em; }
@@ -193,7 +193,7 @@ main { min-height: 100vh; padding-top: 78px; }
 @media (max-width: 580px) {
   .global-header { padding: 0 16px; }
   .wordmark strong { font-size: 14px; }
-  .registry-header h1 { font-size: 45px; }
+  .registry-header h1 { font-size: 36px; }
   .registry-stats { gap: 7px; }
   .registry-stats span { min-width: 0; min-height: 76px; padding: 13px 11px; font-size: 9px; }
   .registry-stats strong { font-size: 24px; }

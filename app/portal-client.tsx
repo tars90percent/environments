@@ -14,23 +14,22 @@ export type PortalUser = {
 const copy = {
   zh: {
     vendors: "供应商",
-    search: "搜索供应商、更新记录、类别和任务",
+    search: "搜索供应商、提交记录、类别和任务",
     language: "EN",
     languageLabel: "Switch to English",
     accountLabel: "研究员账户",
     signOut: "退出登录",
-    eyebrow: "环境与任务样本",
-    title: "强化学习环境目录",
-    stats: { vendors: "家供应商", updates: "次更新", tasks: "个任务版本" },
+    title: "环境与任务样本",
+    stats: { vendors: "家供应商", submissions: "次提交", tasks: "个任务版本" },
     vendor: "供应商",
-    update: "次更新",
-    updates: "次更新",
+    submission: "次提交",
+    submissions: "次提交",
     records: "条记录",
     taskRecords: "条任务记录",
-    history: "更新记录",
-    historyNote: "每次收到的交付，或 CASE 观察到持续维护来源发生变化，都会形成一条带日期的更新记录。差异只描述内容变化，不代表研究质量。",
+    history: "提交记录",
+    historyNote: "每次收到的交付，或 CASE 对持续维护来源进行的定期记录，都会作为一条带日期的提交记录保留。差异只描述内容变化，不代表研究质量。",
     newest: "最新在前",
-    latest: "最新更新",
+    latest: "最新提交",
     taskCategories: "任务类别",
     category: "个类别",
     categories: "个类别",
@@ -40,7 +39,7 @@ const copy = {
     sourceRecord: "条来源记录",
     sourceRecords: "条来源记录",
     noSource: "尚未关联原始来源",
-    legacySource: "这条更新记录早于来源级接收流程，原始消息、链接和文件尚未挂接。",
+    legacySource: "这条提交记录早于来源级接收流程，原始消息、链接和文件尚未挂接。",
     noLinks: "没有记录关联文件或链接。",
     senderUnknown: "未记录发送人",
     openOriginal: "打开原始记录",
@@ -50,8 +49,8 @@ const copy = {
     mutable: "可变来源",
     captured: "抓取于",
     delta: { retained: "保留", added: "新增", removed: "移除", changedFiles: "文件变化" },
-    searchEmpty: { eyebrow: "搜索", title: "没有匹配的样本", body: "请尝试供应商、更新记录、类别或任务名称。" },
-    loading: { eyebrow: "CASE 目录", title: "正在载入样本库…", body: "正在从 CASE 获取最新的供应商、更新记录、任务与核验记录。" },
+    searchEmpty: { eyebrow: "搜索", title: "没有匹配的样本", body: "请尝试供应商、提交记录、类别或任务名称。" },
+    loading: { eyebrow: "CASE 目录", title: "正在载入样本库…", body: "正在从 CASE 获取最新的供应商、提交记录、任务与核验记录。" },
     unavailable: { eyebrow: "CASE 目录", title: "样本库暂不可用", fallback: "暂时无法载入共享目录。", tail: "小环境不会展示缓存的供应商数据，因为它不是事实来源。" },
     checks: {
       eyebrow: "已记录证据",
@@ -112,23 +111,22 @@ const copy = {
   },
   en: {
     vendors: "Vendors",
-    search: "Search vendors, updates, categories, and tasks",
+    search: "Search vendors, submissions, categories, and tasks",
     language: "中",
     languageLabel: "切换至中文",
     accountLabel: "Researcher account",
     signOut: "Sign out",
-    eyebrow: "ENVIRONMENT & TASK SAMPLES",
-    title: "RL Environment Catalog",
-    stats: { vendors: "vendors", updates: "updates", tasks: "task versions" },
+    title: "Environment & Task Samples",
+    stats: { vendors: "vendors", submissions: "submissions", tasks: "task versions" },
     vendor: "Vendor",
-    update: "update",
-    updates: "updates",
+    submission: "submission",
+    submissions: "submissions",
     records: "records",
     taskRecords: "task records",
-    history: "Update history",
-    historyNote: "Each delivery—or change CASE observes in a continuously maintained source—becomes a dated update. Deltas describe content changes, never research quality.",
+    history: "Submission history",
+    historyNote: "Each delivery—or dated observation CASE makes of a continuously maintained source—is retained as a submission record. Deltas describe content changes, never research quality.",
     newest: "Newest first",
-    latest: "Latest update",
+    latest: "Latest submission",
     taskCategories: "Task categories",
     category: "category",
     categories: "categories",
@@ -138,7 +136,7 @@ const copy = {
     sourceRecord: "source record",
     sourceRecords: "source records",
     noSource: "No original source linked yet",
-    legacySource: "This update predates source-level intake. Its original message, links, and files have not yet been attached.",
+    legacySource: "This submission predates source-level intake. Its original message, links, and files have not yet been attached.",
     noLinks: "No linked files or URLs recorded.",
     senderUnknown: "Sender not recorded",
     openOriginal: "Open original record",
@@ -148,8 +146,8 @@ const copy = {
     mutable: "mutable source",
     captured: "captured",
     delta: { retained: "retained", added: "added", removed: "removed", changedFiles: "files differ" },
-    searchEmpty: { eyebrow: "SEARCH", title: "No matching samples", body: "Try a vendor, update, category, or task name." },
-    loading: { eyebrow: "CASE CATALOG", title: "Loading registry…", body: "Fetching the current vendor, update, task, and check records from CASE." },
+    searchEmpty: { eyebrow: "SEARCH", title: "No matching samples", body: "Try a vendor, submission, category, or task name." },
+    loading: { eyebrow: "CASE CATALOG", title: "Loading registry…", body: "Fetching the current vendor, submission, task, and check records from CASE." },
     unavailable: { eyebrow: "CASE CATALOG", title: "Registry unavailable", fallback: "The shared catalog could not be loaded.", tail: "No cached vendor data is shown because 小环境 is not a source of truth." },
     checks: {
       eyebrow: "RECORDED EVIDENCE",
@@ -303,11 +301,10 @@ export default function PortalClient({ user }: { user: PortalUser }) {
 
     <main id="top">
       <section className="registry-header">
-        <p className="eyebrow">{t.eyebrow}</p>
         <h1>{t.title}</h1>
         <div className="registry-stats">
           <span><strong>{catalog?.totals.vendors ?? "—"}</strong>{t.stats.vendors}</span>
-          <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.updates}</span>
+          <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.submissions}</span>
           <span><strong>{catalog?.totals.taskVersions ?? "—"}</strong>{t.stats.tasks}</span>
         </div>
       </section>
@@ -340,14 +337,14 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, expanded
       <div className="vendor-list">
         {matchingVendors.map((vendor) => {
           const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
-          return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.update : t.updates} · {count} {t.records}</small></span></button>;
+          return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {count} {t.records}</small></span></button>;
         })}
         {matchingVendors.length === 0 && <div className="sidebar-empty">{t.searchEmpty.title}</div>}
       </div>
     </aside>
 
     <section className="vendor-main" aria-labelledby="vendor-name">
-      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.update : t.updates}</span><span>{records} {t.taskRecords}</span><span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span></div></div></header>
+      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span><span>{records} {t.taskRecords}</span><span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span></div></div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="batch-list">{selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} expandedTasks={expandedTasks} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} onToggleTask={onToggleTask} t={t} language={language} />)}</div>
