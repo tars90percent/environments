@@ -46,6 +46,15 @@ for (const submission of plan.submissions) {
   const alreadyExists = submission.batch.existing || await batchExists(submission.batch.id);
   let primaryCreated = alreadyExists;
   for (const [index, attachment] of submission.batch.attachments.entries()) {
+    const existingEvent = await getSourceEvent(eventIdFor(attachment));
+    if (existingEvent) {
+      process.stdout.write(`${JSON.stringify({ type: "capture_skipped", reason: "source_event_exists", batchId: submission.batch.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
+      if (!primaryCreated) {
+        await createSubmission(submission, existingEvent);
+        primaryCreated = true;
+      }
+      continue;
+    }
     process.stdout.write(`${JSON.stringify({ type: "capture_started", batchId: submission.batch.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
     const item = await captureAttachment(submission.vendor, attachment);
     summary[item.captured ? "captured" : "failed"] += 1;
@@ -62,43 +71,7 @@ for (const submission of plan.submissions) {
     }
 
     await request("POST", "/v1/intake/source-events", item.envelope);
-    const examplesByCategory = new Map<string, string[]>();
-    for (const planned of submission.batch.attachments) {
-      const values = examplesByCategory.get(planned.categoryId) ?? [];
-      values.push(planned.filename);
-      examplesByCategory.set(planned.categoryId, values);
-    }
-    await request("POST", "/v1/intake/submissions", {
-      vendor: submission.vendor,
-      sourceEvent: item.envelope.sourceEvent,
-      batch: {
-        id: submission.batch.id,
-        date: submission.batch.date,
-        label: submission.batch.label,
-        sourceLabel: "Feishu sample attachments",
-        taskCount: 0,
-        formats: [...new Set(submission.batch.attachments.map((planned) => formatFor(planned.filename)))],
-        workflowStatus: "unchecked",
-        catalogVisibility: "available",
-        delta: {
-          added: 0,
-          removed: 0,
-          changedFiles: submission.batch.attachments.length,
-          note: `${submission.batch.attachments.length} sample files captured; task records and deterministic checks are pending.`,
-        },
-        metadata: {
-          countUnit: "sample_files",
-          sampleFileCount: submission.batch.attachments.length,
-          intakeMethod: "feishu_resource_capture",
-        },
-      },
-      categories: submission.batch.categories.map((category) => ({
-        ...category,
-        count: 0,
-        examples: examplesByCategory.get(category.id) ?? [],
-      })),
-      tasks: [],
-    });
+    await createSubmission(submission, item.envelope.sourceEvent);
     primaryCreated = true;
   }
   ledger.push(summary);
@@ -128,7 +101,7 @@ async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan) {
     await rm(directory, { recursive: true, force: true });
   }
 
-  const eventId = `capture:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}`;
+  const eventId = eventIdFor(attachment);
   const itemId = `source-item:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}`;
   return {
     captured: Boolean(artifact),
@@ -179,6 +152,53 @@ async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan) {
       }> | undefined,
     },
   };
+}
+
+async function createSubmission(submission: SubmissionPlan, sourceEvent: Record<string, unknown>) {
+  const examplesByCategory = new Map<string, string[]>();
+  for (const planned of submission.batch.attachments) {
+    const values = examplesByCategory.get(planned.categoryId) ?? [];
+    values.push(planned.filename);
+    examplesByCategory.set(planned.categoryId, values);
+  }
+  await request("POST", "/v1/intake/submissions", {
+    vendor: submission.vendor,
+    sourceEvent: {
+      id: sourceEvent.id,
+      channel: sourceEvent.channel,
+      externalRef: sourceEvent.externalRef,
+      sender: sourceEvent.sender ?? undefined,
+      receivedAt: sourceEvent.receivedAt,
+      rawArtifactId: sourceEvent.rawArtifactId ?? undefined,
+    },
+    batch: {
+      id: submission.batch.id,
+      date: submission.batch.date,
+      label: submission.batch.label,
+      sourceLabel: "Feishu sample attachments",
+      taskCount: 0,
+      formats: [...new Set(submission.batch.attachments.map((planned) => formatFor(planned.filename)))],
+      workflowStatus: "unchecked",
+      catalogVisibility: "available",
+      delta: {
+        added: 0,
+        removed: 0,
+        changedFiles: submission.batch.attachments.length,
+        note: `${submission.batch.attachments.length} sample files captured; task records and deterministic checks are pending.`,
+      },
+      metadata: {
+        countUnit: "sample_files",
+        sampleFileCount: submission.batch.attachments.length,
+        intakeMethod: "feishu_resource_capture",
+      },
+    },
+    categories: submission.batch.categories.map((category) => ({
+      ...category,
+      count: 0,
+      examples: examplesByCategory.get(category.id) ?? [],
+    })),
+    tasks: [],
+  });
 }
 
 async function storeFile(path: string, attachment: AttachmentPlan) {
@@ -249,6 +269,19 @@ async function batchExists(batchId: string): Promise<boolean> {
   return true;
 }
 
+async function getSourceEvent(eventId: string): Promise<Record<string, unknown> | null> {
+  const baseUrl = (process.env.CASE_REGISTRY_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3000"}`).replace(/\/$/, "");
+  const token = process.env.CASE_REGISTRY_ADMIN_TOKEN;
+  if (!token) throw new Error("CASE_REGISTRY_ADMIN_TOKEN is required");
+  const response = await fetch(`${baseUrl}/v1/source-events/${encodeURIComponent(eventId)}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (response.status === 404) return null;
+  const value = await response.json() as Record<string, unknown>;
+  if (!response.ok) throw new Error(`Source-event lookup failed with ${response.status}`);
+  return value;
+}
+
 async function request(method: string, path: string, body?: unknown): Promise<unknown> {
   const baseUrl = (process.env.CASE_REGISTRY_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3000"}`).replace(/\/$/, "");
   const token = process.env.CASE_REGISTRY_ADMIN_TOKEN;
@@ -307,6 +340,7 @@ function safeName(value: string): string {
   return name || "attachment";
 }
 function shortHash(value: string): string { return createHash("sha256").update(value).digest("hex").slice(0, 20); }
+function eventIdFor(attachment: AttachmentPlan): string { return `capture:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}`; }
 function formatFor(value: string): string { return extname(value).replace(/^\./, "").toUpperCase() || "file"; }
 function sourceKindFor(value: string) {
   const lower = value.toLowerCase();
