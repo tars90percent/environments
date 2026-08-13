@@ -45,7 +45,6 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
   const worker = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
   assert.doesNotMatch(source, /axios|lark-cli|open\.feishu\.cn|webhook/i);
-  assert.match(source, /Researchers make those judgments/);
   assert.match(source, /环境与任务样本/);
   assert.match(source, /Environment & Task Samples/);
   assert.match(source, /Submission history/);
@@ -55,7 +54,9 @@ test("keeps the portal read-only and free of vendor snapshot data", async () => 
   assert.doesNotMatch(source, /className="vendor-mark/);
   assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次|Update history|RL Environment Catalog|强化学习环境目录/);
   assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);
-  assert.match(source, /className="task-details"/);
+  assert.match(source, /No check results recorded/);
+  assert.match(source, /isExpanded \? "▴" : "▾"/);
+  assert.doesNotMatch(source, /task-details|task-evidence|task-criteria|RECORDED EVIDENCE|CURRENT INTAKE CONTRACT/);
   assert.match(source, /Switch to English/);
   assert.doesNotMatch(source, /className="criteria-aside"/);
   assert.match(source, /fetch\("\/api\/catalog"/);

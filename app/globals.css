@@ -91,7 +91,7 @@ main { min-height: 100vh; padding-top: 78px; }
 .batch-count strong { font-size: 22px; line-height: 1; font-weight: 540; }
 .format-stack { display: flex; flex-wrap: wrap; gap: 5px; }
 .format-stack i { width: max-content; padding: 4px 8px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 9px; font-style: normal; font-weight: 620; white-space: nowrap; }
-.disclosure { color: var(--muted); font-size: 22px; font-weight: 300; text-align: right; }
+.disclosure { color: var(--muted); font-size: 13px; line-height: 1; text-align: right; }
 .batch-body { margin: 0 12px 12px; padding: 22px 22px 26px; border-radius: 16px; background: white; }
 .delta-block { padding: 17px 18px; border-radius: 14px; background: var(--blue-soft); }
 .delta-grid { display: flex; gap: 30px; }
@@ -109,28 +109,11 @@ main { min-height: 100vh; padding-top: 78px; }
 .category-table strong { font-size: 11px; font-weight: 610; }
 .category-table small { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .task-list { min-width: 0; display: grid; gap: 1px; border-radius: 10px; background: var(--line); overflow: hidden; }
-.task-card { min-width: 0; background: white; }
-.task-row { width: 100%; min-height: 50px; padding: 8px 10px; display: grid; grid-template-columns: minmax(150px, 1fr) minmax(145px, auto) auto 16px; align-items: center; gap: 10px; border: 0; background: white; text-align: left; cursor: pointer; }
-.task-row:hover { background: #fcf8f8; }
+.task-row { width: 100%; min-height: 50px; padding: 8px 10px; display: grid; grid-template-columns: minmax(150px, 1fr) minmax(145px, auto) auto; align-items: center; gap: 10px; background: white; text-align: left; }
 .task-row > span:first-child { min-width: 0; display: grid; gap: 3px; }
 .task-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-row small, .task-checks, .empty-task-list { color: var(--muted); font-size: 9px; }
 .task-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-disclosure { color: var(--blue); font-size: 16px; text-align: center; }
-.task-details { padding: 14px; display: grid; grid-template-columns: minmax(220px, .7fr) minmax(340px, 1.3fr); gap: 12px; border-top: 1px solid var(--line); background: #fff; }
-.task-details section { min-width: 0; padding: 16px; border-radius: 12px; background: var(--surface); }
-.detail-kicker { margin: 0 0 7px; color: var(--blue); font: 620 8px/1.2 var(--font-geist-mono, ui-monospace), monospace; letter-spacing: .1em; text-transform: uppercase; }
-.task-details h5 { margin: 0; font-size: 13px; font-weight: 620; }
-.task-details section > p:last-of-type { margin: 7px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
-.check-counts { margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.check-counts span { min-width: 0; padding: 9px 7px; display: grid; gap: 5px; border-radius: 9px; background: white; color: var(--muted); font-size: 8px; }
-.check-counts strong { color: var(--ink); font-size: 16px; font-weight: 560; }
-.task-criteria ol { margin: 13px 0 0; padding: 0; display: grid; gap: 1px; border-radius: 9px; background: var(--line); overflow: hidden; list-style: none; }
-.task-criteria li { padding: 9px 10px; display: grid; grid-template-columns: 24px 1fr; gap: 8px; background: white; }
-.task-criteria li > span { color: var(--blue); font: 620 8px/1.45 var(--font-geist-mono, ui-monospace), monospace; }
-.task-criteria li div { min-width: 0; display: grid; gap: 3px; }
-.task-criteria li strong { font-size: 9px; font-weight: 620; }
-.task-criteria li small { color: var(--muted); font-size: 8px; line-height: 1.45; }
 .empty-task-list { padding: 14px; background: white; }
 .status-badge { width: max-content; padding: 5px 8px; border-radius: 999px; background: var(--surface-strong); color: var(--muted); font-size: 9px; font-weight: 620; white-space: nowrap; }
 .status-ready_for_research { background: #e2f7e9; color: var(--green); }
@@ -212,8 +195,6 @@ main { min-height: 100vh; padding-top: 78px; }
   .category-row { grid-template-columns: 32px 1fr; padding: 10px; }
   .task-row { grid-template-columns: 1fr auto; }
   .task-checks { grid-column: 1 / -1; }
-  .task-row .task-disclosure { grid-column: 2; grid-row: 2; }
-  .task-details { grid-template-columns: 1fr; padding: 9px; }
   .source-event-head, .source-item { grid-template-columns: 72px minmax(0, 1fr); }
 }
 

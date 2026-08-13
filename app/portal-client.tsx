@@ -53,33 +53,12 @@ const copy = {
     loading: { eyebrow: "CASE 目录", title: "正在载入样本库…", body: "正在从 CASE 获取最新的供应商、提交记录、任务与核验记录。" },
     unavailable: { eyebrow: "CASE 目录", title: "样本库暂不可用", fallback: "暂时无法载入共享目录。", tail: "小环境不会展示缓存的供应商数据，因为它不是事实来源。" },
     checks: {
-      eyebrow: "已记录证据",
-      title: "确定性核验",
-      note: "这里只显示 CASE 已记录的结果，不代表质量分数或接收决定。",
       none: "没有已记录的核验结果",
       pass: "通过",
       fail: "失败",
       blocked: "受阻",
       notRun: "未运行",
     },
-    criteriaIntro: {
-      eyebrow: "当前接收规范",
-      title: "接收条件",
-      note: "这些是目前明确规定的环境与任务接收条件，不是研究质量判断。",
-      count: "7 项条件",
-      boundary: "解释边界",
-      p1: "记录只说明收到了什么、发生了哪些变化，以及哪些确定性核验有证据。",
-      p2: "它不会判断任务是否困难、新颖、有用、设计良好或值得购买。这些判断由研究员完成。",
-    },
-    criteria: [
-      ["可比较的轨迹", "每项任务至少包含 M3 和指定前沿参考系统各四条完整轨迹，并附模型与运行框架元数据。"],
-      ["奖励基线", "重复运行金标准稳定返回 1，重复运行未修改环境稳定返回 0。"],
-      ["公开依赖重建", "Dockerfile 无需私有基础镜像或不可访问的依赖即可重建。"],
-      ["金标准解答", "包含金标准解答或与任务类型相适配的标准交付物。"],
-      ["容器内执行", "解答和测试脚本可以在环境内部运行，不依赖未声明的宿主数据或变量。"],
-      ["明确的评测设置", "评测前已记录通过率和轮次目标。"],
-      ["可移植格式", "优先使用 Harbor。其他格式也可以保留，但必须记录其来源结构和映射状态。"],
-    ],
     status: {
       received: "已接收",
       normalizing: "标准化中",
@@ -150,33 +129,12 @@ const copy = {
     loading: { eyebrow: "CASE CATALOG", title: "Loading registry…", body: "Fetching the current vendor, submission, task, and check records from CASE." },
     unavailable: { eyebrow: "CASE CATALOG", title: "Registry unavailable", fallback: "The shared catalog could not be loaded.", tail: "No cached vendor data is shown because 小环境 is not a source of truth." },
     checks: {
-      eyebrow: "RECORDED EVIDENCE",
-      title: "Deterministic checks",
-      note: "Only results recorded by CASE are shown. They are not quality scores or acceptance decisions.",
       none: "No check results recorded",
       pass: "pass",
       fail: "fail",
       blocked: "blocked",
       notRun: "not run",
     },
-    criteriaIntro: {
-      eyebrow: "CURRENT INTAKE CONTRACT",
-      title: "Intake criteria",
-      note: "These are the currently documented intake conditions, not judgments of research quality.",
-      count: "7 criteria",
-      boundary: "Interpretation boundary",
-      p1: "A record says what was delivered, what changed, and which deterministic checks have evidence.",
-      p2: "It does not say whether a task is difficult, novel, useful, well-designed, or worth purchasing. Researchers make those judgments.",
-    },
-    criteria: [
-      ["Comparable trajectories", "At least four complete trajectories per task from M3 and four from the declared frontier reference system, with model and harness metadata."],
-      ["Reward baselines", "Repeated gold runs return 1 and repeated untouched runs return 0."],
-      ["Public rebuild", "The Dockerfile rebuilds without a private base image or inaccessible dependency."],
-      ["Gold solution", "A gold solution or task-appropriate golden deliverable is included."],
-      ["Container-local execution", "Solution and test scripts run inside the environment without undeclared host data or variables."],
-      ["Declared evaluation settings", "Pass-rate and turn-count targets are recorded before evaluation."],
-      ["Portable format", "Harbor is preferred. Other formats remain visible when their source structure and mapping status are documented."],
-    ],
     status: {
       received: "Received",
       normalizing: "Normalizing",
@@ -218,7 +176,6 @@ export default function PortalClient({ user }: { user: PortalUser }) {
   const [selectedVendorId, setSelectedVendorId] = useState("");
   const [query, setQuery] = useState("");
   const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const vendors = useMemo(() => catalog?.vendors ?? [], [catalog]);
   const t = copy[language];
 
@@ -260,21 +217,12 @@ export default function PortalClient({ user }: { user: PortalUser }) {
   function selectVendor(vendor: CatalogVendor) {
     setSelectedVendorId(vendor.id);
     setExpandedBatches(new Set());
-    setExpandedTasks(new Set());
   }
 
   function toggleBatch(batchId: string) {
     setExpandedBatches((current) => {
       const next = new Set(current);
       if (next.has(batchId)) next.delete(batchId); else next.add(batchId);
-      return next;
-    });
-  }
-
-  function toggleTask(taskId: string) {
-    setExpandedTasks((current) => {
-      const next = new Set(current);
-      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
       return next;
     });
   }
@@ -312,21 +260,19 @@ export default function PortalClient({ user }: { user: PortalUser }) {
       <div className="page-body">
         {catalogState === "loading" && <StateCard value={t.loading} />}
         {catalogState === "unavailable" && <StateCard value={{ ...t.unavailable, body: `${unavailableReason ?? t.unavailable.fallback} ${t.unavailable.tail}` }} />}
-        {catalogState === "ready" && selectedVendor && <VendorView matchingVendors={matchingVendors} selectedVendor={selectedVendor} expandedBatches={expandedBatches} expandedTasks={expandedTasks} onSelect={selectVendor} onToggleBatch={toggleBatch} onToggleTask={toggleTask} t={t} language={language} />}
+        {catalogState === "ready" && selectedVendor && <VendorView matchingVendors={matchingVendors} selectedVendor={selectedVendor} expandedBatches={expandedBatches} onSelect={selectVendor} onToggleBatch={toggleBatch} t={t} language={language} />}
         {catalogState === "ready" && !selectedVendor && <StateCard value={t.searchEmpty} />}
       </div>
     </main>
   </div>;
 }
 
-function VendorView({ matchingVendors, selectedVendor, expandedBatches, expandedTasks, onSelect, onToggleBatch, onToggleTask, t, language }: {
+function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect, onToggleBatch, t, language }: {
   matchingVendors: CatalogVendor[];
   selectedVendor: CatalogVendor;
   expandedBatches: Set<string>;
-  expandedTasks: Set<string>;
   onSelect(vendor: CatalogVendor): void;
   onToggleBatch(batchId: string): void;
-  onToggleTask(taskId: string): void;
   t: UiCopy;
   language: Language;
 }) {
@@ -347,13 +293,13 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, expanded
       <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span><span>{records} {t.taskRecords}</span><span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span></div></div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
-        <div className="batch-list">{selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} expandedTasks={expandedTasks} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} onToggleTask={onToggleTask} t={t} language={language} />)}</div>
+        <div className="batch-list">{selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} t={t} language={language} />)}</div>
       </section>
     </section>
   </div>;
 }
 
-function BatchCard({ batch, expandedTasks, isExpanded, isLatest, onToggle, onToggleTask, t, language }: { batch: CatalogBatch; expandedTasks: Set<string>; isExpanded: boolean; isLatest: boolean; onToggle(): void; onToggleTask(taskId: string): void; t: UiCopy; language: Language }) {
+function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { batch: CatalogBatch; isExpanded: boolean; isLatest: boolean; onToggle(): void; t: UiCopy; language: Language }) {
   return <article className="batch-card">
     <button aria-expanded={isExpanded} className="batch-summary" onClick={onToggle} type="button">
       <span className="batch-date"><strong>{batch.date}</strong>{isLatest && <small>{t.latest}</small>}</span>
@@ -361,13 +307,13 @@ function BatchCard({ batch, expandedTasks, isExpanded, isLatest, onToggle, onTog
       <span className="batch-count"><strong>{batch.taskCount}</strong><small>{t.taskRecords}</small></span>
       <span className="format-stack">{batch.formats.map((format) => <i key={format}>{format}</i>)}</span>
       <StatusBadge status={batch.workflowStatus} label={t.status[batch.workflowStatus]} />
-      <span className="disclosure">{isExpanded ? "−" : "+"}</span>
+      <span aria-hidden="true" className="disclosure">{isExpanded ? "▴" : "▾"}</span>
     </button>
 
     {isExpanded && <div className="batch-body">
       <div className="delta-block"><div className="delta-grid">{batch.delta.retained !== undefined && <span><strong>{batch.delta.retained}</strong><small>{t.delta.retained}</small></span>}<span><strong>{batch.delta.added}</strong><small>{t.delta.added}</small></span><span><strong>{batch.delta.removed}</strong><small>{t.delta.removed}</small></span>{batch.delta.changedFiles !== undefined && <span><strong>{batch.delta.changedFiles}</strong><small>{t.delta.changedFiles}</small></span>}</div><p>{batch.delta.note}</p></div>
       <div className="batch-section-head"><h4>{t.taskCategories}</h4><span>{batch.categories.length} {batch.categories.length === 1 ? t.category : t.categories}</span></div>
-      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow isExpanded={expandedTasks.has(task.id)} key={task.id} onToggle={() => onToggleTask(task.id)} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
+      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
       <SubmissionSources sourceEvents={batch.sourceEvents ?? []} t={t} language={language} />
     </div>}
   </article>;
@@ -404,15 +350,9 @@ function SourceItem({ item, t, language }: { item: CatalogSourceItem; t: UiCopy;
   </div>;
 }
 
-function TaskRow({ task, isExpanded, onToggle, t }: { task: CatalogTask; isExpanded: boolean; onToggle(): void; t: UiCopy }) {
+function TaskRow({ task, t }: { task: CatalogTask; t: UiCopy }) {
   const checks = task.checks.pass + task.checks.fail + task.checks.blocked + task.checks.notRun;
-  return <article className={`task-card${isExpanded ? " expanded" : ""}`}>
-    <button aria-expanded={isExpanded} className="task-row" onClick={onToggle} type="button"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /><span className="task-disclosure">{isExpanded ? "−" : "+"}</span></button>
-    {isExpanded && <div className="task-details">
-      <section className="task-evidence"><p className="detail-kicker">{t.checks.eyebrow}</p><h5>{t.checks.title}</h5><p>{t.checks.note}</p><div className="check-counts"><span><strong>{task.checks.pass}</strong>{t.checks.pass}</span><span><strong>{task.checks.fail}</strong>{t.checks.fail}</span><span><strong>{task.checks.blocked}</strong>{t.checks.blocked}</span><span><strong>{task.checks.notRun}</strong>{t.checks.notRun}</span></div></section>
-      <section className="task-criteria"><p className="detail-kicker">{t.criteriaIntro.eyebrow}</p><h5>{t.criteriaIntro.title}</h5><p>{t.criteriaIntro.note}</p><ol>{t.criteria.map(([title, text], index) => <li key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><strong>{title}</strong><small>{text}</small></div></li>)}</ol></section>
-    </div>}
-  </article>;
+  return <div className="task-row"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></div>;
 }
 
 function StatusBadge({ status, label }: { status: WorkflowStatus; label: string }) {

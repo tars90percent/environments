@@ -5,7 +5,7 @@ Railway and available to authenticated members of TARS's Feishu organization.
 小环境 loads its vendors, dated submissions, task categories, task versions,
 statuses, original-source records, and checks from CASE's canonical registry.
 
-The interface intentionally does not rank task quality, estimate learning signal, or recommend research decisions. It records package contents and submission-to-submission changes, then shows the current deterministic intake criteria alongside each task.
+The interface intentionally does not rank task quality, estimate learning signal, or recommend research decisions. It records package contents, submission-to-submission changes, and the check summary currently available for each task.
 
 ## Safety boundary
 
@@ -24,8 +24,7 @@ The interface intentionally does not rank task quality, estimate learning signal
 - Open dated submissions without replacing earlier observations.
 - Review task-category composition and observed deltas between submissions.
 - Follow the original Drive, Sheet, document, or message link and download CASE's captured copy when one exists.
-- Inspect task lists, workflow state, and recorded deterministic-check counts.
-- Read the exact criteria and interpretation boundary.
+- Inspect task lists, workflow state, and recorded deterministic-check summaries.
 
 ## Run locally
 
