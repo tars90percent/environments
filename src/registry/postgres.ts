@@ -767,12 +767,9 @@ export class PostgresRegistry implements RegistryRepository {
     const visibility = catalogVisibility(scope);
     const [vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult] = await Promise.all([
       this.pool.query<VendorRow>(
-        `SELECT DISTINCT v.id, v.name, v.short, v.description
+        `SELECT v.id, v.name, v.short, v.description
          FROM registry_vendors v
-         JOIN registry_submission_batches b ON b.vendor_id = v.id
-         WHERE b.catalog_visibility = ANY($1::text[])
          ORDER BY v.name`,
-        [visibility],
       ),
       this.pool.query<BatchRow>(
         `SELECT id, vendor_id, submission_date, label, source_label, declared_task_count,
@@ -884,19 +881,21 @@ export class PostgresRegistry implements RegistryRepository {
 
     const batchesByVendor = new Map<string, CatalogBatch[]>();
     for (const row of batchesResult.rows) {
+      const categories = categoriesByBatch.get(row.id) ?? [];
       append(batchesByVendor, row.vendor_id, {
         id: row.id,
         date: isoDate(row.submission_date),
         label: row.label,
         source: row.source_label,
-        taskCount: row.declared_task_count,
+        taskCount: categories.reduce((sum, category) => sum + category.tasks.length, 0),
+        declaredTaskCount: row.declared_task_count,
         formats: row.formats,
         workflowStatus: row.workflow_status,
         catalogVisibility: row.catalog_visibility,
         revisesBatchId: row.revises_batch_id,
         delta: row.delta,
         sourceEvents: sourceEventsByBatch.get(row.id) ?? [],
-        categories: categoriesByBatch.get(row.id) ?? [],
+        categories,
       });
     }
 

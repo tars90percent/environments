@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 
 const WORKFLOW_STATUSES = new Set([
+  "unchecked",
   "received",
   "normalizing",
   "checking",

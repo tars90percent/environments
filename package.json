@@ -5,7 +5,9 @@
   "type": "module",
   "description": "A Feishu teammate powered by Codex.",
   "bin": {
-    "case-registry": "dist/registry-cli.js"
+    "case-registry": "dist/registry-cli.js",
+    "case-intake": "dist/intake-plan-cli.js",
+    "case-mail-intake": "dist/mail-intake-plan-cli.js"
   },
   "scripts": {
     "dev": "node --watch --import tsx src/index.ts",

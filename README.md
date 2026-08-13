@@ -69,12 +69,20 @@ case-registry record-check /absolute/path/check-result.json
 case-registry submission-reviews <submission-id>
 case-registry record-submission-review /absolute/path/review.json
 case-registry set-status /absolute/path/status.json
+case-intake capture-feishu-plan /absolute/path/plan.json
+case-mail-intake capture-mail-plan /absolute/path/plan.json
 ```
 
 An intake manifest creates an immutable submission batch and queues a check
 work item. A corrected vendor package is always a new batch linked through
 `revisesBatchId`. Deterministic results, heuristic results, and human research
 judgment remain distinct records.
+
+The intake commands capture exact Feishu message resources or Feishu Mail
+attachments through CASE's renewable user login, store immutable bytes in the
+registry bucket, and register visible `unchecked` submissions without opening
+or executing vendor material. Catalog task totals count only normalized task
+versions; vendor-declared quantities and raw file counts remain separate.
 
 The vendor directory also retains contacted organizations before they have a
 submission. Append-only vendor events preserve contact, evaluation, commercial,

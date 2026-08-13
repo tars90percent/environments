@@ -128,6 +128,23 @@ test("validates append-only vendor and procurement events", () => {
   assert.throws(() => parseVendorEvent({ ...event, kind: "quality_score" }), ValidationError);
 });
 
+test("accepts unchecked submissions for visible, unreviewed samples", () => {
+  const parsed = parseSubmissionManifest({
+    ...manifest,
+    batch: {
+      ...manifest.batch,
+      id: "vendor-one-2026-08-14-unchecked",
+      workflowStatus: "unchecked",
+      catalogVisibility: "available",
+      taskCount: 0,
+    },
+    categories: [],
+    tasks: [],
+  });
+  assert.equal(parsed.batch.workflowStatus, "unchecked");
+  assert.equal(parsed.batch.taskCount, 0);
+});
+
 test("uses deterministic content-addressed object keys", () => {
   const sha256 = "a".repeat(64);
   assert.equal(contentAddressedStorageKey(sha256), `objects/sha256/aa/${sha256}`);

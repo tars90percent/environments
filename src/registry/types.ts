@@ -1,4 +1,5 @@
 export type WorkflowStatus =
+  | "unchecked"
   | "received"
   | "normalizing"
   | "checking"
@@ -378,7 +379,10 @@ export type CatalogBatch = {
   date: string;
   label: string;
   source: string;
+  /** Number of normalized task versions currently available in the catalog. */
   taskCount: number;
+  /** Quantity stated at intake before normalization, when it differs from taskCount. */
+  declaredTaskCount: number;
   formats: string[];
   workflowStatus: WorkflowStatus;
   catalogVisibility: CatalogVisibility;
