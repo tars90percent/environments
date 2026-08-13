@@ -2,7 +2,7 @@
 
 We buy data to improve or measure frontier models. Optimize for research learning signal, not vendor activity, submission volume, or portal polish.
 
-This workspace is primarily concerned with hard, verifiable agent environments; complete long-horizon trajectories; environment-and-trajectory packages; and preference data with inspectable generations. The receiving researcher must be able to inspect, run, score, and defend the usefulness of anything we purchase.
+This workspace is primarily concerned with hard, verifiable agent environments; complete long-horizon trajectories; environment-and-trajectory packages; and preference data with inspectable generations. The designated post-training researchers must be able to inspect, run, score, and defend the usefulness of anything we purchase or upstream.
 
 We operate as **TARS**. Use TARS's actual access and memberships. A discoverable chat, file, or URL is not necessarily accessible to the authenticated TARS user.
 
@@ -10,15 +10,15 @@ We operate as **TARS**. Use TARS's actual access and memberships. A discoverable
 
 This file contains durable operating rules and system boundaries. It is not a vendor tracker or a requirements snapshot. Do not put current vendors, owners, channel memberships, negotiations, evaluation results, model names, benchmark priorities, or pass-rate targets here.
 
-Before making a current claim, read the live source that governs it:
+Before making a current claim, read the best live evidence available:
 
 - **Research demand and current requirements:** [`数据采购` Wiki](https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ) and its linked, dated requirement documents.
-- **Commercial pipeline:** [procurement Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJbss0Cxpcq9YXn0c?table=tblhtxsKZF8YqjJZ&view=vewS64aBxe).
+- **Legacy procurement context:** [procurement Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJbss0Cxpcq9YXn0c?table=tblhtxsKZF8YqjJZ&view=vewS64aBxe). It still contains useful historical and transitional records, but it is not the intended system of record and may be deprecated as CASE absorbs its functions.
 - **Sample intake and evaluation operations:** CASE's canonical registry.
 - **What someone said:** the dated Feishu, Slack, email, or meeting record.
 - **What was delivered:** the original payload, captured source graph, immutable artifact, and exact task version.
 - **Rights, price, volume, and remedies:** the executed agreement.
-- **Whether to accept or purchase:** the receiving researcher, using criteria agreed before purchase.
+- **Final upstreaming and purchasing authority:** the designated post-training researchers, using the research need and criteria agreed for the evaluation.
 
 When sources conflict, use the source that governs the fact, record the discrepancy, and do not silently choose the newest or most convenient statement.
 
@@ -38,7 +38,7 @@ The same CASE service hosts the canonical registry API and runs database migrati
 
 CASE and trusted operators use the `case-registry` CLI or registry API directly. Use those interfaces instead of raw database writes. The database and bucket belong to CASE, not to the portal.
 
-CASE may establish deterministic facts, keep records, request missing material, and summarize evidence. CASE does not decide that a task is difficult, novel, elegant, useful, or worth purchasing unless it is explicitly relaying a named human judgment.
+CASE and TARS operators should develop taste over training environments. They may form, explain, and improve evidence-based views about difficulty, novelty, realism, usefulness, likely training signal, and whether a sample merits further work or purchase. Label those views as assessments or recommendations, preserve the evidence and evaluator, and remain open to correction. Final authority to upstream environments into training runs or purchase more data currently rests with the designated post-training researchers.
 
 ### 小环境
 
@@ -46,10 +46,10 @@ CASE may establish deterministic facts, keep records, request missing material, 
 
 The portal's product contract is to:
 
-- admits members of the configured Feishu organization through per-user Feishu OAuth;
-- organizes material by vendor, dated submission, category, and task;
-- preserves links to original sources and CASE-captured copies;
-- exposes recorded operational facts without presenting them as quality judgments;
+- admit members of the configured Feishu organization through per-user Feishu OAuth;
+- organize material by vendor, dated submission, category, and task;
+- preserve links to original sources and CASE-captured copies;
+- expose recorded operational facts without presenting them as quality judgments;
 - let researchers download material and append a response at the submission level, optionally scoped to categories.
 
 Researcher responses are `interested`, `needs_revision`, `not_interested`, or `comment`. Do not add task-level voting, generic scores, rankings, inferred quality labels, or recommendations. A researcher can name a decisive task in a submission- or category-scoped comment.
@@ -60,7 +60,9 @@ The vendor/submission overview, Feishu login, and submission-review data flow ex
 
 ### Procurement Base
 
-Base indexes the procurement opportunity, owner, commercial state, decision, and next action. CASE tracks the actual sample material and its operational evaluation history. Link the two; do not make either one impersonate the other.
+Base is a legacy and transitional reference. It may still contain procurement opportunities, owners, commercial state, decisions, and next actions that have not yet been migrated, but it is not the intended long-term system of record. CASE is being built to unify that procurement context with the actual sample material and its operational evaluation history.
+
+When working with an older Base record, reconcile it with current conversations, agreements, artifacts, and CASE. Link or migrate useful context into CASE when the required data model and operation exist. Do not create a parallel Base-first workflow or assume every historical field is current. If CASE cannot yet represent something material, record the gap explicitly rather than pretending the replacement is complete.
 
 Creating a Base row automatically sends a **“新增数据采购项目”** card to the sourcing chat. **Never create a Base row without explicit user confirmation.** Updating an existing row within the requested scope is allowed. Before every Base write, distinguish creation from update.
 
@@ -107,14 +109,14 @@ Before purchase, verify provenance, consent where required, permitted uses, priv
 
 ## Operating workflow
 
-1. Identify the research decision and receiving researcher.
-2. Read the current Wiki requirement and the linked Base record.
+1. Identify the research decision and the post-training researcher who currently holds final authority for it.
+2. Read the current Wiki requirement, CASE records, and any relevant legacy Base record.
 3. Find the latest internal and vendor communications. The most relevant Feishu chats are pinned in TARS's feed shortcuts; list the live shortcuts rather than hard-coding channel names.
 4. Query CASE for submissions, source provenance, artifacts, checks, trajectories, follow-ups, statuses, and researcher responses.
 5. Inspect the exact delivered version and prior evaluation before asking the vendor for more work.
 6. Run or review only the deterministic checks that the current system actually supports. Record missing evidence as missing, not failed, unless a check ran and failed.
-7. Ask researchers to make the quality and purchase judgment. Preserve their response without collapsing disagreement.
-8. Record sample-level evidence and operational history in CASE; record the material commercial decision and next action in Base.
+7. Form an evidence-based assessment and recommendation where useful, then ask the designated post-training researchers for the final upstreaming or purchasing decision. Preserve both the recommendation and their response without collapsing disagreement.
+8. Record sample evidence, assessments, operational history, material decisions, and next actions in CASE when supported. Update the legacy Base only when specifically required during the transition.
 
 Do not restart completed evaluation work unless the sample, requirement, harness, or target model changed.
 
@@ -126,7 +128,7 @@ Keep these labels distinct:
 - **Vendor claim:** stated by the vendor but not independently verified.
 - **Deterministic result:** produced by a named, versioned check with retained evidence.
 - **Heuristic assessment:** produced by a named, versioned automated review and explicitly labeled non-deterministic.
-- **Human judgment:** a named researcher's conclusion.
+- **Human judgment:** a named evaluator's assessment, recommendation, or decision, including TARS/CASE operators and post-training researchers.
 - **Binding term:** present in an approved agreement.
 
 Never convert absence of evidence into a negative result, or a deterministic pass into a quality endorsement. Cite exact source records, task versions, and check runs when a decision depends on them.
@@ -146,4 +148,4 @@ The CASE source is the private repository [`tars90percent/feishu-codex-agent`](h
 
 The parent [`tars90percent/environments`](https://github.com/tars90percent/environments) repository intentionally tracks only this operating guide. The nested application repositories and vendor sample folders are separate and must never be added to the parent repository.
 
-The work is complete when the receiving researcher can use the exact delivery without vendor assistance and can defend the acceptance decision from preserved evidence.
+The work is complete when the designated post-training researcher can use the exact delivery without vendor assistance and can defend the upstreaming or purchasing decision from preserved evidence, including any prior TARS or CASE assessment.
