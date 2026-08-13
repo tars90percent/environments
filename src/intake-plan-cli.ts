@@ -42,84 +42,66 @@ const larkEnv = await prepareLarkRuntimeEnv(process.env);
 const ledger: Array<{ batchId: string; files: number; captured: number; failed: number }> = [];
 
 for (const submission of plan.submissions) {
-  const captured = [];
-  for (const attachment of submission.batch.attachments) {
-    captured.push(await captureAttachment(submission.vendor, attachment));
-  }
-  const primary = captured[0];
-  if (!primary) continue;
+  const summary = { batchId: submission.batch.id, files: submission.batch.attachments.length, captured: 0, failed: 0 };
+  const alreadyExists = submission.batch.existing || await batchExists(submission.batch.id);
+  let primaryCreated = alreadyExists;
+  for (const [index, attachment] of submission.batch.attachments.entries()) {
+    process.stdout.write(`${JSON.stringify({ type: "capture_started", batchId: submission.batch.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
+    const item = await captureAttachment(submission.vendor, attachment);
+    summary[item.captured ? "captured" : "failed"] += 1;
+    process.stdout.write(`${JSON.stringify({ type: "capture_finished", batchId: submission.batch.id, position: index + 1, captured: item.captured, filename: attachment.filename })}\n`);
 
-  if (submission.batch.existing) {
-    for (const item of captured) {
+    if (primaryCreated) {
       item.envelope.batchLinks = [{
         batchId: submission.batch.id,
         role: "supplement",
         sourceItemIds: item.envelope.items.map((sourceItem: { id: string }) => sourceItem.id),
       }];
       await request("POST", "/v1/intake/source-events", item.envelope);
+      continue;
     }
-    ledger.push({
-      batchId: submission.batch.id,
-      files: captured.length,
-      captured: captured.filter((item) => item.captured).length,
-      failed: captured.filter((item) => !item.captured).length,
-    });
-    continue;
-  }
 
-  await request("POST", "/v1/intake/source-events", primary.envelope);
-  const examplesByCategory = new Map<string, string[]>();
-  for (const attachment of submission.batch.attachments) {
-    const values = examplesByCategory.get(attachment.categoryId) ?? [];
-    values.push(attachment.filename);
-    examplesByCategory.set(attachment.categoryId, values);
-  }
-  await request("POST", "/v1/intake/submissions", {
-    vendor: submission.vendor,
-    sourceEvent: primary.envelope.sourceEvent,
-    batch: {
-      id: submission.batch.id,
-      date: submission.batch.date,
-      label: submission.batch.label,
-      sourceLabel: "Feishu sample attachments",
-      taskCount: 0,
-      formats: [...new Set(submission.batch.attachments.map((attachment) => formatFor(attachment.filename)))],
-      workflowStatus: "unchecked",
-      catalogVisibility: "available",
-      delta: {
-        added: 0,
-        removed: 0,
-        changedFiles: submission.batch.attachments.length,
-        note: `${submission.batch.attachments.length} sample files captured; task records and deterministic checks are pending.`,
-      },
-      metadata: {
-        countUnit: "sample_files",
-        sampleFileCount: submission.batch.attachments.length,
-        intakeMethod: "feishu_resource_capture",
-      },
-    },
-    categories: submission.batch.categories.map((category) => ({
-      ...category,
-      count: 0,
-      examples: examplesByCategory.get(category.id) ?? [],
-    })),
-    tasks: [],
-  });
-
-  for (const item of captured.slice(1)) {
-    item.envelope.batchLinks = [{
-      batchId: submission.batch.id,
-      role: "supplement",
-      sourceItemIds: item.envelope.items.map((sourceItem: { id: string }) => sourceItem.id),
-    }];
     await request("POST", "/v1/intake/source-events", item.envelope);
+    const examplesByCategory = new Map<string, string[]>();
+    for (const planned of submission.batch.attachments) {
+      const values = examplesByCategory.get(planned.categoryId) ?? [];
+      values.push(planned.filename);
+      examplesByCategory.set(planned.categoryId, values);
+    }
+    await request("POST", "/v1/intake/submissions", {
+      vendor: submission.vendor,
+      sourceEvent: item.envelope.sourceEvent,
+      batch: {
+        id: submission.batch.id,
+        date: submission.batch.date,
+        label: submission.batch.label,
+        sourceLabel: "Feishu sample attachments",
+        taskCount: 0,
+        formats: [...new Set(submission.batch.attachments.map((planned) => formatFor(planned.filename)))],
+        workflowStatus: "unchecked",
+        catalogVisibility: "available",
+        delta: {
+          added: 0,
+          removed: 0,
+          changedFiles: submission.batch.attachments.length,
+          note: `${submission.batch.attachments.length} sample files captured; task records and deterministic checks are pending.`,
+        },
+        metadata: {
+          countUnit: "sample_files",
+          sampleFileCount: submission.batch.attachments.length,
+          intakeMethod: "feishu_resource_capture",
+        },
+      },
+      categories: submission.batch.categories.map((category) => ({
+        ...category,
+        count: 0,
+        examples: examplesByCategory.get(category.id) ?? [],
+      })),
+      tasks: [],
+    });
+    primaryCreated = true;
   }
-  ledger.push({
-    batchId: submission.batch.id,
-    files: captured.length,
-    captured: captured.filter((item) => item.captured).length,
-    failed: captured.filter((item) => !item.captured).length,
-  });
+  ledger.push(summary);
 }
 
 process.stdout.write(`${JSON.stringify({ submissions: ledger.length, ledger }, null, 2)}\n`);
@@ -244,14 +226,27 @@ async function runLark(arguments_: string[], cwd: string): Promise<void> {
     });
     let stdout = "";
     let stderr = "";
+    const timeout = setTimeout(() => child.kill("SIGTERM"), 5 * 60_000);
     child.stdout.on("data", (chunk) => { stdout += String(chunk); });
     child.stderr.on("data", (chunk) => { stderr += String(chunk); });
     child.once("error", reject);
-    child.once("close", (code) => resolve({ code, stdout, stderr }));
+    child.once("close", (code) => { clearTimeout(timeout); resolve({ code, stdout, stderr }); });
   });
   if (result.code !== 0) throw new Error(`Feishu resource download failed: ${result.stderr || result.stdout}`);
   const value = JSON.parse(result.stdout) as { ok?: unknown };
   if (value.ok !== true) throw new Error("Feishu resource download did not report success");
+}
+
+async function batchExists(batchId: string): Promise<boolean> {
+  const baseUrl = (process.env.CASE_REGISTRY_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3000"}`).replace(/\/$/, "");
+  const token = process.env.CASE_REGISTRY_ADMIN_TOKEN;
+  if (!token) throw new Error("CASE_REGISTRY_ADMIN_TOKEN is required");
+  const response = await fetch(`${baseUrl}/v1/batches/${encodeURIComponent(batchId)}?scope=all`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error(`Batch lookup failed with ${response.status}`);
+  return true;
 }
 
 async function request(method: string, path: string, body?: unknown): Promise<unknown> {
