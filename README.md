@@ -31,8 +31,13 @@ The interface intentionally does not rank task quality, estimate learning signal
 
 ```bash
 npm ci
+cp .env.example .env.local
 npm run dev
 ```
+
+Fill `.env.local` with the CASE connection, narrow CASE credentials, and Feishu
+OAuth settings. Runtime values remain in Railway; this repository contains only
+the variable names and safe defaults.
 
 Open [http://localhost:3000](http://localhost:3000).
 
