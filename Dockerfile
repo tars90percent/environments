@@ -22,6 +22,7 @@ RUN npx --yes skills add larksuite/cli --yes --global \
     && test -f /root/.agents/skills/lark-im/SKILL.md
 
 COPY tsconfig.json tsconfig.build.json ./
+COPY AGENTS.md ./AGENTS.md
 COPY src ./src
 COPY skills ./skills
 RUN npm run build \

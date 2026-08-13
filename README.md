@@ -1,6 +1,7 @@
 # CASE
 
-An early, chat-only prototype of a Feishu teammate powered by Codex.
+TARS's always-on Feishu colleague for environment and task sample operations,
+powered by Codex.
 
 CASE also owns the canonical RL-environment sample registry used by its own
 tools and by read-only human surfaces such as 小环境. PostgreSQL holds vendor,
@@ -9,12 +10,13 @@ work-queue records. S3-compatible object storage holds immutable packages and
 evidence. The portal is deliberately only a catalog client; it does not own or
 mutate procurement state.
 
-The pilot intentionally starts with a narrow boundary:
+The service currently has a deliberately narrow chat-transport boundary:
 
 - receives direct messages through the configured Feishu app;
 - keeps a persistent Codex conversation for each Feishu chat;
+- gives every Codex thread the source-controlled project guide in `AGENTS.md`;
 - passes each message directly to the underlying Codex thread without an
-  application-written persona or policy prompt;
+  application-written prompt;
 - replies as the app bot;
 - ignores duplicate event deliveries;
 - includes the official Lark/Feishu Agent Skills so Codex can operate
@@ -23,6 +25,11 @@ The pilot intentionally starts with a narrow boundary:
 The login makes user-context APIs available to `lark-cli`. The actual Codex tool
 permissions remain controlled separately by the container and `CODEX_*`
 settings below.
+
+At startup, CASE copies the checked-in `AGENTS.md` into `AGENT_WORKSPACE`. This
+keeps the persistent Codex workspace current across new and resumed Feishu
+threads. Update the source-controlled guide and redeploy CASE to change these
+instructions; do not hand-edit the runtime copy.
 
 ## Prerequisites
 
@@ -123,13 +130,13 @@ User authorization alone does not grant the inner Codex process network or
 filesystem access. Those permissions must still be enabled deliberately with
 the `CODEX_*` variables above.
 
-## Pilot sequence
+## Production boundary
 
-1. Run the service locally and verify a private conversation.
-2. Register a separate production app and a dedicated `lark-cli` profile.
-3. Deploy the same chat loop as an always-on service.
-4. Ask the agent to authorize user-context access from the private bot conversation.
-5. Add one action family at a time: documents, then calendar, then mail.
-6. Put external writes behind an interactive confirmation card and keep an audit log.
+Production uses a dedicated Feishu app, a persistent user-context `lark-cli`
+profile, Railway PostgreSQL, and Railway object storage. Store credentials only
+in Railway secrets. Chat transport, Feishu authorization, Codex permissions,
+registry roles, and portal OAuth are independent permission layers.
 
-For production, use a dedicated Feishu app and service identity rather than a developer's personal login, and store credentials in the hosting platform's secret manager.
+Environment execution is intentionally out of process. Do not pull or run
+untrusted vendor environments in this service; use the dedicated sandbox system
+selected for that purpose.

@@ -51,6 +51,7 @@ export const config = {
   allowAllUsers: bool("ALLOW_ALL_USERS", false),
   allowedUserIds: csv("ALLOWED_USER_IDS"),
   workspace: resolve(process.env.AGENT_WORKSPACE ?? ".data/workspace"),
+  agentInstructionsFile: resolve(process.env.AGENT_INSTRUCTIONS_FILE ?? "AGENTS.md"),
   stateFile,
   codexSandboxMode: choice(
     "CODEX_SANDBOX_MODE",

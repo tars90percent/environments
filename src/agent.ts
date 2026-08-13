@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { Codex, type Thread } from "@openai/codex-sdk";
 import { config } from "./config.js";
 import { StateStore } from "./state.js";
@@ -22,7 +23,7 @@ export class ChatAgent {
   }
 
   async initialize(): Promise<void> {
-    await mkdir(config.workspace, { recursive: true });
+    await installWorkspaceInstructions(config.workspace, config.agentInstructionsFile);
   }
 
   async respond(event: FeishuMessageEvent): Promise<{ text: string; threadId: string }> {
@@ -60,6 +61,11 @@ export class ChatAgent {
     this.threads.set(chatId, thread);
     return thread;
   }
+}
+
+export async function installWorkspaceInstructions(workspace: string, source: string): Promise<void> {
+  await mkdir(workspace, { recursive: true });
+  await copyFile(source, join(workspace, "AGENTS.md"));
 }
 
 function definedEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
