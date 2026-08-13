@@ -284,7 +284,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
 
   return <div className="app-shell">
     <header className="global-header">
-      <a className="wordmark" href="#top"><strong>小环境</strong></a>
+      <a aria-label="小环境" className="wordmark" href="#top"><Image alt="" height={40} priority src="/favicon.png" width={40} /></a>
       <div className="header-tools">
         <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label={t.search} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} value={query} /></label>
         <button aria-label={t.languageLabel} className="language-switch" onClick={toggleLanguage} type="button">{t.language}</button>
