@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import type { CatalogBatch, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, SubmissionReview, SubmissionReviewScope, SubmissionReviewSignal, WorkflowStatus } from "./catalog";
+import type { CatalogBatch, CatalogProcurementSummary, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, SubmissionReview, SubmissionReviewScope, SubmissionReviewSignal, WorkflowStatus } from "./catalog";
 
 type Language = "zh" | "en";
 
@@ -52,6 +52,35 @@ const copy = {
     downloadSnapshot: "下载留存副本",
     mutable: "可变来源",
     captured: "抓取于",
+    procurement: {
+      evidence: "查看依据",
+      updated: "更新于",
+      recordedBy: "记录人",
+      retrospective: "追溯补录",
+      linkedSource: "条关联依据",
+      linkedSources: "条关联依据",
+      noLinkedSources: "未关联原始依据",
+      approx: "约",
+      stage: {
+        commercial: "商务进展",
+        negotiating: "商务洽谈中",
+        authorized: "采购已授权",
+        contracted: "已签约",
+        ordered: "已下单",
+        delivering: "交付中",
+        delivered: "已交付",
+        accepted: "已验收",
+        paid: "已付款",
+        closed: "未采购",
+      },
+      commitment: {
+        none: "尚未形成采购决定",
+        authorized: "已有采购授权",
+        contracted: "已有合同承诺",
+        ordered: "已有采购订单",
+        unknown: "采购承诺状态未记录",
+      },
+    },
     response: {
       title: "研究反馈",
       note: "反馈以本次提交为单位保存。若意见只针对部分任务类别，可以缩小范围。",
@@ -158,6 +187,35 @@ const copy = {
     downloadSnapshot: "Download captured copy",
     mutable: "mutable source",
     captured: "captured",
+    procurement: {
+      evidence: "View evidence",
+      updated: "Updated",
+      recordedBy: "Recorded by",
+      retrospective: "Retrospective entry",
+      linkedSource: "linked source",
+      linkedSources: "linked sources",
+      noLinkedSources: "No original evidence linked",
+      approx: "Approx.",
+      stage: {
+        commercial: "Commercial activity",
+        negotiating: "Negotiating",
+        authorized: "Purchase authorized",
+        contracted: "Contracted",
+        ordered: "Ordered",
+        delivering: "Delivering",
+        delivered: "Delivered",
+        accepted: "Accepted",
+        paid: "Paid",
+        closed: "Closed without purchase",
+      },
+      commitment: {
+        none: "No purchase decision",
+        authorized: "Purchase authorized",
+        contracted: "Contractual commitment",
+        ordered: "Purchase order recorded",
+        unknown: "Commitment status not recorded",
+      },
+    },
     response: {
       title: "Researcher response",
       note: "Responses are recorded at the submission level. Narrow the scope only when your feedback applies to particular task categories.",
@@ -355,13 +413,35 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect
     </aside>
 
     <section className="vendor-main" aria-labelledby="vendor-name">
-      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span>{records > 0 && <span>{records} {t.taskRecords}</span>}{sampleFiles > 0 && <span>{sampleFiles} {t.sampleFiles}</span>}{declaredTasks > 0 && <span>{declaredTasks} {t.declaredTasks}</span>}{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div></div></header>
+      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span>{records > 0 && <span>{records} {t.taskRecords}</span>}{sampleFiles > 0 && <span>{sampleFiles} {t.sampleFiles}</span>}{declaredTasks > 0 && <span>{declaredTasks} {t.declaredTasks}</span>}{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div>{selectedVendor.procurementSummary && <ProcurementSummary summary={selectedVendor.procurementSummary} t={t} language={language} />}</div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="batch-list">{selectedVendor.batches.length ? selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} t={t} language={language} />) : <div className="submission-empty">{t.noSubmissions}</div>}</div>
       </section>
     </section>
   </div>;
+}
+
+function ProcurementSummary({ summary, t, language }: { summary: CatalogProcurementSummary; t: UiCopy; language: Language }) {
+  const amount = summary.amountApprox
+    ? `${t.procurement.approx} ${summary.amountApprox.currency} ${new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en", { maximumFractionDigits: 2 }).format(summary.amountApprox.value)}`
+    : null;
+  const sourceEvidence = summary.evidenceSourceCount === 0
+    ? t.procurement.noLinkedSources
+    : `${summary.evidenceSourceCount} ${summary.evidenceSourceCount === 1 ? t.procurement.linkedSource : t.procurement.linkedSources}`;
+  return <details className="procurement-summary">
+    <summary>
+      <span className="procurement-stage">{t.procurement.stage[summary.stage]}</span>
+      {amount && <strong>{amount}</strong>}
+      <span className="procurement-commitment">{t.procurement.commitment[summary.commitment]}</span>
+      <time dateTime={summary.occurredAt}>{t.procurement.updated} {formatDate(summary.occurredAt, language)}</time>
+      <span className="procurement-toggle">{t.procurement.evidence}</span>
+    </summary>
+    <div className="procurement-evidence">
+      <p>{summary.summary}</p>
+      <small>{t.procurement.recordedBy} {summary.actor} · {sourceEvidence}{summary.retrospective ? ` · ${t.procurement.retrospective}` : ""}</small>
+    </div>
+  </details>;
 }
 
 function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { batch: CatalogBatch; isExpanded: boolean; isLatest: boolean; onToggle(): void; t: UiCopy; language: Language }) {
@@ -535,6 +615,11 @@ function safeExternalUrl(value: string | null) {
 function formatTimestamp(value: string, language: Language) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.valueOf()) ? value : new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+
+function formatDate(value: string, language: Language) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? value : new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium" }).format(parsed);
 }
 
 function formatSourceLocator(value: string) {

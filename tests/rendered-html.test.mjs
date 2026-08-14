@@ -54,6 +54,11 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /Researcher response/);
   assert.match(source, /Interested in the full set/);
   assert.match(source, /Selected task categories/);
+  assert.match(source, /商务洽谈中/);
+  assert.match(source, /尚未形成采购决定/);
+  assert.match(source, /View evidence/);
+  assert.match(source, /selectedVendor\.procurementSummary && <ProcurementSummary/);
+  assert.doesNotMatch(source, /quote_under_negotiation|purchaseStatus/);
   assert.doesNotMatch(source, /className="vendor-mark/);
   assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次|Update history|RL Environment Catalog|强化学习环境目录/);
   assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);

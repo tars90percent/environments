@@ -77,6 +77,20 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .vendor-kicker { color: rgba(255,250,246,.64); font: 620 9px/1 var(--font-geist-mono, ui-monospace), monospace; letter-spacing: .1em; text-transform: uppercase; }
 .vendor-meta { display: flex; flex-wrap: wrap; gap: 9px 20px; margin-top: 22px; color: rgba(255,250,246,.68); font-size: 10px; }
 .vendor-meta span + span::before { margin-right: 20px; color: rgba(255,250,246,.35); content: "•"; }
+.procurement-summary { max-width: 860px; margin-top: 22px; border: 1px solid rgba(255,250,246,.14); border-radius: 13px; background: rgba(255,250,246,.075); overflow: hidden; }
+.procurement-summary summary { min-height: 42px; padding: 9px 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; cursor: pointer; list-style: none; }
+.procurement-summary summary::-webkit-details-marker { display: none; }
+.procurement-summary summary:hover { background: rgba(255,250,246,.06); }
+.procurement-summary summary strong { font-size: 10px; font-weight: 620; }
+.procurement-stage { padding: 5px 8px; border-radius: 999px; background: rgba(255,250,246,.16); font-size: 9px; font-weight: 650; }
+.procurement-commitment, .procurement-summary time { color: rgba(255,250,246,.72); font-size: 9px; }
+.procurement-summary time { margin-left: auto; }
+.procurement-toggle { color: rgba(255,250,246,.86); font-size: 9px; font-weight: 620; }
+.procurement-toggle::after { margin-left: 6px; content: "▾"; }
+.procurement-summary[open] .procurement-toggle::after { content: "▴"; }
+.procurement-evidence { padding: 12px 13px; border-top: 1px solid rgba(255,250,246,.12); background: rgba(55,7,14,.12); }
+.procurement-evidence p { margin: 0; color: rgba(255,250,246,.86); font-size: 10px; line-height: 1.55; }
+.procurement-evidence small { display: block; margin-top: 7px; color: rgba(255,250,246,.58); font-size: 8px; }
 
 .submission-history { margin-top: 52px; }
 .section-title { min-height: 92px; display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
@@ -234,6 +248,8 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .vendor-profile { display: block; }
   .vendor-meta { display: grid; gap: 7px; }
   .vendor-meta span + span::before { display: none; }
+  .procurement-summary summary { display: grid; grid-template-columns: max-content 1fr; }
+  .procurement-summary time { margin-left: 0; }
   .section-title { min-height: 130px; }
   .section-title h3 { font-size: 28px; }
   .batch-summary { grid-template-columns: 88px minmax(0, 1fr) 24px; padding: 14px; gap: 10px; }
