@@ -18,7 +18,8 @@ switch (command) {
     output(await request("GET", "/v1/catalog?scope=all"));
     break;
   case "vendors":
-    output((await request("GET", "/v1/vendor-directory") as { vendors: unknown[] }).vendors);
+    if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: case-registry vendors [--all]");
+    output((await request("GET", `/v1/vendor-directory${argument === "--all" ? "?include_archived=true" : ""}`) as { vendors: unknown[] }).vendors);
     break;
   case "vendor":
     output(await request("GET", `/v1/vendor-records/${encode(argument, "vendor id")}`));
@@ -43,6 +44,12 @@ switch (command) {
     break;
   case "record-vendor-event":
     output(await request("POST", "/v1/vendor-events", await jsonFile(argument)));
+    break;
+  case "archive-vendor":
+    output(await request("POST", "/v1/vendors/archive", await jsonFile(argument)));
+    break;
+  case "restore-vendor":
+    output(await request("POST", "/v1/vendors/restore", await jsonFile(argument)));
     break;
   case "store-file":
     output(await storeFile(required(argument, "artifact kind"), required(arguments_[1], "file path")));
@@ -78,7 +85,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|record-vendor-event|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|record-vendor-event|archive-vendor|restore-vendor|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {

@@ -7,6 +7,7 @@ import type {
   SubmissionManifest,
   SubmissionReviewInput,
   TaskSourceLinksInput,
+  VendorArchiveInput,
   VendorEventInput,
   WorkCompletionInput,
 } from "./types.js";
@@ -219,6 +220,15 @@ export function parseVendorEvent(value: unknown): VendorEventInput {
     batchIds: uniqueIdentifiers(input.batchIds, "batchIds"),
     metadata: optionalObject(input.metadata, "metadata"),
   } as VendorEventInput;
+}
+
+export function parseVendorArchive(value: unknown): VendorArchiveInput {
+  const input = object(value, "vendor archival request");
+  return {
+    vendorId: identifier(input.vendorId, "vendorId"),
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
 }
 
 export function parseArtifact(value: unknown): ArtifactInput {

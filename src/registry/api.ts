@@ -13,6 +13,7 @@ import {
   parseSubmissionManifest,
   parseSubmissionReview,
   parseTaskSourceLinks,
+  parseVendorArchive,
   parseVendorEvent,
   parseWorkCompletion,
   ValidationError,
@@ -120,12 +121,18 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   if (role !== "admin") return sendJson(response, 403, { error: "admin_token_required" });
 
   if (method === "GET" && url.pathname === "/v1/vendor-directory") {
-    return sendJson(response, 200, { vendors: await options.repository.vendorDirectory() });
+    return sendJson(response, 200, { vendors: await options.repository.vendorDirectory(requestedIncludeArchived(url)) });
+  }
+  if (method === "POST" && url.pathname === "/v1/vendors/archive") {
+    return sendJson(response, 200, await options.repository.archiveVendor(parseVendorArchive(await readJson(request))));
+  }
+  if (method === "POST" && url.pathname === "/v1/vendors/restore") {
+    return sendJson(response, 200, await options.repository.restoreVendor(parseVendorArchive(await readJson(request))));
   }
   const vendorRecordMatch = url.pathname.match(/^\/v1\/vendor-records\/([^/]+)$/);
   if (method === "GET" && vendorRecordMatch?.[1]) {
     const vendorId = decodeURIComponent(vendorRecordMatch[1]);
-    const vendor = (await options.repository.vendorDirectory()).find((entry) => entry.id === vendorId);
+    const vendor = (await options.repository.vendorDirectory(true)).find((entry) => entry.id === vendorId);
     if (!vendor) return sendJson(response, 404, { error: "vendor_not_found" });
     const [catalog, events] = await Promise.all([
       options.repository.getVendor(vendorId, "all"),
@@ -230,6 +237,13 @@ function safeEqual(left: string, right: string): boolean {
 function requestedScope(url: URL): "research" | "portal" | "all" {
   const scope = url.searchParams.get("scope");
   return scope === "research" || scope === "portal" ? scope : "all";
+}
+
+function requestedIncludeArchived(url: URL): boolean {
+  const value = url.searchParams.get("include_archived");
+  if (value === null || value === "false") return false;
+  if (value === "true") return true;
+  throw new RequestError(400, "invalid_include_archived");
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {

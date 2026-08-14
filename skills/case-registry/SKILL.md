@@ -12,6 +12,7 @@ Use the `case-registry` command for canonical RL-environment procurement data. T
 ```sh
 case-registry operations
 case-registry vendors
+case-registry vendors --all
 case-registry vendor <vendor-id>
 case-registry batch <batch-id>
 case-registry task <task-version-id>
@@ -30,6 +31,8 @@ Write through validated JSON documents:
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
 case-registry record-vendor-event /absolute/path/vendor-event.json
+case-registry archive-vendor /absolute/path/vendor-archive.json
+case-registry restore-vendor /absolute/path/vendor-restore.json
 case-registry store-file <source_payload|source_snapshot|submission_manifest|task_package|trajectory|check_evidence|extracted_text|other> /absolute/path/file
 case-registry record-check /absolute/path/check-result.json
 case-registry record-follow-up /absolute/path/follow-up.json
@@ -46,6 +49,20 @@ case-mail-intake capture-mail-plan /absolute/path/plan.json
 Never replace an existing submission batch. A corrected vendor delivery is a new batch linked through `revisesBatchId`. Keep deterministic check evidence separate from heuristic review and human research judgment. Do not expose service tokens or direct database credentials in replies.
 
 `vendors` includes contacted organizations that do not yet have a submission. `vendor <vendor-id>` returns the vendor directory record, any normalized submissions, and append-only vendor history. Record contact, sample, evaluation, commercial, delivery, acceptance, payment, and relationship events with `record-vendor-event`; link every event to the exact source events and submissions that support it. Do not represent a purchase or delivery by mutating a single current-stage label.
+
+Archive a vendor instead of deleting it. Archival is allowed only after every submission is `internal`; it removes the vendor from normal directory and research/portal catalog reads while preserving sources, artifacts, submissions, events, and admin audit access. Use a verified operator identity and a concrete reason:
+
+```json
+{
+  "vendorId": "vendor-id",
+  "reason": "Why this vendor is being archived or restored",
+  "actor": "Verified operator identity"
+}
+```
+
+`vendors --all` and `vendor <vendor-id>` include archived vendors for admin audit. New intake never silently restores an archived vendor; restore it explicitly when it should return to active directories.
+
+An unresolved attribution placeholder is a provenance identity, not an actionable vendor relationship. Preserve its source graph, but keep it out of normal vendor and catalog views by making its submissions `internal` and archiving the placeholder identity.
 
 Use `link-task-sources` when immutable sample artifacts were captured after task normalization. It only appends provenance links from existing task versions to existing source items; it does not rewrite either record.
 

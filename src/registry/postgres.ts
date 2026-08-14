@@ -23,6 +23,9 @@ import type {
   SubmissionReview,
   SubmissionReviewInput,
   TaskSourceLinksInput,
+  VendorArchiveContext,
+  VendorArchiveInput,
+  VendorArchiveResult,
   VendorDirectoryEntry,
   VendorEvent,
   VendorEventInput,
@@ -31,6 +34,12 @@ import type {
 } from "./types.js";
 
 type VendorRow = { id: string; name: string; short: string; description: string };
+type VendorArchiveRow = {
+  id: string;
+  archived_at: string | Date | null;
+  archived_by: string | null;
+  archive_reason: string | null;
+};
 type BatchRow = {
   id: string;
   vendor_id: string;
@@ -138,6 +147,9 @@ type VendorDirectoryRow = {
   submission_count: string;
   vendor_event_count: string;
   latest_activity_at: string | Date | null;
+  archived_at: string | Date | null;
+  archived_by: string | null;
+  archive_reason: string | null;
   updated_at: string | Date;
 };
 
@@ -365,9 +377,10 @@ export class PostgresRegistry implements RegistryRepository {
     }));
   }
 
-  async vendorDirectory(): Promise<VendorDirectoryEntry[]> {
+  async vendorDirectory(includeArchived = false): Promise<VendorDirectoryEntry[]> {
     const result = await this.pool.query<VendorDirectoryRow>(
       `SELECT v.id, v.name, v.short, v.description, v.aliases, v.updated_at,
+              v.archived_at, v.archived_by, v.archive_reason,
               COALESCE(se.event_count, 0)::text AS source_event_count,
               COALESCE(sb.batch_count, 0)::text AS submission_count,
               COALESCE(ve.event_count, 0)::text AS vendor_event_count,
@@ -385,7 +398,9 @@ export class PostgresRegistry implements RegistryRepository {
          SELECT COUNT(*) AS event_count, MAX(occurred_at) AS latest_at
          FROM registry_vendor_events WHERE vendor_id = v.id
        ) ve ON true
+       WHERE ($1::boolean OR v.archived_at IS NULL)
        ORDER BY v.name, v.id`,
+      [includeArchived],
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -397,8 +412,107 @@ export class PostgresRegistry implements RegistryRepository {
       submissionCount: Number(row.submission_count),
       vendorEventCount: Number(row.vendor_event_count),
       latestActivityAt: row.latest_activity_at ? new Date(row.latest_activity_at).toISOString() : null,
+      archivedAt: row.archived_at ? new Date(row.archived_at).toISOString() : null,
+      archivedBy: row.archived_by,
+      archiveReason: row.archive_reason,
       updatedAt: new Date(row.updated_at).toISOString(),
     }));
+  }
+
+  async archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const vendor = await client.query<VendorArchiveRow>(
+        `SELECT id, archived_at, archived_by, archive_reason
+         FROM registry_vendors WHERE id = $1 FOR UPDATE`,
+        [input.vendorId],
+      );
+      const current = vendor.rows[0];
+      if (!current) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
+      const existingArchive = archiveContextFromRow(current);
+      if (existingArchive) {
+        await client.query("COMMIT");
+        return { vendorId: input.vendorId, archived: true, changed: false, archive: existingArchive };
+      }
+
+      const visibleSubmission = await client.query<{ id: string; catalog_visibility: string }>(
+        `SELECT id, catalog_visibility
+         FROM registry_submission_batches
+         WHERE vendor_id = $1 AND catalog_visibility <> 'internal'
+         ORDER BY submission_date DESC, created_at DESC
+         LIMIT 1`,
+        [input.vendorId],
+      );
+      if (visibleSubmission.rows[0]) {
+        throw new RegistryConflictError(
+          `Vendor ${input.vendorId} has non-internal submission ${visibleSubmission.rows[0].id}; set every submission to internal before archiving`,
+        );
+      }
+
+      const updated = await client.query<VendorArchiveRow>(
+        `UPDATE registry_vendors
+         SET archived_at = now(), archived_by = $2, archive_reason = $3, updated_at = now()
+         WHERE id = $1
+         RETURNING id, archived_at, archived_by, archive_reason`,
+        [input.vendorId, input.actor, input.reason],
+      );
+      const archive = requiredArchiveContext(updated.rows[0]!);
+      await this.insertStatusEvent(client, "vendor", input.vendorId, "vendor.archived", input.actor, {
+        reason: input.reason,
+        archivedAt: archive.archivedAt,
+      });
+      await client.query("COMMIT");
+      return { vendorId: input.vendorId, archived: true, changed: true, archive };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const vendor = await client.query<VendorArchiveRow>(
+        `SELECT id, archived_at, archived_by, archive_reason
+         FROM registry_vendors WHERE id = $1 FOR UPDATE`,
+        [input.vendorId],
+      );
+      const current = vendor.rows[0];
+      if (!current) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
+      const previousArchive = archiveContextFromRow(current);
+      if (!previousArchive) {
+        await client.query("COMMIT");
+        return { vendorId: input.vendorId, archived: false, changed: false, archive: null };
+      }
+
+      await client.query(
+        `UPDATE registry_vendors
+         SET archived_at = NULL, archived_by = NULL, archive_reason = NULL, updated_at = now()
+         WHERE id = $1`,
+        [input.vendorId],
+      );
+      await this.insertStatusEvent(client, "vendor", input.vendorId, "vendor.restored", input.actor, {
+        reason: input.reason,
+        previousArchive,
+      });
+      await client.query("COMMIT");
+      return {
+        vendorId: input.vendorId,
+        archived: false,
+        changed: true,
+        archive: null,
+        previousArchive,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }> {
@@ -801,7 +915,9 @@ export class PostgresRegistry implements RegistryRepository {
       this.pool.query<VendorRow>(
         `SELECT v.id, v.name, v.short, v.description
          FROM registry_vendors v
+         WHERE ($1::boolean OR v.archived_at IS NULL)
          ORDER BY v.name`,
+        [scope === "all"],
       ),
       this.pool.query<BatchRow>(
         `SELECT id, vendor_id, submission_date, label, source_label, declared_task_count,
@@ -1191,6 +1307,24 @@ function catalogVisibility(scope: CatalogScope): string[] {
   if (scope === "research") return ["featured", "available"];
   if (scope === "portal") return ["featured", "available", "log_only"];
   return ["featured", "available", "log_only", "internal"];
+}
+
+function archiveContextFromRow(row: VendorArchiveRow): VendorArchiveContext | null {
+  if (!row.archived_at) return null;
+  if (!row.archived_by || !row.archive_reason) {
+    throw new Error(`Archived vendor ${row.id} has incomplete archive context`);
+  }
+  return {
+    archivedAt: new Date(row.archived_at).toISOString(),
+    archivedBy: row.archived_by,
+    archiveReason: row.archive_reason,
+  };
+}
+
+function requiredArchiveContext(row: VendorArchiveRow): VendorArchiveContext {
+  const context = archiveContextFromRow(row);
+  if (!context) throw new Error(`Vendor ${row.id} was not archived by its update`);
+  return context;
 }
 
 function append<T>(map: Map<string, T[]>, key: string, value: T): void {

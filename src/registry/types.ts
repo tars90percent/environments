@@ -73,6 +73,26 @@ export type RegistryVendorInput = {
   aliases?: string[];
 };
 
+export type VendorArchiveInput = {
+  vendorId: string;
+  reason: string;
+  actor: string;
+};
+
+export type VendorArchiveContext = {
+  archivedAt: string;
+  archivedBy: string;
+  archiveReason: string;
+};
+
+export type VendorArchiveResult = {
+  vendorId: string;
+  archived: boolean;
+  changed: boolean;
+  archive: VendorArchiveContext | null;
+  previousArchive?: VendorArchiveContext;
+};
+
 export type VendorEventKind =
   | "contact"
   | "sample"
@@ -108,6 +128,9 @@ export type VendorDirectoryEntry = RegistryVendorInput & {
   submissionCount: number;
   vendorEventCount: number;
   latestActivityAt: string | null;
+  archivedAt: string | null;
+  archivedBy: string | null;
+  archiveReason: string | null;
   updatedAt: string;
 };
 

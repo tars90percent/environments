@@ -16,6 +16,8 @@ import type {
   SubmissionReview,
   SubmissionReviewInput,
   TaskSourceLinksInput,
+  VendorArchiveInput,
+  VendorArchiveResult,
   VendorDirectoryEntry,
   VendorEvent,
   VendorEventInput,
@@ -30,7 +32,9 @@ export interface RegistryRepository {
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }>;
   listVendorEvents(vendorId: string): Promise<VendorEvent[]>;
-  vendorDirectory(): Promise<VendorDirectoryEntry[]>;
+  vendorDirectory(includeArchived?: boolean): Promise<VendorDirectoryEntry[]>;
+  archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
+  restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   recordCheckResult(input: CheckResultInput): Promise<void>;
   recordFollowUp(input: FollowUpInput): Promise<void>;
   recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview>;

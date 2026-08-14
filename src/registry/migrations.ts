@@ -356,6 +356,21 @@ const migrations: Migration[] = [
         ON registry_vendor_events(event_type, occurred_at DESC);
     `,
   },
+  {
+    id: "006_vendor_archival",
+    sql: `
+      ALTER TABLE registry_vendors
+        ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+      ALTER TABLE registry_vendors
+        ADD COLUMN IF NOT EXISTS archived_by text;
+      ALTER TABLE registry_vendors
+        ADD COLUMN IF NOT EXISTS archive_reason text;
+
+      CREATE INDEX IF NOT EXISTS registry_vendors_active_directory_idx
+        ON registry_vendors(name, id)
+        WHERE archived_at IS NULL;
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

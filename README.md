@@ -48,6 +48,8 @@ npm run check
 npm start
 ```
 
+The vendor-archival repository/API integration test creates and drops an isolated schema in a disposable PostgreSQL test database. Run it with `CASE_REGISTRY_TEST_DATABASE_URL=... npm run test:postgres`; never point that variable at the production registry.
+
 Then send the bot a direct message in Feishu. Stop the service with Ctrl-C.
 
 When the registry variables in `.env.example` are configured, the same process
@@ -64,6 +66,8 @@ case-registry catalog
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
 case-registry record-vendor-event /absolute/path/vendor-event.json
+case-registry archive-vendor /absolute/path/vendor-archive.json
+case-registry restore-vendor /absolute/path/vendor-restore.json
 case-registry lease-work case-checker
 case-registry record-check /absolute/path/check-result.json
 case-registry submission-reviews <submission-id>
