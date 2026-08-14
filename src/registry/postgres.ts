@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { runRegistryMigrations } from "./migrations.js";
+import { PROCUREMENT_EVENT_KINDS, procurementSummaryFromEvent } from "./procurement-summary.js";
 import type { RegistryRepository } from "./repository.js";
 import type {
   ArtifactInput,
@@ -362,19 +363,7 @@ export class PostgresRegistry implements RegistryRepository {
        ORDER BY occurred_at DESC, created_at DESC, id`,
       [vendorId],
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      vendorId: row.vendor_id,
-      kind: row.kind,
-      eventType: row.event_type,
-      summary: row.summary,
-      actor: row.actor,
-      occurredAt: new Date(row.occurred_at).toISOString(),
-      sourceEventIds: row.source_event_ids,
-      batchIds: row.batch_ids,
-      metadata: row.metadata,
-      createdAt: new Date(row.created_at).toISOString(),
-    }));
+    return result.rows.map(vendorEventFromRow);
   }
 
   async vendorDirectory(includeArchived = false): Promise<VendorDirectoryEntry[]> {
@@ -911,7 +900,7 @@ export class PostgresRegistry implements RegistryRepository {
 
   async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
     const visibility = catalogVisibility(scope);
-    const [vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult] = await Promise.all([
+    const [vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, procurementEventsResult] = await Promise.all([
       this.pool.query<VendorRow>(
         `SELECT v.id, v.name, v.short, v.description
          FROM registry_vendors v
@@ -992,6 +981,15 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY tsi.created_at`,
         [visibility],
       ),
+      this.pool.query<VendorEventRow>(
+        `SELECT DISTINCT ON (vendor_id)
+                id, vendor_id, kind, event_type, summary, actor, occurred_at,
+                source_event_ids, batch_ids, metadata, created_at
+         FROM registry_vendor_events
+         WHERE kind = ANY($1::text[])
+         ORDER BY vendor_id, occurred_at DESC, created_at DESC, id DESC`,
+        [PROCUREMENT_EVENT_KINDS],
+      ),
     ]);
 
     const taskSourceIds = group(taskSourcesResult.rows, (row) => row.task_version_id);
@@ -1047,11 +1045,16 @@ export class PostgresRegistry implements RegistryRepository {
       });
     }
 
+    const procurementByVendor = new Map(procurementEventsResult.rows.map((row) => [
+      row.vendor_id,
+      procurementSummaryFromEvent(vendorEventFromRow(row)),
+    ]));
     const vendors = vendorsResult.rows.map((row) => ({
       id: row.id,
       name: row.name,
       short: row.short,
       description: row.description,
+      procurementSummary: procurementByVendor.get(row.id) ?? null,
       batches: batchesByVendor.get(row.id) ?? [],
     }));
     const batches = vendors.flatMap((vendor) => vendor.batches);
@@ -1298,6 +1301,22 @@ function submissionReviewFromRow(row: SubmissionReviewRow): SubmissionReview {
       name: row.reviewer_name,
     },
     comment: row.comment,
+    metadata: row.metadata,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}
+
+function vendorEventFromRow(row: VendorEventRow): VendorEvent {
+  return {
+    id: row.id,
+    vendorId: row.vendor_id,
+    kind: row.kind,
+    eventType: row.event_type,
+    summary: row.summary,
+    actor: row.actor,
+    occurredAt: new Date(row.occurred_at).toISOString(),
+    sourceEventIds: row.source_event_ids,
+    batchIds: row.batch_ids,
     metadata: row.metadata,
     createdAt: new Date(row.created_at).toISOString(),
   };

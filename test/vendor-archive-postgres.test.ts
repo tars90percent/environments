@@ -38,6 +38,19 @@ test("archives and restores vendors through the admin API", { skip: !testDatabas
       port: 0,
     });
 
+    await repository.recordVendorEvent({
+      id: "visible-vendor:quote-under-negotiation:2026-08-14",
+      vendorId: "visible-vendor",
+      kind: "commercial",
+      eventType: "quote_under_negotiation",
+      summary: "A roughly USD 100,000 quote is under negotiation; no purchase decision is recorded.",
+      actor: "TARS",
+      occurredAt: "2026-08-14T01:00:00.000Z",
+      sourceEventIds: ["visible-batch-source"],
+      batchIds: ["visible-batch"],
+      metadata: { currency: "USD", quotedAmountApprox: 100_000, purchaseStatus: "negotiating", retrospective: true },
+    });
+
     const request = {
       vendorId: "internal-vendor",
       reason: "The duplicate vendor identity was reconciled.",
@@ -67,6 +80,18 @@ test("archives and restores vendors through the admin API", { skip: !testDatabas
     assert.equal(ids(researchCatalog.body.vendors).includes("internal-vendor"), false);
     const portalCatalog = await api(server.url, catalogToken, "GET", "/v1/catalog?scope=all");
     assert.equal(ids(portalCatalog.body.vendors).includes("internal-vendor"), false);
+    const visibleCatalogVendor = entries(portalCatalog.body.vendors).find((entry) => entry.id === "visible-vendor");
+    assert.deepEqual(visibleCatalogVendor?.procurementSummary, {
+      stage: "negotiating",
+      summary: "A roughly USD 100,000 quote is under negotiation; no purchase decision is recorded.",
+      amountApprox: { currency: "USD", value: 100_000 },
+      commitment: "none",
+      occurredAt: "2026-08-14T01:00:00.000Z",
+      actor: "TARS",
+      evidenceEventId: "visible-vendor:quote-under-negotiation:2026-08-14",
+      evidenceSourceCount: 1,
+      retrospective: true,
+    });
     const auditCatalog = await api(server.url, adminToken, "GET", "/v1/catalog?scope=all");
     assert.equal(ids(auditCatalog.body.vendors).includes("internal-vendor"), true);
     const auditRecord = await api(server.url, adminToken, "GET", "/v1/vendor-records/internal-vendor");

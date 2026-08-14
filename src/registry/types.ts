@@ -425,11 +425,38 @@ export type CatalogBatch = {
   categories: CatalogCategory[];
 };
 
+export type ProcurementStage =
+  | "commercial"
+  | "negotiating"
+  | "authorized"
+  | "contracted"
+  | "ordered"
+  | "delivering"
+  | "delivered"
+  | "accepted"
+  | "paid"
+  | "closed";
+
+export type ProcurementCommitment = "none" | "authorized" | "contracted" | "ordered" | "unknown";
+
+export type CatalogProcurementSummary = {
+  stage: ProcurementStage;
+  summary: string;
+  amountApprox: { currency: string; value: number } | null;
+  commitment: ProcurementCommitment;
+  occurredAt: string;
+  actor: string;
+  evidenceEventId: string;
+  evidenceSourceCount: number;
+  retrospective: boolean;
+};
+
 export type CatalogVendor = {
   id: string;
   name: string;
   short: string;
   description: string;
+  procurementSummary: CatalogProcurementSummary | null;
   batches: CatalogBatch[];
 };
 
