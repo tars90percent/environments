@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -23,6 +23,7 @@ const manifest: SubmissionManifest = {
     workflowStatus: "ready_for_research",
     catalogVisibility: "available",
     delta: { added: 1, removed: 0, note: "First observed submission." },
+    metadata: { intakePurpose: "sample_evaluation" },
   },
   categories: [{ id: "vendor-one:systems", name: "Systems", description: "Systems tasks.", count: 1 }],
   tasks: [{
@@ -172,10 +173,32 @@ test("accepts unchecked submissions for visible, unreviewed samples", () => {
   assert.equal(parsed.batch.taskCount, 0);
 });
 
+test("rejects purchased or unscoped deliveries from the sample registry", () => {
+  assert.throws(
+    () => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, metadata: { intakePurpose: "purchased_delivery" } } }),
+    ValidationError,
+  );
+  assert.throws(
+    () => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, metadata: undefined } }),
+    ValidationError,
+  );
+});
+
 test("uses deterministic content-addressed object keys", () => {
   const sha256 = "a".repeat(64);
   assert.equal(contentAddressedStorageKey(sha256), `objects/sha256/aa/${sha256}`);
   assert.throws(() => contentAddressedStorageKey("not-a-sha"));
+});
+
+test("requires an auditable operator and reason for removing a handed-off submission", () => {
+  const removal = {
+    batchId: "vendor-one-purchased-delivery",
+    reason: "The purchased delivery moved to the downstream production-data pipeline.",
+    actor: "TARS",
+  };
+  assert.deepEqual(parseSubmissionRemoval(removal), removal);
+  assert.throws(() => parseSubmissionRemoval({ ...removal, reason: "" }), ValidationError);
+  assert.throws(() => parseSubmissionRemoval({ ...removal, batchId: "unsafe/id" }), ValidationError);
 });
 
 test("validates append-only task-to-source repairs", () => {

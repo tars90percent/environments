@@ -74,6 +74,8 @@ case-registry lease-work case-checker
 case-registry record-check /absolute/path/check-result.json
 case-registry submission-reviews <submission-id>
 case-registry record-submission-review /absolute/path/review.json
+case-registry remove-submission /absolute/path/submission-removal.json
+case-registry delete-artifact <unreferenced-artifact-id>
 case-registry set-status /absolute/path/status.json
 case-registry link-task-sources /absolute/path/task-source-links.json
 case-intake capture-feishu-plan /absolute/path/plan.json
@@ -85,10 +87,12 @@ work item. A corrected vendor package is always a new batch linked through
 `revisesBatchId`. Deterministic results, heuristic results, and human research
 judgment remain distinct records.
 
-The intake commands capture exact Feishu message resources or Feishu Mail
+The intake commands accept only plans that explicitly declare
+`"purpose": "sample_evaluation"`. They capture exact Feishu message resources or Feishu Mail
 attachments through CASE's renewable user login, store immutable bytes in the
 registry bucket, and register visible `unchecked` submissions without opening
-or executing vendor material. Catalog task totals count only normalized task
+or executing vendor material. Purchased deliveries move to a downstream pipeline
+and must not be captured in CASE. Catalog task totals count only normalized task
 versions; vendor-declared quantities and raw file counts remain separate.
 
 小环境 uses a separate upload-only registry role to request a content-addressed

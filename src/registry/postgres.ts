@@ -21,6 +21,8 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionRemovalInput,
+  SubmissionRemovalResult,
   SubmissionReview,
   SubmissionReviewInput,
   TaskSourceLinksInput,
@@ -152,6 +154,16 @@ type VendorDirectoryRow = {
   archived_by: string | null;
   archive_reason: string | null;
   updated_at: string | Date;
+};
+type ArtifactRow = {
+  id: string;
+  kind: ArtifactInput["kind"];
+  storage_key: string;
+  sha256: string;
+  size_bytes: string | null;
+  content_type: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string | Date;
 };
 
 export class PostgresRegistry implements RegistryRepository {
@@ -612,6 +624,164 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
+  async removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const batch = await client.query<{ vendor_id: string }>(
+        "SELECT vendor_id FROM registry_submission_batches WHERE id = $1 FOR UPDATE",
+        [input.batchId],
+      );
+      const vendorId = batch.rows[0]?.vendor_id;
+      if (!vendorId) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
+
+      const normalized = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM (
+           SELECT id FROM registry_task_versions WHERE batch_id = $1
+           UNION ALL
+           SELECT id FROM registry_tasks WHERE first_seen_batch_id = $1
+         ) normalized_entities`,
+        [input.batchId],
+      );
+      if (Number(normalized.rows[0]?.count ?? 0) > 0) {
+        throw new RegistryConflictError(
+          `Submission ${input.batchId} has normalized task records and cannot be removed by the sample-only cleanup`,
+        );
+      }
+
+      const linkedEvents = await client.query<{ id: string }>(
+        `SELECT source_event_id AS id FROM registry_batch_source_events WHERE batch_id = $1
+         UNION
+         SELECT source_event_id AS id FROM registry_submission_batches WHERE id = $1`,
+        [input.batchId],
+      );
+      const linkedEventIds = linkedEvents.rows.map((row) => row.id);
+      const removableEvents = linkedEventIds.length ? await client.query<{ id: string }>(
+        `SELECT se.id
+         FROM registry_source_events se
+         WHERE se.id = ANY($1::text[])
+           AND NOT EXISTS (
+             SELECT 1 FROM registry_batch_source_events other
+             WHERE other.source_event_id = se.id AND other.batch_id <> $2
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM registry_submission_batches other
+             WHERE other.source_event_id = se.id AND other.id <> $2
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM registry_vendor_events ve WHERE ve.source_event_ids ? se.id
+           )`,
+        [linkedEventIds, input.batchId],
+      ) : { rows: [] as Array<{ id: string }> };
+      const removedSourceEventIds = removableEvents.rows.map((row) => row.id);
+      const retainedSourceEventIds = linkedEventIds.filter((id) => !removedSourceEventIds.includes(id));
+
+      const handoffOnlyEvents = retainedSourceEventIds.length ? await client.query<{ id: string }>(
+        `SELECT se.id
+         FROM registry_source_events se
+         WHERE se.id = ANY($1::text[])
+           AND NOT EXISTS (
+             SELECT 1 FROM registry_batch_source_events other
+             WHERE other.source_event_id = se.id AND other.batch_id <> $2
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM registry_submission_batches other
+             WHERE other.source_event_id = se.id AND other.id <> $2
+           )`,
+        [retainedSourceEventIds, input.batchId],
+      ) : { rows: [] as Array<{ id: string }> };
+      const handoffOnlyEventIds = handoffOnlyEvents.rows.map((row) => row.id);
+      const cancelledEventIds = [...new Set([...removedSourceEventIds, ...handoffOnlyEventIds])];
+
+      const sourceItems = cancelledEventIds.length ? await client.query<{ id: string }>(
+        "SELECT id FROM registry_source_items WHERE source_event_id = ANY($1::text[])",
+        [cancelledEventIds],
+      ) : { rows: [] as Array<{ id: string }> };
+      const sourceItemIds = sourceItems.rows.map((row) => row.id);
+      const removedSourceItems = removedSourceEventIds.length ? await client.query<{ id: string }>(
+        "SELECT id FROM registry_source_items WHERE source_event_id = ANY($1::text[])",
+        [removedSourceEventIds],
+      ) : { rows: [] as Array<{ id: string }> };
+      const removedSourceItemIds = removedSourceItems.rows.map((row) => row.id);
+      const candidateArtifacts = removedSourceEventIds.length ? await client.query<{ id: string }>(
+        `SELECT raw_artifact_id AS id FROM registry_source_events
+         WHERE id = ANY($1::text[]) AND raw_artifact_id IS NOT NULL
+         UNION
+         SELECT artifact_id AS id FROM registry_source_items
+         WHERE source_event_id = ANY($1::text[]) AND artifact_id IS NOT NULL`,
+        [removedSourceEventIds],
+      ) : { rows: [] as Array<{ id: string }> };
+      const candidateArtifactIds = candidateArtifacts.rows.map((row) => row.id);
+
+      await client.query(
+        `DELETE FROM registry_work_items
+         WHERE (entity_type = 'submission_batch' AND entity_id = $1)
+            OR (entity_type = 'source_event' AND entity_id = ANY($2::text[]))
+            OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))`,
+        [input.batchId, cancelledEventIds, sourceItemIds],
+      );
+      await client.query(
+        `DELETE FROM registry_status_events
+         WHERE (entity_type = 'submission_batch' AND entity_id = $1)
+            OR (entity_type = 'source_event' AND entity_id = ANY($2::text[]))
+            OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))`,
+        [input.batchId, removedSourceEventIds, removedSourceItemIds],
+      );
+      if (handoffOnlyEventIds.length) {
+        await client.query(
+          `UPDATE registry_source_items
+           SET fetch_status = CASE WHEN fetch_status IN ('queued', 'fetching') THEN 'blocked' ELSE fetch_status END,
+               parse_status = CASE WHEN parse_status IN ('queued', 'parsing') THEN 'blocked' ELSE parse_status END,
+               metadata = metadata || $2::jsonb,
+               updated_at = now()
+           WHERE source_event_id = ANY($1::text[])`,
+          [handoffOnlyEventIds, json({ scopeBoundary: "purchased_delivery_handed_off", handoffReason: input.reason })],
+        );
+        for (const sourceEventId of handoffOnlyEventIds) {
+          await this.insertStatusEvent(client, "source_event", sourceEventId, "source.handed_off", input.actor, {
+            reason: input.reason,
+            removedSubmissionId: input.batchId,
+          });
+        }
+      }
+      await client.query("DELETE FROM registry_submission_batches WHERE id = $1", [input.batchId]);
+      if (removedSourceEventIds.length) {
+        await client.query("DELETE FROM registry_source_events WHERE id = ANY($1::text[])", [removedSourceEventIds]);
+      }
+      await this.insertStatusEvent(client, "removed_submission", input.batchId, "submission.removed", input.actor, {
+        reason: input.reason,
+        vendorId,
+        removedSourceEventIds,
+        retainedSourceEventIds,
+      });
+
+      const unreferenced = candidateArtifactIds.length ? await client.query<ArtifactRow>(
+        `SELECT a.id, a.kind, a.storage_key, a.sha256, a.size_bytes, a.content_type, a.metadata, a.created_at
+         FROM registry_artifacts a
+         WHERE a.id = ANY($1::text[])
+           AND NOT EXISTS (SELECT 1 FROM registry_source_events se WHERE se.raw_artifact_id = a.id)
+           AND NOT EXISTS (SELECT 1 FROM registry_source_items si WHERE si.artifact_id = a.id)
+           AND NOT EXISTS (SELECT 1 FROM registry_task_versions tv WHERE tv.artifact_id = a.id)
+           AND NOT EXISTS (SELECT 1 FROM registry_trajectories tr WHERE tr.artifact_id = a.id)
+         ORDER BY a.size_bytes DESC NULLS LAST, a.id`,
+        [candidateArtifactIds],
+      ) : { rows: [] as ArtifactRow[] };
+      await client.query("COMMIT");
+      return {
+        batchId: input.batchId,
+        vendorId,
+        removedSourceEventIds,
+        retainedSourceEventIds,
+        unreferencedArtifacts: unreferenced.rows.map(artifactFromRow),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async recordCheckResult(input: CheckResultInput): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -745,31 +915,50 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async getArtifact(id: string): Promise<ArtifactRecord | null> {
-    const result = await this.pool.query<{
-      id: string;
-      kind: ArtifactInput["kind"];
-      storage_key: string;
-      sha256: string;
-      size_bytes: string | null;
-      content_type: string | null;
-      metadata: Record<string, unknown>;
-      created_at: string | Date;
-    }>(
+    const result = await this.pool.query<ArtifactRow>(
       `SELECT id, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
        FROM registry_artifacts WHERE id = $1`,
       [id],
     );
     const row = result.rows[0];
-    return row ? {
-      id: row.id,
-      kind: row.kind,
-      storageKey: row.storage_key,
-      sha256: row.sha256,
-      sizeBytes: row.size_bytes === null ? undefined : Number(row.size_bytes),
-      contentType: row.content_type ?? undefined,
-      metadata: row.metadata,
-      createdAt: new Date(row.created_at).toISOString(),
-    } : null;
+    return row ? artifactFromRow(row) : null;
+  }
+
+  async unregisterArtifactIfUnreferenced(id: string): Promise<ArtifactRecord | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const artifact = await client.query<ArtifactRow>(
+        `SELECT id, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
+         FROM registry_artifacts WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      const row = artifact.rows[0];
+      if (!row) {
+        await client.query("COMMIT");
+        return null;
+      }
+      const referenced = await client.query<{ referenced: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM registry_source_events WHERE raw_artifact_id = $1
+           UNION ALL SELECT 1 FROM registry_source_items WHERE artifact_id = $1
+           UNION ALL SELECT 1 FROM registry_task_versions WHERE artifact_id = $1
+           UNION ALL SELECT 1 FROM registry_trajectories WHERE artifact_id = $1
+         ) AS referenced`,
+        [id],
+      );
+      if (referenced.rows[0]?.referenced) {
+        throw new RegistryConflictError(`Artifact ${id} is still referenced and cannot be deleted`);
+      }
+      await client.query("DELETE FROM registry_artifacts WHERE id = $1", [id]);
+      await client.query("COMMIT");
+      return artifactFromRow(row);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async updateStatus(input: StatusUpdateInput): Promise<void> {
@@ -1275,6 +1464,19 @@ function sourceItemFromRow(row: SourceItemRow): CatalogSourceItem {
     mutable: row.mutable,
     capturedAt: row.captured_at === null ? null : new Date(row.captured_at).toISOString(),
     metadata: row.metadata,
+  };
+}
+
+function artifactFromRow(row: ArtifactRow): ArtifactRecord {
+  return {
+    id: row.id,
+    kind: row.kind,
+    storageKey: row.storage_key,
+    sha256: row.sha256,
+    sizeBytes: row.size_bytes === null ? undefined : Number(row.size_bytes),
+    contentType: row.content_type ?? undefined,
+    metadata: row.metadata,
+    createdAt: new Date(row.created_at).toISOString(),
   };
 }
 

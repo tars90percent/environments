@@ -30,7 +30,7 @@ type SubmissionPlan = {
     attachments: AttachmentPlan[];
   };
 };
-type CapturePlan = { submissions: SubmissionPlan[] };
+type CapturePlan = { purpose: "sample_evaluation"; submissions: SubmissionPlan[] };
 
 const [command, planPath] = process.argv.slice(2);
 if (command !== "capture-feishu-plan" || !planPath) {
@@ -47,7 +47,8 @@ for (const submission of plan.submissions) {
   let primaryCreated = alreadyExists;
   for (const [index, attachment] of submission.batch.attachments.entries()) {
     const existingEvent = await getSourceEvent(eventIdFor(attachment));
-    if (existingEvent) {
+    const retryOfSourceEventId = existingEvent && sourceEventNeedsRetry(existingEvent) ? String(existingEvent.id) : undefined;
+    if (existingEvent && !retryOfSourceEventId) {
       process.stdout.write(`${JSON.stringify({ type: "capture_skipped", reason: "source_event_exists", batchId: submission.batch.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
       if (!primaryCreated) {
         await createSubmission(submission, existingEvent);
@@ -56,9 +57,17 @@ for (const submission of plan.submissions) {
       continue;
     }
     process.stdout.write(`${JSON.stringify({ type: "capture_started", batchId: submission.batch.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
-    const item = await captureAttachment(submission.vendor, attachment);
+    const item = await captureAttachment(submission.vendor, attachment, retryOfSourceEventId);
     summary[item.captured ? "captured" : "failed"] += 1;
     process.stdout.write(`${JSON.stringify({ type: "capture_finished", batchId: submission.batch.id, position: index + 1, captured: item.captured, filename: attachment.filename })}\n`);
+
+    if (retryOfSourceEventId && !item.captured) {
+      if (!primaryCreated) {
+        await createSubmission(submission, existingEvent!);
+        primaryCreated = true;
+      }
+      continue;
+    }
 
     if (primaryCreated) {
       item.envelope.batchLinks = [{
@@ -66,11 +75,11 @@ for (const submission of plan.submissions) {
         role: "supplement",
         sourceItemIds: item.envelope.items.map((sourceItem: { id: string }) => sourceItem.id),
       }];
-      await request("POST", "/v1/intake/source-events", item.envelope);
+      await importEnvelopeWithCleanup(item);
       continue;
     }
 
-    await request("POST", "/v1/intake/source-events", item.envelope);
+    await importEnvelopeWithCleanup(item);
     await createSubmission(submission, item.envelope.sourceEvent);
     primaryCreated = true;
   }
@@ -79,7 +88,7 @@ for (const submission of plan.submissions) {
 
 process.stdout.write(`${JSON.stringify({ submissions: ledger.length, ledger }, null, 2)}\n`);
 
-async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan) {
+async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan, retryOfSourceEventId?: string) {
   const directory = await mkdtemp(join(tmpdir(), "case-feishu-intake-"));
   const outputName = `${attachment.messageId}-${safeName(attachment.filename)}`;
   const outputPath = join(directory, outputName);
@@ -101,16 +110,18 @@ async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan) {
     await rm(directory, { recursive: true, force: true });
   }
 
-  const eventId = eventIdFor(attachment);
-  const itemId = `source-item:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}`;
+  const retrySuffix = retryOfSourceEventId && artifact ? `:retry:${String(artifact.sha256).slice(0, 20)}` : "";
+  const eventId = `${eventIdFor(attachment)}${retrySuffix}`;
+  const itemId = `source-item:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}${retrySuffix}`;
   return {
     captured: Boolean(artifact),
+    artifactId: typeof artifact?.id === "string" ? artifact.id : undefined,
     envelope: {
       vendor,
       sourceEvent: {
         id: eventId,
         channel: "other",
-        externalRef: `case-capture://feishu/${attachment.messageId}/${shortHash(attachment.fileKey)}`,
+        externalRef: `case-capture://feishu/${attachment.messageId}/${shortHash(attachment.fileKey)}${retrySuffix.replaceAll(":", "/")}`,
         sender: attachment.sender,
         receivedAt: attachment.receivedAt,
         rawArtifactId: artifact?.id,
@@ -120,6 +131,7 @@ async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan) {
           messageId: attachment.messageId,
           fileKey: attachment.fileKey,
           captureMethod: "lark-cli-resource-download",
+          ...(retryOfSourceEventId ? { retryOfSourceEventId } : {}),
           ...(errorMessage ? { captureError: errorMessage } : {}),
         },
       },
@@ -141,6 +153,7 @@ async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan) {
           fileKey: attachment.fileKey,
           originalFilename: attachment.filename,
           categoryId: attachment.categoryId,
+          ...(retryOfSourceEventId ? { retryOfSourceEventId } : {}),
           ...(errorMessage ? { captureError: errorMessage } : {}),
         },
       }],
@@ -190,6 +203,7 @@ async function createSubmission(submission: SubmissionPlan, sourceEvent: Record<
         countUnit: "sample_files",
         sampleFileCount: submission.batch.attachments.length,
         intakeMethod: "feishu_resource_capture",
+        intakePurpose: "sample_evaluation",
       },
     },
     categories: submission.batch.categories.map((category) => ({
@@ -321,8 +335,26 @@ async function request(method: string, path: string, body?: unknown): Promise<un
   return value;
 }
 
+async function importEnvelopeWithCleanup(item: { artifactId?: string; envelope: Record<string, unknown> }): Promise<void> {
+  try {
+    await request("POST", "/v1/intake/source-events", item.envelope);
+  } catch (error) {
+    if (item.artifactId) {
+      try {
+        await request("DELETE", `/v1/artifacts/${encodeURIComponent(item.artifactId)}`);
+      } catch {
+        // A concurrent or completed source import may already reference it; the API refuses unsafe deletion.
+      }
+    }
+    throw error;
+  }
+}
+
 function parsePlan(value: unknown): CapturePlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capture plan must be an object");
+  if ((value as { purpose?: unknown }).purpose !== "sample_evaluation") {
+    throw new Error("Capture plan purpose must be sample_evaluation; purchased deliveries belong in the downstream pipeline");
+  }
   const submissions = (value as { submissions?: unknown }).submissions;
   if (!Array.isArray(submissions)) throw new Error("Capture plan submissions must be an array");
   for (const [index, entry] of submissions.entries()) {
@@ -343,7 +375,12 @@ function parsePlan(value: unknown): CapturePlan {
       if (Number.isNaN(Date.parse(attachment.receivedAt))) throw new Error(`submissions[${index}] attachment has an invalid receivedAt`);
     }
   }
-  return { submissions: submissions as SubmissionPlan[] };
+  return { purpose: "sample_evaluation", submissions: submissions as SubmissionPlan[] };
+}
+
+function sourceEventNeedsRetry(value: Record<string, unknown>): boolean {
+  const items = value.items;
+  return Array.isArray(items) && items.some((item) => item && typeof item === "object" && (item as { fetchStatus?: unknown }).fetchStatus === "failed");
 }
 
 async function sha256File(path: string): Promise<string> {

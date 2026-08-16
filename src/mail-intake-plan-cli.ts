@@ -30,6 +30,7 @@ type Submission = {
     attachments: Attachment[];
   };
 };
+type CapturePlan = { purpose: "sample_evaluation"; submissions: Submission[] };
 
 const [command, planPath] = process.argv.slice(2);
 if (command !== "capture-mail-plan" || !planPath) {
@@ -40,68 +41,74 @@ const plan = parsePlan(JSON.parse(await readFile(planPath, "utf8")));
 const larkEnv = await prepareLarkRuntimeEnv(process.env);
 const ledger: Array<{ batchId: string; files: number; captured: number; failed: number }> = [];
 
-for (const submission of plan) {
+for (const submission of plan.submissions) {
   const captured = [];
   for (const attachment of submission.batch.attachments) captured.push(await captureAttachment(submission.vendor, attachment));
   const primary = captured[0];
   if (!primary) continue;
 
-  if (submission.batch.existing) {
-    for (const item of captured) {
-      item.envelope.batchLinks = [{
-        batchId: submission.batch.id,
-        role: "supplement",
-        sourceItemIds: item.envelope.items.map((sourceItem) => sourceItem.id),
-      }];
-      await request("POST", "/v1/intake/source-events", item.envelope);
-    }
-  } else {
-    await request("POST", "/v1/intake/source-events", primary.envelope);
-    const examplesByCategory = new Map<string, string[]>();
-    for (const attachment of submission.batch.attachments) {
-      const values = examplesByCategory.get(attachment.categoryId) ?? [];
-      values.push(attachment.filename);
-      examplesByCategory.set(attachment.categoryId, values);
-    }
-    await request("POST", "/v1/intake/submissions", {
-      vendor: submission.vendor,
-      sourceEvent: primary.envelope.sourceEvent,
-      batch: {
-        id: submission.batch.id,
-        date: submission.batch.date,
-        label: submission.batch.label,
-        sourceLabel: "Feishu Mail sample attachments",
-        taskCount: 0,
-        formats: [...new Set(submission.batch.attachments.map((attachment) => formatFor(attachment.filename)))],
-        workflowStatus: "unchecked",
-        catalogVisibility: "available",
-        delta: {
-          added: 0,
-          removed: 0,
-          changedFiles: submission.batch.attachments.length,
-          note: `${submission.batch.attachments.length} sample files captured; task records and deterministic checks are pending.`,
+  try {
+    if (submission.batch.existing) {
+      for (const item of captured) {
+        item.envelope.batchLinks = [{
+          batchId: submission.batch.id,
+          role: "supplement",
+          sourceItemIds: item.envelope.items.map((sourceItem) => sourceItem.id),
+        }];
+        await request("POST", "/v1/intake/source-events", item.envelope);
+      }
+    } else {
+      await request("POST", "/v1/intake/source-events", primary.envelope);
+      const examplesByCategory = new Map<string, string[]>();
+      for (const attachment of submission.batch.attachments) {
+        const values = examplesByCategory.get(attachment.categoryId) ?? [];
+        values.push(attachment.filename);
+        examplesByCategory.set(attachment.categoryId, values);
+      }
+      await request("POST", "/v1/intake/submissions", {
+        vendor: submission.vendor,
+        sourceEvent: primary.envelope.sourceEvent,
+        batch: {
+          id: submission.batch.id,
+          date: submission.batch.date,
+          label: submission.batch.label,
+          sourceLabel: "Feishu Mail sample attachments",
+          taskCount: 0,
+          formats: [...new Set(submission.batch.attachments.map((attachment) => formatFor(attachment.filename)))],
+          workflowStatus: "unchecked",
+          catalogVisibility: "available",
+          delta: {
+            added: 0,
+            removed: 0,
+            changedFiles: submission.batch.attachments.length,
+            note: `${submission.batch.attachments.length} sample files captured; task records and deterministic checks are pending.`,
+          },
+          metadata: {
+            countUnit: "sample_files",
+            sampleFileCount: submission.batch.attachments.length,
+            intakeMethod: "feishu_mail_attachment_capture",
+            intakePurpose: "sample_evaluation",
+          },
         },
-        metadata: {
-          countUnit: "sample_files",
-          sampleFileCount: submission.batch.attachments.length,
-          intakeMethod: "feishu_mail_attachment_capture",
-        },
-      },
-      categories: submission.batch.categories.map((category) => ({
-        ...category,
-        count: 0,
-        examples: examplesByCategory.get(category.id) ?? [],
-      })),
-      tasks: [],
-    });
-    for (const item of captured.slice(1)) {
-      item.envelope.batchLinks = [{
-        batchId: submission.batch.id,
-        role: "supplement",
-        sourceItemIds: item.envelope.items.map((sourceItem) => sourceItem.id),
-      }];
-      await request("POST", "/v1/intake/source-events", item.envelope);
+        categories: submission.batch.categories.map((category) => ({
+          ...category,
+          count: 0,
+          examples: examplesByCategory.get(category.id) ?? [],
+        })),
+        tasks: [],
+      });
+      for (const item of captured.slice(1)) {
+        item.envelope.batchLinks = [{
+          batchId: submission.batch.id,
+          role: "supplement",
+          sourceItemIds: item.envelope.items.map((sourceItem) => sourceItem.id),
+        }];
+        await request("POST", "/v1/intake/source-events", item.envelope);
+      }
     }
+  } catch (error) {
+    await cleanupUnlinkedArtifacts(captured);
+    throw error;
   }
 
   ledger.push({
@@ -143,6 +150,7 @@ async function captureAttachment(vendor: Vendor, attachment: Attachment) {
   const locator = `feishu-mail://message/${encodeURIComponent(attachment.messageId)}`;
   return {
     captured: Boolean(artifact),
+    artifactId: typeof artifact?.id === "string" ? artifact.id : undefined,
     envelope: {
       vendor,
       sourceEvent: {
@@ -254,8 +262,11 @@ async function request(method: string, path: string, body?: unknown): Promise<un
   return value;
 }
 
-function parsePlan(value: unknown): Submission[] {
+function parsePlan(value: unknown): CapturePlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capture plan must be an object");
+  if ((value as { purpose?: unknown }).purpose !== "sample_evaluation") {
+    throw new Error("Capture plan purpose must be sample_evaluation; purchased deliveries belong in the downstream pipeline");
+  }
   const submissions = (value as { submissions?: unknown }).submissions;
   if (!Array.isArray(submissions)) throw new Error("Capture plan submissions must be an array");
   for (const [index, entry] of submissions.entries()) {
@@ -273,7 +284,18 @@ function parsePlan(value: unknown): Submission[] {
       if (Number.isNaN(Date.parse(attachment.receivedAt))) throw new Error(`submissions[${index}] attachment has an invalid receivedAt`);
     }
   }
-  return submissions as Submission[];
+  return { purpose: "sample_evaluation", submissions: submissions as Submission[] };
+}
+
+async function cleanupUnlinkedArtifacts(items: Array<{ artifactId?: string }>): Promise<void> {
+  for (const item of items) {
+    if (!item.artifactId) continue;
+    try {
+      await request("DELETE", `/v1/artifacts/${encodeURIComponent(item.artifactId)}`);
+    } catch {
+      // The API refuses deletion when an import already linked the artifact.
+    }
+  }
 }
 
 function mailDownloadUrl(value: unknown, attachmentId: string): string {

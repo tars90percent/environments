@@ -6,6 +6,7 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionRemovalInput,
   SubmissionReviewInput,
   TaskSourceLinksInput,
   VendorArchiveInput,
@@ -41,6 +42,10 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const sourceEvent = object(root.sourceEvent, "sourceEvent");
   const batch = object(root.batch, "batch");
   const delta = object(batch.delta, "batch.delta");
+  const batchMetadata = optionalObject(batch.metadata, "batch.metadata");
+  if (batchMetadata?.intakePurpose !== "sample_evaluation") {
+    throw new ValidationError("batch.metadata.intakePurpose must be sample_evaluation; purchased deliveries belong in the downstream pipeline");
+  }
   const categories = array(root.categories, "categories").map((item, index) => {
     const category = object(item, `categories[${index}]`);
     return {
@@ -108,7 +113,7 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
         changedFiles: optionalNonNegativeInteger(delta.changedFiles, "batch.delta.changedFiles"),
         note: string(delta.note, "batch.delta.note"),
       },
-      metadata: optionalObject(batch.metadata, "batch.metadata"),
+      metadata: batchMetadata,
     },
     categories,
     tasks,
@@ -243,6 +248,15 @@ export function parseArtifact(value: unknown): ArtifactInput {
     contentType: optionalString(input.contentType, "contentType"),
     metadata: optionalObject(input.metadata, "metadata"),
   } as ArtifactInput;
+}
+
+export function parseSubmissionRemoval(value: unknown): SubmissionRemovalInput {
+  const input = object(value, "submission removal");
+  return {
+    batchId: identifier(input.batchId, "batchId"),
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
 }
 
 export function parseStatusUpdate(value: unknown): StatusUpdateInput {

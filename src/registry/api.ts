@@ -14,6 +14,7 @@ import {
   parseSourceEnvelope,
   parseStatusUpdate,
   parseSubmissionManifest,
+  parseSubmissionRemoval,
   parseSubmissionReview,
   parseTaskSourceLinks,
   parseVendorArchive,
@@ -181,6 +182,15 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
     const result = await options.repository.ingestSubmission(parseSubmissionManifest(await readJson(request)));
     return sendJson(response, result.created ? 201 : 200, result);
   }
+  if (method === "POST" && url.pathname === "/v1/intake/remove-submission") {
+    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
+    const removed = await options.repository.removeSubmission(parseSubmissionRemoval(await readJson(request)));
+    const artifacts = [];
+    for (const candidate of removed.unreferencedArtifacts) {
+      artifacts.push(await purgeArtifact(candidate.id, options));
+    }
+    return sendJson(response, 200, { ...removed, unreferencedArtifacts: undefined, artifacts });
+  }
   if (method === "POST" && url.pathname === "/v1/intake/source-events") {
     const result = await options.repository.ingestSourceEnvelope(parseSourceEnvelope(await readJson(request)));
     return sendJson(response, result.created ? 201 : 200, result);
@@ -203,6 +213,11 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
     await options.artifactStore.verifyObject({ key: artifact.storageKey, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes });
     await options.repository.registerArtifact(artifact);
     return sendJson(response, 201, { recorded: true });
+  }
+  const artifactDeleteMatch = url.pathname.match(/^\/v1\/artifacts\/([^/]+)$/);
+  if (method === "DELETE" && artifactDeleteMatch?.[1]) {
+    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
+    return sendJson(response, 200, await purgeArtifact(decodeURIComponent(artifactDeleteMatch[1]), options));
   }
   if (method === "POST" && url.pathname === "/v1/status") {
     await options.repository.updateStatus(parseStatusUpdate(await readJson(request)));
@@ -242,6 +257,19 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   return sendJson(response, 404, { error: "not_found" });
 }
 
+async function purgeArtifact(id: string, options: RegistryServerOptions) {
+  if (!options.artifactStore) throw new RequestError(503, "artifact_store_unavailable");
+  const artifact = await options.repository.unregisterArtifactIfUnreferenced(id);
+  if (!artifact) return { artifactId: id, deleted: false, reason: "not_found" };
+  try {
+    await options.artifactStore.deleteObject(artifact.storageKey);
+    return { artifactId: id, deleted: true, sizeBytes: artifact.sizeBytes ?? null };
+  } catch (error) {
+    await options.repository.registerArtifact(artifact);
+    throw error;
+  }
+}
+
 async function recordResearcherUpload(upload: ResearcherUploadInput, options: RegistryServerOptions) {
   if (!options.artifactStore) throw new RequestError(503, "artifact_store_unavailable");
   const directoryEntry = (await options.repository.vendorDirectory()).find((vendor) => vendor.id === upload.vendorId);
@@ -279,6 +307,7 @@ async function recordResearcherUpload(upload: ResearcherUploadInput, options: Re
     metadata: {
       originalName: filename,
       source: "researcher_portal_upload",
+      intakePurpose: "sample_evaluation",
       uploaderOpenId: upload.researcher.openId,
     },
   });
@@ -293,6 +322,7 @@ async function recordResearcherUpload(upload: ResearcherUploadInput, options: Re
       rawArtifactId: artifactId,
       metadata: {
         uploadId: upload.id,
+        intakePurpose: "sample_evaluation",
         uploaderOpenId: upload.researcher.openId,
         uploaderUnionId: upload.researcher.unionId,
         uploaderTenantKey: upload.researcher.tenantKey,
@@ -311,7 +341,7 @@ async function recordResearcherUpload(upload: ResearcherUploadInput, options: Re
       parseStatus: "not_requested",
       mutable: false,
       capturedAt: upload.uploadedAt,
-      metadata: { uploadId: upload.id, originalFilename: filename, categoryId },
+      metadata: { uploadId: upload.id, originalFilename: filename, categoryId, intakePurpose: "sample_evaluation" },
     }],
     relations: [],
   });
@@ -344,6 +374,7 @@ async function recordResearcherUpload(upload: ResearcherUploadInput, options: Re
         countUnit: "sample_files",
         sampleFileCount: 1,
         intakeMethod: "researcher_portal_upload",
+        intakePurpose: "sample_evaluation",
         uploaderOpenId: upload.researcher.openId,
         ...(upload.note ? { researcherNote: upload.note } : {}),
       },

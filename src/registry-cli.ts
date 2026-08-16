@@ -72,6 +72,12 @@ switch (command) {
   case "register-artifact":
     output(await request("POST", "/v1/artifacts", await jsonFile(argument)));
     break;
+  case "remove-submission":
+    output(await request("POST", "/v1/intake/remove-submission", await jsonFile(argument)));
+    break;
+  case "delete-artifact":
+    output(await request("DELETE", `/v1/artifacts/${encode(argument, "artifact id")}`));
+    break;
   case "set-status":
     output(await request("POST", "/v1/status", await jsonFile(argument)));
     break;
@@ -85,7 +91,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|record-vendor-event|archive-vendor|restore-vendor|store-file|record-check|record-follow-up|record-submission-review|register-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|record-vendor-event|archive-vendor|restore-vendor|store-file|record-check|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {

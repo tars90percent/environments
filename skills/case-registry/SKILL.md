@@ -1,11 +1,11 @@
 ---
 name: case-registry
-description: Query and update CASE's canonical RL environment vendor, submission, task, check, trajectory, and follow-up registry.
+description: Query and update CASE's canonical environment-sample intake, evaluation, and provenance registry.
 ---
 
 # CASE registry
 
-Use the `case-registry` command for canonical RL-environment procurement data. The registry, not the Feishu conversation, is the source of truth for vendor samples and their evaluation history.
+Use the `case-registry` command for canonical environment-sample data. The registry, not the Feishu conversation, is the source of truth for samples and their evaluation history. Purchased deliveries belong to the downstream production-data pipeline and must not be copied into CASE object storage or normalized as CASE submissions.
 
 ## Read operations
 
@@ -38,6 +38,8 @@ case-registry record-check /absolute/path/check-result.json
 case-registry record-follow-up /absolute/path/follow-up.json
 case-registry record-submission-review /absolute/path/review.json
 case-registry register-artifact /absolute/path/artifact.json
+case-registry remove-submission /absolute/path/submission-removal.json
+case-registry delete-artifact <unreferenced-artifact-id>
 case-registry set-status /absolute/path/status.json
 case-registry link-task-sources /absolute/path/task-source-links.json
 case-registry lease-work <worker-id>
@@ -46,7 +48,9 @@ case-intake capture-feishu-plan /absolute/path/plan.json
 case-mail-intake capture-mail-plan /absolute/path/plan.json
 ```
 
-Never replace an existing submission batch. A corrected vendor delivery is a new batch linked through `revisesBatchId`. Keep deterministic check evidence separate from heuristic review and human research judgment. Do not expose service tokens or direct database credentials in replies.
+Never replace an existing sample submission. A corrected sample is a new submission linked through `revisesBatchId`. Keep deterministic check evidence separate from heuristic review and human research judgment. Do not expose service tokens or direct database credentials in replies.
+
+When a sample is purchased, hand it off to the downstream pipeline. CASE may retain the dated purchase/handoff fact, but remove the purchased delivery submission and package bytes. `remove-submission` refuses normalized task records, removes only source events exclusive to that submission, retains source evidence referenced by vendor history, and deletes only artifacts that become unreferenced. `delete-artifact` is restricted to already-unreferenced artifacts and is used to clean interrupted captures.
 
 `vendors` includes contacted organizations that do not yet have a submission. `vendor <vendor-id>` returns the vendor directory record, any normalized submissions, and append-only vendor history. Record contact, sample, evaluation, commercial, delivery, acceptance, payment, and relationship events with `record-vendor-event`; link every event to the exact source events and submissions that support it. Do not represent a purchase or delivery by mutating a single current-stage label.
 
@@ -66,15 +70,15 @@ An unresolved attribution placeholder is a provenance identity, not an actionabl
 
 Use `link-task-sources` when immutable sample artifacts were captured after task normalization. It only appends provenance links from existing task versions to existing source items; it does not rewrite either record.
 
-Use `case-intake capture-feishu-plan` for a reviewed list of Feishu file resources. It downloads each exact message/file-key pair through CASE's renewable user login, stores the bytes content-addressably, creates per-message source records, and groups them into visible `unchecked` submissions. The command never opens or executes downloaded vendor material. Re-running the same immutable plan is idempotent.
+Use `case-intake capture-feishu-plan` for a reviewed list of Feishu sample resources. The plan must declare `"purpose": "sample_evaluation"`; this is an explicit assertion that purchased delivery files have been excluded. It downloads each exact message/file-key pair through CASE's renewable user login, stores the bytes content-addressably, creates per-message source records, and groups them into visible `unchecked` submissions. The command never opens or executes downloaded vendor material. Re-running a successful immutable plan is idempotent; a failed capture can be retried as a provenance-preserving retry event.
 
-Use `case-mail-intake capture-mail-plan` for the equivalent workflow when samples arrive as Feishu Mail attachments. The plan uses exact message and attachment IDs, obtains short-lived download URLs through the renewable user login, stores immutable copies, and records the email provenance without exposing the signed URLs.
+Use `case-mail-intake capture-mail-plan` for the equivalent workflow when samples arrive as Feishu Mail attachments. Its plan also requires `"purpose": "sample_evaluation"`. The plan uses exact message and attachment IDs, obtains short-lived download URLs through the renewable user login, stores immutable copies, and records the email provenance without exposing the signed URLs.
 
 Human reviews are append-only records attached to a submission. Use `scope: "submission"` with no category ids for the whole submission, or `scope: "categories"` with one or more category ids for a scoped judgment. Preserve each researcher's identity and each later review separately; do not overwrite earlier judgments.
 
 ## Heterogeneous intake
 
-Treat every inbound message or email as a source event, not as a task batch. Preserve its original payload first, then represent everything discovered inside it as an immutable source graph:
+Treat every in-scope sample message or email as a source event, not as a task batch. Preserve its original payload first, then represent everything discovered inside it as an immutable source graph:
 
 - messages, attachments, URLs, folders, Docs, Sheets, worksheets, rows, PDFs, archives, task packages, and container images are source items;
 - `contains`, `links_to`, `derived_from`, `describes`, `mirrors`, and `supersedes` are explicit relations;

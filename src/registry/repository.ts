@@ -13,6 +13,8 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionRemovalInput,
+  SubmissionRemovalResult,
   SubmissionReview,
   SubmissionReviewInput,
   TaskSourceLinksInput,
@@ -29,6 +31,7 @@ export interface RegistryRepository {
   initialize(): Promise<void>;
   close(): Promise<void>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
+  removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }>;
   listVendorEvents(vendorId: string): Promise<VendorEvent[]>;
@@ -50,5 +53,6 @@ export interface RegistryRepository {
   getTask(id: string, scope: CatalogScope): Promise<CatalogTask | null>;
   getSourceEvent(id: string): Promise<CatalogSourceEvent | null>;
   getArtifact(id: string): Promise<ArtifactRecord | null>;
+  unregisterArtifactIfUnreferenced(id: string): Promise<ArtifactRecord | null>;
   operationsSummary(): Promise<OperationsSummary>;
 }

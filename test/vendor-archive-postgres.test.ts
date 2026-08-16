@@ -166,6 +166,7 @@ function manifest(vendorId: string, batchId: string, visibility: "available" | "
       workflowStatus: visibility === "internal" ? "quarantined" : "unchecked",
       catalogVisibility: visibility,
       delta: { added: 0, removed: 0, note: "Integration test fixture." },
+      metadata: { intakePurpose: "sample_evaluation" },
     },
     categories: [],
     tasks: [],

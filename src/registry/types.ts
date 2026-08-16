@@ -266,6 +266,20 @@ export type ArtifactRecord = ArtifactInput & {
   createdAt: string;
 };
 
+export type SubmissionRemovalInput = {
+  batchId: string;
+  reason: string;
+  actor: string;
+};
+
+export type SubmissionRemovalResult = {
+  batchId: string;
+  vendorId: string;
+  removedSourceEventIds: string[];
+  retainedSourceEventIds: string[];
+  unreferencedArtifacts: ArtifactRecord[];
+};
+
 export type StatusUpdateInput = {
   entityType: "submission_batch" | "task_version";
   entityId: string;
