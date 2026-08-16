@@ -10,6 +10,7 @@ interface Env {
   CASE_REGISTRY_PORT?: string;
   CASE_REGISTRY_CATALOG_TOKEN?: string;
   CASE_REGISTRY_REVIEW_TOKEN?: string;
+  CASE_REGISTRY_UPLOAD_TOKEN?: string;
   FEISHU_APP_ID?: string;
   FEISHU_APP_SECRET?: string;
   FEISHU_ALLOWED_TENANT_KEY?: string;
@@ -41,9 +42,10 @@ const worker = {
     const url = new URL(request.url);
     const runtimeEnv = env ?? (process.env as unknown as Env);
 
-    for (const key of ["CASE_REGISTRY_URL", "CASE_REGISTRY_HOST", "CASE_REGISTRY_PORT", "CASE_REGISTRY_CATALOG_TOKEN", "CASE_REGISTRY_REVIEW_TOKEN", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_ALLOWED_TENANT_KEY", "PORTAL_BASE_URL", "PORTAL_SESSION_SECRET"] as const) {
+    for (const key of ["CASE_REGISTRY_URL", "CASE_REGISTRY_HOST", "CASE_REGISTRY_PORT", "CASE_REGISTRY_CATALOG_TOKEN", "CASE_REGISTRY_REVIEW_TOKEN", "CASE_REGISTRY_UPLOAD_TOKEN", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_ALLOWED_TENANT_KEY", "PORTAL_BASE_URL", "PORTAL_SESSION_SECRET"] as const) {
       if (runtimeEnv[key]) process.env[key] = runtimeEnv[key];
     }
+    const registryUrl = caseRegistryUrl(runtimeEnv);
 
     const submissionReviewsMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/reviews$/);
     if (submissionReviewsMatch?.[1]) {
@@ -91,7 +93,86 @@ const worker = {
         return Response.json({ error: "case_reviews_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
       }
     }
-    const registryUrl = caseRegistryUrl(runtimeEnv);
+    if (url.pathname === "/api/uploads") {
+      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      const session = portalSession(request, runtimeEnv);
+      if (!session) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
+      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_UPLOAD_TOKEN) {
+        return Response.json({ error: "case_uploads_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
+      }
+      if (!isSameOrigin(request, runtimeEnv)) {
+        return Response.json({ error: "origin_denied" }, { status: 403, headers: { "cache-control": "no-store" } });
+      }
+
+      try {
+        const upload = researcherUploadRequest(request);
+        if (!request.body) throw new UploadRequestError(400, "Choose a sample file.");
+        const prepared = await fetch(`${registryUrl}/v1/researcher-uploads/upload-url`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_UPLOAD_TOKEN}`,
+            accept: "application/json",
+            "content-type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({ sha256: upload.sha256, sizeBytes: upload.sizeBytes, contentType: upload.contentType }),
+        });
+        if (!prepared.ok) return registryErrorResponse(prepared, "upload_prepare_failed");
+        const preparedBody = await prepared.json() as { url?: unknown };
+        if (typeof preparedBody.url !== "string") throw new Error("CASE returned no upload URL");
+        const uploadUrl = new URL(preparedBody.url);
+        if (uploadUrl.protocol !== "https:") throw new Error("CASE returned an unsafe upload URL");
+
+        const stored = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "content-type": upload.contentType,
+            "content-length": String(upload.sizeBytes),
+            "x-amz-meta-sha256": upload.sha256,
+          },
+          body: request.body,
+          duplex: "half",
+        } as RequestInit & { duplex: "half" });
+        if (!stored.ok) return Response.json({ error: "artifact_upload_failed" }, { status: 502, headers: { "cache-control": "no-store" } });
+
+        const completed = await fetch(`${registryUrl}/v1/researcher-uploads`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_UPLOAD_TOKEN}`,
+            accept: "application/json",
+            "content-type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({
+            id: upload.id,
+            vendorId: upload.vendorId,
+            label: upload.label,
+            category: upload.category,
+            ...(upload.note ? { note: upload.note } : {}),
+            uploadedAt: upload.uploadedAt,
+            artifact: {
+              sha256: upload.sha256,
+              sizeBytes: upload.sizeBytes,
+              contentType: upload.contentType,
+              originalName: upload.filename,
+            },
+            researcher: {
+              openId: session.openId,
+              unionId: session.unionId ?? undefined,
+              tenantKey: session.tenantKey,
+              name: session.name,
+            },
+          }),
+        });
+        return new Response(completed.body, {
+          status: completed.status,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
+        });
+      } catch (error) {
+        if (error instanceof UploadRequestError) {
+          return Response.json({ error: "invalid_upload", message: error.message }, { status: error.status, headers: { "cache-control": "no-store" } });
+        }
+        return Response.json({ error: "case_uploads_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+      }
+    }
 
     if (url.pathname === "/api/catalog") {
       if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
@@ -251,6 +332,87 @@ function isSameOrigin(request: Request, env: Env): boolean {
 }
 
 class ReviewRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+type ResearcherUploadRequest = {
+  id: string;
+  vendorId: string;
+  label: string;
+  category: string;
+  note: string;
+  filename: string;
+  sha256: string;
+  sizeBytes: number;
+  contentType: string;
+  uploadedAt: string;
+};
+
+const MAX_RESEARCHER_UPLOAD_BYTES = 250 * 1024 * 1024;
+
+function researcherUploadRequest(request: Request): ResearcherUploadRequest {
+  const id = plainHeader(request, "x-case-upload-id", 200);
+  const vendorId = plainHeader(request, "x-case-vendor-id", 200);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(id)) throw new UploadRequestError(400, "Upload id is invalid.");
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(vendorId)) throw new UploadRequestError(400, "Vendor is invalid.");
+  const label = encodedHeader(request, "x-case-upload-label", 300);
+  const category = encodedHeader(request, "x-case-upload-category", 200);
+  const filename = encodedHeader(request, "x-case-file-name", 500);
+  const note = optionalEncodedHeader(request, "x-case-upload-note", 5_000);
+  const sha256 = plainHeader(request, "x-case-file-sha256", 64).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(sha256)) throw new UploadRequestError(400, "File hash is invalid.");
+  const sizeBytes = Number(plainHeader(request, "x-case-file-size", 30));
+  if (!Number.isInteger(sizeBytes) || sizeBytes < 1) throw new UploadRequestError(400, "File size is invalid.");
+  if (sizeBytes > MAX_RESEARCHER_UPLOAD_BYTES) throw new UploadRequestError(413, "File must be 250 MB or smaller.");
+  const requestLength = request.headers.get("content-length");
+  if (requestLength && Number(requestLength) !== sizeBytes) throw new UploadRequestError(400, "File size does not match the request body.");
+  const contentType = (request.headers.get("content-type") || "application/octet-stream").trim();
+  if (!contentType || contentType.length > 300) throw new UploadRequestError(400, "File type is invalid.");
+  return { id, vendorId, label, category, note, filename, sha256, sizeBytes, contentType, uploadedAt: new Date().toISOString() };
+}
+
+function plainHeader(request: Request, name: string, maximum: number): string {
+  const value = request.headers.get(name)?.trim();
+  if (!value) throw new UploadRequestError(400, `${name} is required.`);
+  if (value.length > maximum) throw new UploadRequestError(400, `${name} is too long.`);
+  return value;
+}
+
+function encodedHeader(request: Request, name: string, maximum: number): string {
+  const value = plainHeader(request, name, maximum * 3);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value).trim();
+  } catch {
+    throw new UploadRequestError(400, `${name} is invalid.`);
+  }
+  if (!decoded || decoded.length > maximum) throw new UploadRequestError(400, `${name} is invalid.`);
+  return decoded;
+}
+
+function optionalEncodedHeader(request: Request, name: string, maximum: number): string {
+  const value = request.headers.get(name)?.trim();
+  if (!value) return "";
+  return encodedHeader(request, name, maximum);
+}
+
+async function registryErrorResponse(response: Response, fallback: string): Promise<Response> {
+  let message: string | undefined;
+  try {
+    const value = await response.json() as { message?: unknown; error?: unknown };
+    message = typeof value.message === "string" ? value.message : typeof value.error === "string" ? value.error : undefined;
+  } catch {
+    message = undefined;
+  }
+  return Response.json({ error: fallback, ...(message ? { message } : {}) }, {
+    status: response.status,
+    headers: { "cache-control": "no-store" },
+  });
+}
+
+class UploadRequestError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
   }

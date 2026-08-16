@@ -59,6 +59,8 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /View evidence/);
   assert.match(source, /selectedVendor\.procurementSummary && <ProcurementSummary/);
   assert.doesNotMatch(source, /quote_under_negotiation|purchaseStatus/);
+  assert.match(source, /Upload a research sample/);
+  assert.match(source, /Contacted, no samples yet/);
   assert.doesNotMatch(source, /className="vendor-mark/);
   assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次|Update history|RL Environment Catalog|强化学习环境目录/);
   assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);
@@ -72,8 +74,11 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
   assert.match(worker, /CASE_REGISTRY_CATALOG_TOKEN/);
   assert.match(worker, /CASE_REGISTRY_REVIEW_TOKEN/);
+  assert.match(worker, /CASE_REGISTRY_UPLOAD_TOKEN/);
   assert.match(worker, /hasPortalSession/);
-  assert.doesNotMatch(worker, /method:\s*["']PUT|method:\s*["']PATCH|method:\s*["']DELETE/i);
+  assert.match(worker, /url\.pathname === ["']\/api\/uploads["']/);
+  assert.match(worker, /method:\s*["']PUT["']/);
+  assert.doesNotMatch(worker, /method:\s*["']PATCH|method:\s*["']DELETE/i);
   assert.match(worker, /\/api\\\/submissions\\\/\(\[\^\/\]\+\)\\\/reviews/);
   assert.match(worker, /reviewer:\s*\{/);
   assert.match(worker, /openId:\s*session\.openId/);

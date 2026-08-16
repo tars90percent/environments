@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Image from "next/image";
 import type { CatalogBatch, CatalogProcurementSummary, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, SubmissionReview, SubmissionReviewScope, SubmissionReviewSignal, WorkflowStatus } from "./catalog";
 
@@ -80,6 +80,27 @@ const copy = {
         ordered: "已有采购订单",
         unknown: "采购承诺状态未记录",
       },
+    },
+    contactedVendors: "已联系，尚无样本",
+    contactedNote: "默认收起，避免干扰样本浏览。",
+    upload: {
+      action: "上传样本",
+      title: "上传研究样本",
+      note: "文件将直接保存到 CASE 的不可变对象存储，并登记为一条待核验的提交记录。",
+      vendor: "关联供应商",
+      label: "提交名称",
+      category: "样本类别",
+      file: "样本文件",
+      comment: "给 CASE 的说明",
+      commentPlaceholder: "这份样本来自哪里、希望 CASE 重点检查什么？",
+      chooseFile: "选择一个文件或压缩包（最大 250 MB）",
+      submit: "保存到 CASE",
+      hashing: "正在校验文件…",
+      uploading: "正在上传并登记…",
+      saved: "样本已保存，CASE 可以开始整理与核验。",
+      error: "暂时无法保存这份样本。",
+      close: "关闭",
+      required: "请填写所有必填项并选择文件。",
     },
     response: {
       title: "研究反馈",
@@ -216,6 +237,27 @@ const copy = {
         unknown: "Commitment status not recorded",
       },
     },
+    contactedVendors: "Contacted, no samples yet",
+    contactedNote: "Collapsed by default to keep sample browsing focused.",
+    upload: {
+      action: "Upload sample",
+      title: "Upload a research sample",
+      note: "The file will be preserved in CASE's immutable object store and registered as an unchecked submission.",
+      vendor: "Associated vendor",
+      label: "Submission name",
+      category: "Sample category",
+      file: "Sample file",
+      comment: "Note for CASE",
+      commentPlaceholder: "Where did this sample come from, and what should CASE inspect?",
+      chooseFile: "Choose one file or archive (250 MB maximum)",
+      submit: "Save to CASE",
+      hashing: "Verifying file…",
+      uploading: "Uploading and registering…",
+      saved: "The sample is preserved. CASE can now normalize and evaluate it.",
+      error: "This sample could not be saved right now.",
+      close: "Close",
+      required: "Complete the required fields and choose a file.",
+    },
     response: {
       title: "Researcher response",
       note: "Responses are recorded at the submission level. Narrow the scope only when your feedback applies to particular task categories.",
@@ -294,7 +336,11 @@ export default function PortalClient({ user }: { user: PortalUser }) {
   const [selectedVendorId, setSelectedVendorId] = useState("");
   const [query, setQuery] = useState("");
   const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const vendors = useMemo(() => catalog?.vendors ?? [], [catalog]);
+  const sampledVendors = useMemo(() => vendors.filter((vendor) => vendor.batches.length > 0), [vendors]);
+  const contactedVendors = useMemo(() => vendors.filter((vendor) => vendor.batches.length === 0), [vendors]);
   const t = copy[language];
 
   useEffect(() => {
@@ -311,7 +357,9 @@ export default function PortalClient({ user }: { user: PortalUser }) {
       .then((snapshot) => {
         if (!active) return;
         setCatalog(snapshot);
-        setSelectedVendorId(snapshot.vendors[0]?.id ?? "");
+        setSelectedVendorId((current) => snapshot.vendors.some((vendor) => vendor.id === current)
+          ? current
+          : snapshot.vendors.find((vendor) => vendor.batches.length > 0)?.id ?? snapshot.vendors[0]?.id ?? "");
         setExpandedBatches(new Set());
         setCatalogState("ready");
       })
@@ -321,12 +369,11 @@ export default function PortalClient({ user }: { user: PortalUser }) {
         setCatalogState("unavailable");
       });
     return () => { active = false; };
-  }, []);
+  }, [catalogRevision]);
 
-  const matchingVendors = useMemo(() => vendors.filter((vendor) => {
-    const haystack = [vendor.name, vendor.description, ...vendor.batches.flatMap((batch) => [batch.label, batch.source, ...batch.categories.flatMap((category) => [category.name, ...category.tasks.map((task) => task.title)])])].join(" ").toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  }), [query, vendors]);
+  const matchingSampledVendors = useMemo(() => sampledVendors.filter((vendor) => vendorMatches(vendor, query)), [query, sampledVendors]);
+  const matchingContactedVendors = useMemo(() => contactedVendors.filter((vendor) => vendorMatches(vendor, query)), [query, contactedVendors]);
+  const matchingVendors = [...matchingSampledVendors, ...matchingContactedVendors];
 
   const selectedVendor = query
     ? matchingVendors.find((vendor) => vendor.id === selectedVendorId) ?? matchingVendors[0]
@@ -355,6 +402,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
       <a aria-label="小环境" className="wordmark" href="#top"><Image alt="" height={40} priority src="/favicon.png" width={40} /></a>
       <div className="header-tools">
         <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label={t.search} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} value={query} /></label>
+        <button className="upload-trigger" onClick={() => setUploadOpen(true)} type="button">{t.upload.action}</button>
         <button aria-label={t.languageLabel} className="language-switch" onClick={toggleLanguage} type="button">{t.language}</button>
         <details className="account-menu">
           <summary aria-label={t.accountLabel} className="avatar">
@@ -369,7 +417,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
       <section className="registry-header">
         <h1>{t.title}</h1>
         <div className="registry-stats">
-          <span><strong>{catalog?.totals.vendors ?? "—"}</strong>{t.stats.vendors}</span>
+          <span><strong>{catalog ? sampledVendors.length : "—"}</strong>{t.stats.vendors}</span>
           <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.submissions}</span>
           <span><strong>{catalog?.totals.taskVersions ?? "—"}</strong>{t.stats.tasks}</span>
         </div>
@@ -378,15 +426,114 @@ export default function PortalClient({ user }: { user: PortalUser }) {
       <div className="page-body">
         {catalogState === "loading" && <StateCard value={t.loading} />}
         {catalogState === "unavailable" && <StateCard value={{ ...t.unavailable, body: `${unavailableReason ?? t.unavailable.fallback} ${t.unavailable.tail}` }} />}
-        {catalogState === "ready" && selectedVendor && <VendorView matchingVendors={matchingVendors} selectedVendor={selectedVendor} expandedBatches={expandedBatches} onSelect={selectVendor} onToggleBatch={toggleBatch} t={t} language={language} />}
+        {catalogState === "ready" && selectedVendor && <VendorView matchingSampledVendors={matchingSampledVendors} matchingContactedVendors={matchingContactedVendors} query={query} selectedVendor={selectedVendor} expandedBatches={expandedBatches} onSelect={selectVendor} onToggleBatch={toggleBatch} t={t} language={language} />}
         {catalogState === "ready" && !selectedVendor && <StateCard value={t.searchEmpty} />}
       </div>
     </main>
+    {uploadOpen && <UploadPanel vendors={vendors} onClose={() => setUploadOpen(false)} onUploaded={(vendorId) => { setSelectedVendorId(vendorId); setCatalogRevision((value) => value + 1); }} t={t} />}
   </div>;
 }
 
-function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect, onToggleBatch, t, language }: {
-  matchingVendors: CatalogVendor[];
+function VendorButton({ vendor, selected, onSelect, t }: { vendor: CatalogVendor; selected: boolean; onSelect(vendor: CatalogVendor): void; t: UiCopy }) {
+  const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
+  const sampleFiles = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
+  const declaredTasks = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
+  const inventory = [count > 0 ? `${count} ${t.records}` : "", sampleFiles > 0 ? `${sampleFiles} ${t.sampleFiles}` : "", declaredTasks > 0 ? `${declaredTasks} ${t.declaredTasks}` : ""].filter(Boolean).join(" · ") || t.noSamples;
+  return <button className={selected ? "active" : ""} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {inventory}</small></span></button>;
+}
+
+function UploadPanel({ vendors, onClose, onUploaded, t }: { vendors: CatalogVendor[]; onClose(): void; onUploaded(vendorId: string): void; t: UiCopy }) {
+  const [vendorId, setVendorId] = useState(vendors[0]?.id ?? "");
+  const [label, setLabel] = useState("");
+  const [category, setCategory] = useState("");
+  const [note, setNote] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<"idle" | "hashing" | "uploading" | "saved" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const busy = status === "hashing" || status === "uploading";
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!vendorId || !label.trim() || !category.trim() || !file) {
+      setStatus("error");
+      setMessage(t.upload.required);
+      return;
+    }
+    if (file.size > 250 * 1024 * 1024) {
+      setStatus("error");
+      setMessage(t.upload.chooseFile);
+      return;
+    }
+
+    try {
+      setStatus("hashing");
+      setMessage(t.upload.hashing);
+      const sha256 = await sha256File(file);
+      setStatus("uploading");
+      setMessage(t.upload.uploading);
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": file.type || "application/octet-stream",
+          "x-case-upload-id": crypto.randomUUID(),
+          "x-case-vendor-id": vendorId,
+          "x-case-upload-label": encodeURIComponent(label.trim()),
+          "x-case-upload-category": encodeURIComponent(category.trim()),
+          ...(note.trim() ? { "x-case-upload-note": encodeURIComponent(note.trim()) } : {}),
+          "x-case-file-name": encodeURIComponent(file.name),
+          "x-case-file-size": String(file.size),
+          "x-case-file-sha256": sha256,
+        },
+        body: file,
+      });
+      if (!response.ok) {
+        const value = await response.json().catch(() => ({})) as { message?: unknown };
+        throw new Error(typeof value.message === "string" ? value.message : t.upload.error);
+      }
+      setStatus("saved");
+      setMessage(t.upload.saved);
+      onUploaded(vendorId);
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : t.upload.error);
+    }
+  }
+
+  return <div className="upload-backdrop" role="presentation">
+    <section aria-labelledby="upload-title" aria-modal="true" className="upload-dialog" role="dialog">
+      <header><div><div className="eyebrow">CASE INTAKE</div><h2 id="upload-title">{t.upload.title}</h2><p>{t.upload.note}</p></div><button aria-label={t.upload.close} onClick={onClose} type="button">×</button></header>
+      <form onSubmit={submit}>
+        <label><span>{t.upload.vendor}</span><select disabled={busy} onChange={(event) => setVendorId(event.target.value)} required value={vendorId}>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></label>
+        <label><span>{t.upload.label}</span><input disabled={busy} maxLength={300} onChange={(event) => setLabel(event.target.value)} required value={label} /></label>
+        <label><span>{t.upload.category}</span><input disabled={busy} maxLength={200} onChange={(event) => setCategory(event.target.value)} required value={category} /></label>
+        <label className="upload-file"><span>{t.upload.file}</span><input disabled={busy} onChange={(event) => setFile(event.target.files?.[0] ?? null)} required type="file" /><small>{file ? `${file.name} · ${formatBytes(file.size)}` : t.upload.chooseFile}</small></label>
+        <label className="upload-note"><span>{t.upload.comment}</span><textarea disabled={busy} maxLength={5000} onChange={(event) => setNote(event.target.value)} placeholder={t.upload.commentPlaceholder} rows={4} value={note} /></label>
+        <footer><button disabled={busy || status === "saved" || vendors.length === 0} type="submit">{busy ? t.upload.uploading : t.upload.submit}</button>{message && <span className={status}>{message}</span>}</footer>
+      </form>
+    </section>
+  </div>;
+}
+
+async function sha256File(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function vendorMatches(vendor: CatalogVendor, query: string): boolean {
+  const haystack = [vendor.name, vendor.description, ...vendor.batches.flatMap((batch) => [batch.label, batch.source, ...batch.categories.flatMap((category) => [category.name, ...category.tasks.map((task) => task.title)])])].join(" ").toLowerCase();
+  return haystack.includes(query.toLowerCase());
+}
+
+function VendorView({ matchingSampledVendors, matchingContactedVendors, query, selectedVendor, expandedBatches, onSelect, onToggleBatch, t, language }: {
+  matchingSampledVendors: CatalogVendor[];
+  matchingContactedVendors: CatalogVendor[];
+  query: string;
   selectedVendor: CatalogVendor;
   expandedBatches: Set<string>;
   onSelect(vendor: CatalogVendor): void;
@@ -399,17 +546,15 @@ function VendorView({ matchingVendors, selectedVendor, expandedBatches, onSelect
   const declaredTasks = selectedVendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
   return <div className="portal-grid">
     <aside className="vendor-sidebar" aria-label={t.vendors}>
-      <div className="sidebar-head"><strong>{t.vendors}</strong><span>{matchingVendors.length}</span></div>
+      <div className="sidebar-head"><strong>{t.vendors}</strong><span>{matchingSampledVendors.length}</span></div>
       <div className="vendor-list">
-        {matchingVendors.map((vendor) => {
-          const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
-          const sampleFiles = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
-          const declaredTasks = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
-          const inventory = [count > 0 ? `${count} ${t.records}` : "", sampleFiles > 0 ? `${sampleFiles} ${t.sampleFiles}` : "", declaredTasks > 0 ? `${declaredTasks} ${t.declaredTasks}` : ""].filter(Boolean).join(" · ") || t.noSamples;
-          return <button className={selectedVendor.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {inventory}</small></span></button>;
-        })}
-        {matchingVendors.length === 0 && <div className="sidebar-empty">{t.searchEmpty.title}</div>}
+        {matchingSampledVendors.map((vendor) => <VendorButton key={vendor.id} vendor={vendor} selected={selectedVendor.id === vendor.id} onSelect={onSelect} t={t} />)}
+        {matchingSampledVendors.length === 0 && matchingContactedVendors.length === 0 && <div className="sidebar-empty">{t.searchEmpty.title}</div>}
       </div>
+      {matchingContactedVendors.length > 0 && <details className="contacted-vendors" open={query ? true : undefined}>
+        <summary><span><strong>{t.contactedVendors}</strong><small>{t.contactedNote}</small></span><i>{matchingContactedVendors.length}</i></summary>
+        <div className="vendor-list contacted-list">{matchingContactedVendors.map((vendor) => <VendorButton key={vendor.id} vendor={vendor} selected={selectedVendor.id === vendor.id} onSelect={onSelect} t={t} />)}</div>
+      </details>}
     </aside>
 
     <section className="vendor-main" aria-labelledby="vendor-name">
