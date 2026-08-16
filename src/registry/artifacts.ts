@@ -1,5 +1,6 @@
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createHash } from "node:crypto";
 
 export type ArtifactStoreOptions = {
   endpoint: string;
@@ -25,7 +26,7 @@ export class ArtifactStore {
     });
   }
 
-  async createUploadUrl(input: { key: string; contentType: string; sha256?: string }): Promise<{ url: string; expiresInSeconds: number }> {
+  async createUploadUrl(input: { key: string; contentType: string; sha256?: string; sizeBytes?: number }): Promise<{ url: string; expiresInSeconds: number }> {
     const expiresInSeconds = 15 * 60;
     const url = await getSignedUrl(
       this.client,
@@ -33,6 +34,7 @@ export class ArtifactStore {
         Bucket: this.options.bucket,
         Key: safeKey(input.key),
         ContentType: input.contentType,
+        ContentLength: input.sizeBytes,
         Metadata: input.sha256 ? { sha256: input.sha256 } : undefined,
       }),
       { expiresIn: expiresInSeconds },
@@ -41,11 +43,22 @@ export class ArtifactStore {
   }
 
   async verifyObject(input: { key: string; sha256: string; sizeBytes?: number }): Promise<void> {
-    const result = await this.client.send(new HeadObjectCommand({ Bucket: this.options.bucket, Key: safeKey(input.key) }));
-    if (result.Metadata?.sha256 !== input.sha256) throw new Error("Stored artifact SHA-256 metadata does not match");
-    if (input.sizeBytes !== undefined && result.ContentLength !== input.sizeBytes) {
+    const key = safeKey(input.key);
+    const head = await this.client.send(new HeadObjectCommand({ Bucket: this.options.bucket, Key: key }));
+    if (head.Metadata?.sha256 !== input.sha256) throw new Error("Stored artifact SHA-256 metadata does not match");
+    if (input.sizeBytes !== undefined && head.ContentLength !== input.sizeBytes) {
       throw new Error("Stored artifact size does not match");
     }
+    const object = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: key }));
+    if (!object.Body) throw new Error("Stored artifact has no body");
+    const hash = createHash("sha256");
+    let sizeBytes = 0;
+    for await (const chunk of object.Body as AsyncIterable<Uint8Array>) {
+      hash.update(chunk);
+      sizeBytes += chunk.byteLength;
+    }
+    if (input.sizeBytes !== undefined && sizeBytes !== input.sizeBytes) throw new Error("Stored artifact streamed size does not match");
+    if (hash.digest("hex") !== input.sha256) throw new Error("Stored artifact bytes do not match the declared SHA-256");
   }
 
   async createDownloadUrl(key: string, downloadName?: string): Promise<{ url: string; expiresInSeconds: number }> {

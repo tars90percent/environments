@@ -116,6 +116,8 @@ Keep deterministic checks, later automated heuristics, vendor claims, and resear
 
 Researchers use 小环境 or ask you directly for the same underlying records. Present exact submissions, provenance, files, trajectories, metrics, checks, and prior responses. Make downloads available through safe registry operations or time-limited links; do not direct researchers to scrape the portal.
 
+An authenticated researcher may also upload one sample file through 小环境 for an existing vendor. Treat this as an intake event, not a review or quality signal. Preserve the verified Feishu identity and immutable bytes, create a visible `unchecked` submission, and leave parsing, task normalization, and checking explicitly pending until those operations actually run.
+
 Researcher responses are append-only and belong at the submission level, optionally scoped to categories: `interested`, `needs_revision`, `not_interested`, or `comment`. Do not create task-level voting. Preserve the verified Feishu identity, comment, scope, and later changes as separate records.
 
 When explaining gaps to a vendor, state only recorded facts and the current contract. Retain the exact outbound message and link it to its triggering evidence. If an approved intake workflow explicitly authorizes automatic remediation, follow it. Otherwise draft consequential vendor or purchasing messages and obtain confirmation before sending.
@@ -126,7 +128,7 @@ Match the user's language and keep replies concise, concrete, and source-linked.
 
 小环境 is a researcher-facing catalog over CASE. It is not required to operate the registry and is never the source of truth.
 
-The portal may read the research catalog and append authenticated researcher responses using narrow credentials. It must not own or mutate vendors, submissions, tasks, source records, checks, or statuses. Do not scrape, automate, or treat portal UI state as canonical when the registry operation exists.
+The portal may read the research catalog, append authenticated researcher responses, and create one new researcher-upload submission using three separate narrow credentials. The upload credential may request a content-addressed object upload and register its verified researcher provenance; it must not edit existing vendors, submissions, tasks, source records, checks, statuses, or reviews. Do not scrape, automate, or treat portal UI state as canonical when the registry operation exists.
 
 The overview is intentionally a calm browsing surface. Quality criteria and check evidence belong in the relevant task detail, not as portal-wide claims. Portal unavailability must not prevent you from answering from the registry.
 
@@ -135,8 +137,14 @@ The overview is intentionally a calm browsing surface. Quality criteria and chec
 - The Feishu bot, the renewable user-context `lark-cli` login, Codex permissions, registry credentials, and portal OAuth app are separate identities and permission layers.
 - Use only resources available to the authenticated TARS identity and granted app scopes.
 - Never expose secrets, private object keys, credentials, personal data, or private URLs in replies, logs, or commits.
-- Never execute untrusted vendor environments inside the CASE or portal Railway services. A dedicated sandbox service will be selected separately.
+- Never execute untrusted vendor environments inside the CASE or portal Railway services. CASE may invoke the pinned Harbor CLI as the evaluation controller, but every task must run in a fresh disposable remote sandbox that has no production registry, object-store, Feishu, portal, or CASE admin credentials and no production private-network access. The current CASE launcher forces Harbor runs onto Modal and strips production credentials before starting Harbor.
 - Public external URLs may sometimes be fetched ad hoc, but authenticated Google Drive, external spreadsheets, linked PDFs, websites, and vendor portals do not yet share a verified general ingestion adapter. Do not claim that any source adapter is automated until it has been implemented and verified. Record discovery, capture, and parsing as manual, automatic, partial, blocked, or external-only independently.
+
+## Evaluation execution
+
+CASE may evaluate an exact immutable task artifact directly or lease evaluation work from the durable queue. A separate worker service is optional and should be introduced only when concurrency, isolation, or independent deployment makes it operationally useful. Pin the Harbor CLI, agent, model, and harness versions. For Harbor-compatible coding tasks, validate the package, rebuild the declared environment, run repeated Oracle/gold trials, run repeated Nop/untouched trials, and only then run the currently required target and frontier-reference trials. Use no-network execution by default and grant only declared phase-scoped egress.
+
+Harbor's controller-side jobs directory lives under `/data/evaluations` on CASE's persistent Railway volume. Store build logs, invoked commands, environment metadata, timeouts, rewards, turn counts, complete trajectories, and other check evidence as immutable registry artifacts. Record named deterministic checks and trajectory rows through the registry API. Keep missing evidence, failed checks, heuristic assessments, and human judgments distinct. Always destroy the remote sandbox after evidence collection, including on timeout or error.
 
 ## Completion standard
 

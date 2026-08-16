@@ -2,6 +2,7 @@ import type {
   ArtifactInput,
   CheckResultInput,
   FollowUpInput,
+  ResearcherUploadInput,
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
@@ -346,6 +347,34 @@ export function parseSubmissionReview(value: unknown): SubmissionReviewInput {
     },
     comment,
     metadata: optionalObject(input.metadata, "metadata"),
+  };
+}
+
+export function parseResearcherUpload(value: unknown): ResearcherUploadInput {
+  const input = object(value, "researcher upload");
+  const artifact = object(input.artifact, "artifact");
+  const researcher = object(input.researcher, "researcher");
+  const category = boundedString(input.category, "category", 200);
+  const note = input.note === undefined ? undefined : boundedString(input.note, "note", 5_000);
+  return {
+    id: identifier(input.id, "id"),
+    vendorId: identifier(input.vendorId, "vendorId"),
+    label: boundedString(input.label, "label", 300),
+    category,
+    ...(note ? { note } : {}),
+    uploadedAt: timestamp(input.uploadedAt, "uploadedAt"),
+    artifact: {
+      sha256: sha256(artifact.sha256, "artifact.sha256"),
+      sizeBytes: positiveInteger(artifact.sizeBytes, "artifact.sizeBytes"),
+      contentType: boundedString(artifact.contentType, "artifact.contentType", 300),
+      originalName: boundedString(artifact.originalName, "artifact.originalName", 500),
+    },
+    researcher: {
+      openId: boundedString(researcher.openId, "researcher.openId", 500),
+      unionId: optionalString(researcher.unionId, "researcher.unionId"),
+      tenantKey: boundedString(researcher.tenantKey, "researcher.tenantKey", 500),
+      name: boundedString(researcher.name, "researcher.name", 500),
+    },
   };
 }
 

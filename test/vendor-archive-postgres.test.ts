@@ -34,6 +34,7 @@ test("archives and restores vendors through the admin API", { skip: !testDatabas
       adminToken,
       catalogToken,
       reviewToken: "review-token-with-at-least-32-characters",
+      uploadToken: "upload-token-with-at-least-32-characters",
       host: "127.0.0.1",
       port: 0,
     });

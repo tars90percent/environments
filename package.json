@@ -7,7 +7,8 @@
   "bin": {
     "case-registry": "dist/registry-cli.js",
     "case-intake": "dist/intake-plan-cli.js",
-    "case-mail-intake": "dist/mail-intake-plan-cli.js"
+    "case-mail-intake": "dist/mail-intake-plan-cli.js",
+    "case-harbor": "dist/harbor-cli.js"
   },
   "scripts": {
     "dev": "node --watch --import tsx src/index.ts",

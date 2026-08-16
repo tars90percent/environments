@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionReview, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -48,12 +48,39 @@ test("validates a complete immutable submission manifest", () => {
 test("protects catalog reads separately from CASE writes", () => {
   const catalogToken = "catalog-token-with-at-least-32-characters";
   const reviewToken = "review-token-with-at-least-32-characters!";
+  const uploadToken = "upload-token-with-at-least-32-characters!!";
   const adminToken = "admin-token-with-at-least-32-characters!!";
-  assert.equal(registryRole(undefined, catalogToken, reviewToken, adminToken), null);
-  assert.equal(registryRole("Bearer wrong", catalogToken, reviewToken, adminToken), null);
-  assert.equal(registryRole(`Bearer ${catalogToken}`, catalogToken, reviewToken, adminToken), "catalog");
-  assert.equal(registryRole(`Bearer ${reviewToken}`, catalogToken, reviewToken, adminToken), "review");
-  assert.equal(registryRole(`Bearer ${adminToken}`, catalogToken, reviewToken, adminToken), "admin");
+  assert.equal(registryRole(undefined, catalogToken, reviewToken, uploadToken, adminToken), null);
+  assert.equal(registryRole("Bearer wrong", catalogToken, reviewToken, uploadToken, adminToken), null);
+  assert.equal(registryRole(`Bearer ${catalogToken}`, catalogToken, reviewToken, uploadToken, adminToken), "catalog");
+  assert.equal(registryRole(`Bearer ${reviewToken}`, catalogToken, reviewToken, uploadToken, adminToken), "review");
+  assert.equal(registryRole(`Bearer ${uploadToken}`, catalogToken, reviewToken, uploadToken, adminToken), "upload");
+  assert.equal(registryRole(`Bearer ${adminToken}`, catalogToken, reviewToken, uploadToken, adminToken), "admin");
+});
+
+test("validates bounded researcher uploads with verified identity and artifact metadata", () => {
+  const upload = {
+    id: "97f6d26d-9a3a-4a86-a6aa-39289650616c",
+    vendorId: "vendor-one",
+    label: "Researcher sample",
+    category: "Coding environments",
+    note: "Please inspect the grader behavior.",
+    uploadedAt: "2026-08-17T08:00:00.000Z",
+    artifact: {
+      sha256: "a".repeat(64),
+      sizeBytes: 1024,
+      contentType: "application/zip",
+      originalName: "sample.zip",
+    },
+    researcher: {
+      openId: "ou_researcher",
+      tenantKey: "tenant_one",
+      name: "Researcher One",
+    },
+  };
+  assert.equal(parseResearcherUpload(upload).artifact.originalName, "sample.zip");
+  assert.throws(() => parseResearcherUpload({ ...upload, artifact: { ...upload.artifact, sha256: "bad" } }), ValidationError);
+  assert.throws(() => parseResearcherUpload({ ...upload, vendorId: "vendor/one" }), ValidationError);
 });
 
 test("validates append-only submission reviews and category scope", () => {

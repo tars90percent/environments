@@ -4,11 +4,12 @@ TARS's always-on Feishu colleague for environment and task sample operations,
 powered by Codex.
 
 CASE also owns the canonical RL-environment sample registry used by its own
-tools and by read-only human surfaces such as 小环境. PostgreSQL holds vendor,
+tools and by narrow human surfaces such as 小环境. PostgreSQL holds vendor,
 submission, task-version, check, trajectory, status, follow-up, and durable
 work-queue records. S3-compatible object storage holds immutable packages and
-evidence. The portal is deliberately only a catalog client; it does not own or
-mutate procurement state.
+evidence. The portal is a catalog and authenticated intake client; it can append
+researcher responses and new researcher-upload submissions, but it does not own
+or edit canonical procurement state.
 
 The service currently has a deliberately narrow chat-transport boundary:
 
@@ -56,7 +57,8 @@ When the registry variables in `.env.example` are configured, the same process
 also serves the CASE registry API on `PORT`. It runs built-in migrations at
 startup. CASE and trusted operators use `CASE_REGISTRY_ADMIN_TOKEN`; read-only
 catalog clients use `CASE_REGISTRY_CATALOG_TOKEN`; authenticated human surfaces
-write append-only researcher reviews with the narrower `CASE_REGISTRY_REVIEW_TOKEN`.
+write append-only researcher reviews with `CASE_REGISTRY_REVIEW_TOKEN` and create
+new researcher-upload submissions with the separate `CASE_REGISTRY_UPLOAD_TOKEN`.
 
 The installed `case-registry` command gives CASE and Codex the same operations:
 
@@ -88,6 +90,12 @@ attachments through CASE's renewable user login, store immutable bytes in the
 registry bucket, and register visible `unchecked` submissions without opening
 or executing vendor material. Catalog task totals count only normalized task
 versions; vendor-declared quantities and raw file counts remain separate.
+
+小环境 uses a separate upload-only registry role to request a content-addressed
+object URL and register an authenticated researcher's file as a visible
+`unchecked` submission for an existing vendor. That operation preserves the
+original filename, hash, size, upload event, and verified researcher identity;
+it does not parse the file, normalize tasks, or imply review readiness.
 
 The vendor directory also retains contacted organizations before they have a
 submission. Append-only vendor events preserve contact, evaluation, commercial,
@@ -157,6 +165,27 @@ profile, Railway PostgreSQL, and Railway object storage. Store credentials only
 in Railway secrets. Chat transport, Feishu authorization, Codex permissions,
 registry roles, and portal OAuth are independent permission layers.
 
-Environment execution is intentionally out of process. Do not pull or run
-untrusted vendor environments in this service; use the dedicated sandbox system
-selected for that purpose.
+CASE is the initial evaluation controller; a second always-on worker service is
+not required. The image includes pinned Harbor and Modal CLIs. Its `harbor`
+launcher forces `harbor run` onto Modal, gives Harbor only evaluation-specific
+credentials, and keeps downloaded job results under `/data/evaluations` on the
+persistent Railway volume. Vendor code executes in a fresh remote sandbox, not
+inside the CASE service.
+
+Configure a dedicated Modal service-user token with `MODAL_TOKEN_ID` and
+`MODAL_TOKEN_SECRET`, and select its least-privilege Modal environment with
+`MODAL_ENVIRONMENT`. The direct `modal` command is available for provider
+diagnostics. A normal invocation is:
+
+```sh
+harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle
+```
+
+The launcher adds `--env modal`; a different execution environment is rejected.
+Harbor creates its normal `jobs/` result tree beneath `/data/evaluations`, where
+CASE can inspect it and register immutable evidence. A separate controller
+service remains a future scaling option, not a prerequisite for remote sandbox
+execution.
+
+The execution boundary, run sequence, and sandbox acceptance test are in
+[`docs/evaluation-runner.md`](docs/evaluation-runner.md).

@@ -1,13 +1,16 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { ArtifactStore } from "./artifacts.js";
+import { basename, extname } from "node:path";
+import { ArtifactStore, contentAddressedStorageKey } from "./artifacts.js";
 import { RegistryConflictError, RegistryNotFoundError } from "./postgres.js";
 import type { RegistryRepository } from "./repository.js";
+import type { ResearcherUploadInput } from "./types.js";
 import {
   parseArtifact,
   parseCheckResult,
   parseFollowUp,
+  parseResearcherUpload,
   parseSourceEnvelope,
   parseStatusUpdate,
   parseSubmissionManifest,
@@ -24,6 +27,7 @@ type RegistryServerOptions = {
   artifactStore?: ArtifactStore;
   catalogToken: string;
   reviewToken: string;
+  uploadToken: string;
   adminToken: string;
   port: number;
   host?: string;
@@ -65,9 +69,32 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   const role = authenticate(request, options);
   if (!role) return sendJson(response, 401, { error: "unauthorized" });
 
+  if (method === "POST" && url.pathname === "/v1/researcher-uploads/upload-url") {
+    if (role !== "upload" && role !== "admin") return sendJson(response, 403, { error: "upload_token_required" });
+    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
+    const body = asObject(await readJson(request));
+    const sha256 = requiredSha256(body.sha256, "sha256");
+    const sizeBytes = boundedInteger(body.sizeBytes, "sizeBytes", 1, MAX_RESEARCHER_UPLOAD_BYTES);
+    const contentType = boundedRequiredString(body.contentType, "contentType", 300);
+    return sendJson(response, 200, await options.artifactStore.createUploadUrl({
+      key: contentAddressedStorageKey(sha256),
+      contentType,
+      sha256,
+      sizeBytes,
+    }));
+  }
+
+  if (method === "POST" && url.pathname === "/v1/researcher-uploads") {
+    if (role !== "upload" && role !== "admin") return sendJson(response, 403, { error: "upload_token_required" });
+    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
+    const upload = parseResearcherUpload(await readJson(request));
+    if (upload.artifact.sizeBytes > MAX_RESEARCHER_UPLOAD_BYTES) throw new RequestError(413, "upload_too_large");
+    return sendJson(response, 201, await recordResearcherUpload(upload, options));
+  }
+
   const submissionReviewsMatch = url.pathname.match(/^\/v1\/submissions\/([^/]+)\/reviews$/);
   if (submissionReviewsMatch?.[1]) {
-    if (role === "catalog") return sendJson(response, 403, { error: "review_token_required" });
+    if (role !== "review" && role !== "admin") return sendJson(response, 403, { error: "review_token_required" });
     const batchId = decodeURIComponent(submissionReviewsMatch[1]);
     if (method === "GET") return sendJson(response, 200, { reviews: await options.repository.listSubmissionReviews(batchId) });
     if (method === "POST") {
@@ -78,7 +105,7 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
     return sendJson(response, 405, { error: "method_not_allowed" });
   }
 
-  if (role === "review") return sendJson(response, 403, { error: "review_scope_only" });
+  if (role === "review" || role === "upload") return sendJson(response, 403, { error: `${role}_scope_only` });
 
   if (method === "GET" && url.pathname === "/v1/catalog") {
     const scope = role === "admin" ? requestedScope(url) : "portal";
@@ -215,15 +242,147 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   return sendJson(response, 404, { error: "not_found" });
 }
 
-function authenticate(request: IncomingMessage, options: RegistryServerOptions): "catalog" | "review" | "admin" | null {
-  return registryRole(request.headers.authorization, options.catalogToken, options.reviewToken, options.adminToken);
+async function recordResearcherUpload(upload: ResearcherUploadInput, options: RegistryServerOptions) {
+  if (!options.artifactStore) throw new RequestError(503, "artifact_store_unavailable");
+  const directoryEntry = (await options.repository.vendorDirectory()).find((vendor) => vendor.id === upload.vendorId);
+  if (!directoryEntry) throw new RequestError(404, "vendor_not_found");
+
+  const vendor = {
+    id: directoryEntry.id,
+    name: directoryEntry.name,
+    short: directoryEntry.short,
+    description: directoryEntry.description,
+    aliases: directoryEntry.aliases,
+  };
+  const filename = safeUploadName(upload.artifact.originalName);
+  const storageKey = contentAddressedStorageKey(upload.artifact.sha256);
+  const artifactId = `artifact:sha256:${upload.artifact.sha256}`;
+  const sourceEventId = `portal-upload:${upload.id}`;
+  const sourceItemId = `source-item:portal-upload:${upload.id}`;
+  const batchId = `researcher-upload:${upload.id}`;
+  const categoryId = `researcher-upload:${createHash("sha256").update(upload.category.toLowerCase()).digest("hex").slice(0, 20)}`;
+  const uploadDate = new Date(upload.uploadedAt).toISOString().slice(0, 10);
+  const actor = `researcher:${upload.researcher.openId}`;
+
+  await options.artifactStore.verifyObject({
+    key: storageKey,
+    sha256: upload.artifact.sha256,
+    sizeBytes: upload.artifact.sizeBytes,
+  });
+  await options.repository.registerArtifact({
+    id: artifactId,
+    kind: "source_payload",
+    storageKey,
+    sha256: upload.artifact.sha256,
+    sizeBytes: upload.artifact.sizeBytes,
+    contentType: upload.artifact.contentType,
+    metadata: {
+      originalName: filename,
+      source: "researcher_portal_upload",
+      uploaderOpenId: upload.researcher.openId,
+    },
+  });
+  await options.repository.ingestSourceEnvelope({
+    vendor,
+    sourceEvent: {
+      id: sourceEventId,
+      channel: "upload",
+      externalRef: `portal-upload://${upload.id}`,
+      sender: upload.researcher.name,
+      receivedAt: upload.uploadedAt,
+      rawArtifactId: artifactId,
+      metadata: {
+        uploadId: upload.id,
+        uploaderOpenId: upload.researcher.openId,
+        uploaderUnionId: upload.researcher.unionId,
+        uploaderTenantKey: upload.researcher.tenantKey,
+        ...(upload.note ? { researcherNote: upload.note } : {}),
+      },
+    },
+    items: [{
+      id: sourceItemId,
+      kind: sourceKindFor(filename),
+      displayName: filename,
+      artifactId,
+      mediaType: upload.artifact.contentType,
+      contentSha256: upload.artifact.sha256,
+      sizeBytes: upload.artifact.sizeBytes,
+      fetchStatus: "snapshotted",
+      parseStatus: "not_requested",
+      mutable: false,
+      capturedAt: upload.uploadedAt,
+      metadata: { uploadId: upload.id, originalFilename: filename, categoryId },
+    }],
+    relations: [],
+  });
+  await options.repository.ingestSubmission({
+    vendor,
+    sourceEvent: {
+      id: sourceEventId,
+      channel: "upload",
+      externalRef: `portal-upload://${upload.id}`,
+      sender: upload.researcher.name,
+      receivedAt: upload.uploadedAt,
+      rawArtifactId: artifactId,
+    },
+    batch: {
+      id: batchId,
+      date: uploadDate,
+      label: upload.label,
+      sourceLabel: "Researcher upload through 小环境",
+      taskCount: 0,
+      formats: [formatFor(filename)],
+      workflowStatus: "unchecked",
+      catalogVisibility: "available",
+      delta: {
+        added: 0,
+        removed: 0,
+        changedFiles: 1,
+        note: "One researcher-uploaded sample file was preserved; task normalization and deterministic checks are pending.",
+      },
+      metadata: {
+        countUnit: "sample_files",
+        sampleFileCount: 1,
+        intakeMethod: "researcher_portal_upload",
+        uploaderOpenId: upload.researcher.openId,
+        ...(upload.note ? { researcherNote: upload.note } : {}),
+      },
+    },
+    categories: [{
+      id: categoryId,
+      name: upload.category,
+      description: "Researcher-provided grouping awaiting CASE normalization.",
+      count: 0,
+      examples: [filename],
+    }],
+    tasks: [],
+  });
+  await options.repository.recordVendorEvent({
+    id: `${batchId}:received`,
+    vendorId: vendor.id,
+    kind: "sample",
+    eventType: "researcher_sample_uploaded",
+    summary: `A researcher uploaded ${filename} through 小环境.`,
+    actor,
+    occurredAt: upload.uploadedAt,
+    sourceEventIds: [sourceEventId],
+    batchIds: [batchId],
+    metadata: { uploadId: upload.id },
+  });
+
+  return { uploadId: upload.id, submissionId: batchId, sourceEventId, artifactId };
 }
 
-export function registryRole(header: string | undefined, catalogToken: string, reviewToken: string, adminToken: string): "catalog" | "review" | "admin" | null {
+function authenticate(request: IncomingMessage, options: RegistryServerOptions): "catalog" | "review" | "upload" | "admin" | null {
+  return registryRole(request.headers.authorization, options.catalogToken, options.reviewToken, options.uploadToken, options.adminToken);
+}
+
+export function registryRole(header: string | undefined, catalogToken: string, reviewToken: string, uploadToken: string, adminToken: string): "catalog" | "review" | "upload" | "admin" | null {
   if (!header?.startsWith("Bearer ")) return null;
   const token = header.slice("Bearer ".length);
   if (safeEqual(token, adminToken)) return "admin";
   if (safeEqual(token, reviewToken)) return "review";
+  if (safeEqual(token, uploadToken)) return "upload";
   if (safeEqual(token, catalogToken)) return "catalog";
   return null;
 }
@@ -309,6 +468,38 @@ function boundedInteger(value: unknown, name: string, minimum: number, maximum: 
     throw new RequestError(400, `${name}_invalid`);
   }
   return value as number;
+}
+
+const MAX_RESEARCHER_UPLOAD_BYTES = 250 * 1024 * 1024;
+
+function boundedRequiredString(value: unknown, name: string, maximum: number): string {
+  const parsed = requiredString(value, name);
+  if (parsed.length > maximum) throw new RequestError(400, `${name}_too_long`);
+  return parsed;
+}
+
+function requiredSha256(value: unknown, name: string): string {
+  const parsed = requiredString(value, name).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(parsed)) throw new RequestError(400, `${name}_invalid`);
+  return parsed;
+}
+
+function safeUploadName(value: string): string {
+  return basename(value.replace(/\\/g, "/")).replace(/[\r\n"]/g, "_").slice(0, 240) || "sample";
+}
+
+function formatFor(value: string): string {
+  const lower = value.toLowerCase();
+  if (lower.endsWith(".tar.gz")) return "TAR.GZ";
+  return extname(value).replace(/^\./, "").toUpperCase() || "FILE";
+}
+
+function sourceKindFor(value: string): "archive" | "pdf" | "spreadsheet" | "attachment" {
+  const lower = value.toLowerCase();
+  if ([".zip", ".rar", ".tar.gz", ".tgz", ".tar", ".gz", ".zst"].some((suffix) => lower.endsWith(suffix))) return "archive";
+  if (lower.endsWith(".pdf")) return "pdf";
+  if ([".xlsx", ".xls", ".csv"].some((suffix) => lower.endsWith(suffix))) return "spreadsheet";
+  return "attachment";
 }
 
 function safeError(error: unknown): string {

@@ -345,6 +345,27 @@ export type SubmissionReview = SubmissionReviewInput & {
   createdAt: string;
 };
 
+export type ResearcherUploadInput = {
+  id: string;
+  vendorId: string;
+  label: string;
+  category: string;
+  note?: string;
+  uploadedAt: string;
+  artifact: {
+    sha256: string;
+    sizeBytes: number;
+    contentType: string;
+    originalName: string;
+  };
+  researcher: {
+    openId: string;
+    unionId?: string;
+    tenantKey: string;
+    name: string;
+  };
+};
+
 export type CatalogTask = {
   id: string;
   stableKey: string;
