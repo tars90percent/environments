@@ -12,13 +12,13 @@ const authEnv = {
 before(() => Object.assign(process.env, authEnv));
 after(() => Object.keys(authEnv).forEach((key) => delete process.env[key]));
 
-async function render() {
+async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", {
+    new Request(new URL(path, "http://localhost/"), {
       headers: { accept: "text/html" },
     }),
     {
@@ -35,6 +35,12 @@ async function render() {
 
 test("server-renders the environment catalog", async () => {
   const response = await render();
+  assert.equal(response.status, 307);
+  assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/auth/login");
+});
+
+test("does not expose the local demand preview in a production build", async () => {
+  const response = await render("/?preview=demand-board");
   assert.equal(response.status, 307);
   assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/auth/login");
 });
@@ -60,6 +66,18 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /selectedVendor\.procurementSummary && <ProcurementSummary/);
   assert.doesNotMatch(source, /quote_under_negotiation|purchaseStatus/);
   assert.match(source, /Upload a research sample/);
+  assert.match(source, /Market supply/);
+  assert.match(source, /Research demand/);
+  assert.match(source, /Baseline for every task type/);
+  assert.match(source, /Task types in demand/);
+  assert.match(source, /Greenfield program creation/);
+  assert.match(source, /Quantitative research/);
+  assert.match(source, /软件工程/);
+  assert.match(source, /从零创建程序/);
+  assert.match(source, /TARS 研究需求工作草案/);
+  assert.match(source, /not live CASE records/);
+  assert.doesNotMatch(source, /Illustrative working draft|demand-add-inline/);
+  assert.doesNotMatch(source, /Demand status|Requested volume|Target window|matched submissions/);
   assert.match(source, /Contacted, no samples yet/);
   assert.doesNotMatch(source, /className="vendor-mark/);
   assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次|Update history|RL Environment Catalog|强化学习环境目录/);
@@ -67,7 +85,9 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /No check results recorded/);
   assert.match(source, /isExpanded \? "▴" : "▾"/);
   assert.doesNotMatch(source, /task-details|task-evidence|task-criteria|RECORDED EVIDENCE|CURRENT INTAKE CONTRACT/);
-  assert.match(source, /Switch to English/);
+  assert.match(source, /切换至英文/);
+  assert.match(source, /Switch to Chinese/);
+  assert.match(source, /snapshot\.demands\.map/);
   assert.doesNotMatch(source, /className="criteria-aside"/);
   assert.match(source, /fetch\("\/api\/catalog"/);
   assert.match(source, /\/auth\/logout/);

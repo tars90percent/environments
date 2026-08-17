@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Image from "next/image";
-import type { CatalogBatch, CatalogProcurementSummary, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, SourceFetchStatus, SourceParseStatus, SubmissionReview, SubmissionReviewScope, SubmissionReviewSignal, WorkflowStatus } from "./catalog";
+import type { CatalogBatch, CatalogProcurementSummary, CatalogResearchDemand, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, LocalizedCatalogText, SourceFetchStatus, SourceParseStatus, SubmissionReview, SubmissionReviewScope, SubmissionReviewSignal, WorkflowStatus } from "./catalog";
 
 type Language = "zh" | "en";
 
@@ -16,7 +16,7 @@ const copy = {
     vendors: "供应商",
     search: "搜索供应商、提交记录、类别和任务",
     language: "EN",
-    languageLabel: "Switch to English",
+    languageLabel: "切换至英文",
     accountLabel: "研究员账户",
     signOut: "退出登录",
     title: "环境与任务样本",
@@ -172,7 +172,7 @@ const copy = {
     vendors: "Vendors",
     search: "Search vendors, submissions, categories, and tasks",
     language: "中",
-    languageLabel: "切换至中文",
+    languageLabel: "Switch to Chinese",
     accountLabel: "Researcher account",
     signOut: "Sign out",
     title: "Environment & Task Samples",
@@ -328,10 +328,171 @@ const copy = {
 
 type UiCopy = (typeof copy)[Language];
 
-export default function PortalClient({ user }: { user: PortalUser }) {
+type MarketView = "supply" | "demand";
+type DemandItem = CatalogResearchDemand & {
+  checked: boolean;
+};
+
+const localized = (en: string, zh: string): LocalizedCatalogText => ({ en, zh });
+
+const demandPreview: DemandItem[] = [
+  {
+    id: "demand-greenfield-programs",
+    domain: localized("Software engineering", "软件工程"),
+    subdomain: localized("Program creation", "程序创建"),
+    title: localized("Greenfield program creation", "从零创建程序"),
+    note: localized("Build a new application, service, library, or tool from a functional specification.", "根据功能规格新建应用、服务、库或工具。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-debugging",
+    domain: localized("Software engineering", "软件工程"),
+    subdomain: localized("Debugging", "调试"),
+    title: localized("Diagnose and repair software defects", "诊断并修复软件缺陷"),
+    note: localized("Start broad, then split into concrete issue families such as build, correctness, performance, concurrency, or integration defects.", "先保持宽泛，随后再按构建、正确性、性能、并发或集成等具体问题族细分。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-feature-development",
+    domain: localized("Software engineering", "软件工程"),
+    subdomain: localized("Feature development", "功能开发"),
+    title: localized("Extend an existing codebase", "扩展现有代码库"),
+    note: localized("Implement a scoped feature while preserving existing behavior and working within the repository's conventions.", "在遵循代码库既有约定并保持现有行为的前提下，实现范围明确的功能。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-maintenance",
+    domain: localized("Software engineering", "软件工程"),
+    subdomain: localized("Maintenance & migration", "维护与迁移"),
+    title: localized("Maintain or modernize a repository", "维护或现代化改造代码库"),
+    note: localized("Refactors, dependency upgrades, migrations, or multi-repository changes with a verifiable outcome.", "完成重构、依赖升级、迁移或跨仓库变更，并提供可验证的结果。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-quant-investigation",
+    domain: localized("Quantitative research", "定量研究"),
+    subdomain: localized("Research analysis", "研究分析"),
+    title: localized("Conduct a quantitative research investigation", "开展定量研究分析"),
+    note: localized("Turn a research question and source data into a defensible method, analysis, and reproducible result.", "将研究问题和源数据转化为可论证的方法、分析过程和可复现结果。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-quant-modeling",
+    domain: localized("Quantitative research", "定量研究"),
+    subdomain: localized("Modeling", "建模"),
+    title: localized("Build and validate a quantitative model", "构建并验证定量模型"),
+    note: localized("Statistical, econometric, forecasting, or optimization work with inspectable assumptions and validation.", "完成统计、计量、预测或优化建模，并使假设和验证过程可检查。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-data-diagnostics",
+    domain: localized("Quantitative research", "定量研究"),
+    subdomain: localized("Data diagnostics", "数据诊断"),
+    title: localized("Investigate anomalies or conflicting results", "调查异常或矛盾结果"),
+    note: localized("Trace a discrepancy, test plausible explanations, and reconcile the evidence.", "追查差异，检验合理解释，并对证据进行核对与统一。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-document-work",
+    domain: localized("Knowledge work", "知识工作"),
+    subdomain: localized("Documents", "文档"),
+    title: localized("Produce or revise a structured document", "创建或修订结构化文档"),
+    note: localized("Create a usable document from source material, or repair an existing one against explicit requirements.", "根据源材料创建可用文档，或按照明确要求修订现有文档。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-spreadsheet-work",
+    domain: localized("Knowledge work", "知识工作"),
+    subdomain: localized("Spreadsheets", "电子表格"),
+    title: localized("Build or repair a spreadsheet model", "构建或修复电子表格模型"),
+    note: localized("Work with formulas, structure, source data, and a reviewable final workbook.", "处理公式、结构和源数据，并交付可复核的最终工作簿。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+  {
+    id: "demand-browser-workflows",
+    domain: localized("Computer use", "计算机操作"),
+    subdomain: localized("Browser workflows", "浏览器工作流"),
+    title: localized("Complete a multi-step browser workflow", "完成多步骤浏览器工作流"),
+    note: localized("Carry a realistic workflow through multiple states with an inspectable and verifiable final result.", "完成跨越多个状态的真实工作流，并产出可检查、可验证的最终结果。"),
+    sourceLabel: localized("TARS working demand outline", "TARS 研究需求工作草案"),
+    sourceDate: "2026-08-17",
+    checked: false,
+  },
+];
+
+const marketCopy = {
+  zh: {
+    marketNav: "市场视图",
+    nav: { supply: "市场供给", demand: "研究需求" },
+    demandSearch: "搜索研究需求",
+    demandTitle: "研究需求",
+    demandSubtitle: "先按任务领域、子领域和一般任务类型记录研究需求；需求更明确时，再逐步细分。",
+    preview: "本地概念预览",
+    previewNote: "以下只是用于评审这个简单清单的示例，并非 CASE 中的实时需求。",
+    baselineTitle: "所有任务类型的基础要求",
+    baselineNote: "这些是最低验收条件，不是研究需求分类。具体模型、工具链和目标范围应随每项需求记录。",
+    baselineDifficulty: "非平凡难度 / 通过率",
+    baselineDifficultyNote: "对当前目标模型具有足够挑战性；具体通过率目标由当时的研究需求决定。",
+    baselineReliability: "环境可靠性与规范性",
+    baselineReliabilityNote: "可运行、可重建、自包含且评分可信；不得依赖隐藏私有资源、密钥或损坏的 grader。",
+    boardTitle: "正在需求的任务类型",
+    boardNote: "目前保持宽泛；后续可把子领域拆成更具体的任务族。",
+    source: "来源",
+    complete: "标记完成",
+    reopen: "重新打开",
+    empty: "没有匹配的研究需求。",
+    loading: { eyebrow: "CASE 需求", title: "正在载入研究需求…", body: "正在从 CASE 获取最新的任务类型需求。" },
+    unavailable: { eyebrow: "CASE 需求", title: "研究需求暂不可用", body: "暂时无法载入 CASE 中的研究需求；小环境不会展示缓存副本。" },
+  },
+  en: {
+    marketNav: "Market view",
+    nav: { supply: "Market supply", demand: "Research demand" },
+    demandSearch: "Search research demands",
+    demandTitle: "Research demand",
+    demandSubtitle: "Track demand first by domain, subdomain, and general task type; split it further as the research need becomes more specific.",
+    preview: "Local concept preview",
+    previewNote: "These are illustrative items for reviewing the simple checklist. They are not live CASE records.",
+    baselineTitle: "Baseline for every task type",
+    baselineNote: "These are acceptance conditions, not research-demand categories. The exact model, harness, and target range belong with each sourced demand.",
+    baselineDifficulty: "Non-trivial difficulty / pass rate",
+    baselineDifficultyNote: "Challenging enough for the current target model; the precise pass-rate target follows the active research requirement.",
+    baselineReliability: "Environment reliability & hygiene",
+    baselineReliabilityNote: "Runnable, rebuildable, self-contained, and trustworthy to score—without hidden private resources, secrets, or broken graders.",
+    boardTitle: "Task types in demand",
+    boardNote: "Broad for now; subdomains can split into more specific task families as demand sharpens.",
+    source: "Source",
+    complete: "Complete",
+    reopen: "Reopen",
+    empty: "No research demands match this search.",
+    loading: { eyebrow: "CASE DEMAND", title: "Loading research demand…", body: "Fetching the latest task-type demand from CASE." },
+    unavailable: { eyebrow: "CASE DEMAND", title: "Research demand is unavailable", body: "The demand catalog cannot be loaded from CASE right now; the portal will not show a cached copy." },
+  },
+} as const;
+
+export default function PortalClient({ user, initialView = "supply", localPreview = false }: { user: PortalUser; initialView?: MarketView; localPreview?: boolean }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
   const [catalogState, setCatalogState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [unavailableReason, setUnavailableReason] = useState<string>();
+  const [activeView, setActiveView] = useState<MarketView>(initialView);
+  const [demands, setDemands] = useState<DemandItem[]>(localPreview ? demandPreview : []);
   const [language, setLanguage] = useState<Language>("zh");
   const [selectedVendorId, setSelectedVendorId] = useState("");
   const [query, setQuery] = useState("");
@@ -348,6 +509,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
   }, [language]);
 
   useEffect(() => {
+    if (localPreview) return;
     let active = true;
     void fetch("/api/catalog", { headers: { accept: "application/json" }, cache: "no-store" })
       .then(async (response) => {
@@ -357,6 +519,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
       .then((snapshot) => {
         if (!active) return;
         setCatalog(snapshot);
+        setDemands(snapshot.demands.map((demand) => ({ ...demand, checked: false })));
         setSelectedVendorId((current) => snapshot.vendors.some((vendor) => vendor.id === current)
           ? current
           : snapshot.vendors.find((vendor) => vendor.batches.length > 0)?.id ?? snapshot.vendors[0]?.id ?? "");
@@ -369,7 +532,7 @@ export default function PortalClient({ user }: { user: PortalUser }) {
         setCatalogState("unavailable");
       });
     return () => { active = false; };
-  }, [catalogRevision]);
+  }, [catalogRevision, localPreview]);
 
   const matchingSampledVendors = useMemo(() => sampledVendors.filter((vendor) => vendorMatches(vendor, query)), [query, sampledVendors]);
   const matchingContactedVendors = useMemo(() => contactedVendors.filter((vendor) => vendorMatches(vendor, query)), [query, contactedVendors]);
@@ -400,9 +563,13 @@ export default function PortalClient({ user }: { user: PortalUser }) {
   return <div className="app-shell">
     <header className="global-header">
       <a aria-label="小环境" className="wordmark" href="#top"><Image alt="" height={40} priority src="/favicon.png" width={40} /></a>
+      <nav aria-label={marketCopy[language].marketNav} className="market-switch">
+        <button aria-pressed={activeView === "supply"} className={activeView === "supply" ? "active" : ""} onClick={() => { setActiveView("supply"); setQuery(""); }} type="button">{marketCopy[language].nav.supply}</button>
+        <button aria-pressed={activeView === "demand"} className={activeView === "demand" ? "active" : ""} onClick={() => { setActiveView("demand"); setQuery(""); }} type="button">{marketCopy[language].nav.demand}</button>
+      </nav>
       <div className="header-tools">
-        <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label={t.search} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} value={query} /></label>
-        <button className="upload-trigger" onClick={() => setUploadOpen(true)} type="button">{t.upload.action}</button>
+        <label className="global-search"><span aria-hidden="true">⌕</span><input aria-label={activeView === "supply" ? t.search : marketCopy[language].demandSearch} onChange={(event) => setQuery(event.target.value)} placeholder={activeView === "supply" ? t.search : marketCopy[language].demandSearch} value={query} /></label>
+        {activeView === "supply" && <button className="upload-trigger" onClick={() => setUploadOpen(true)} type="button">{t.upload.action}</button>}
         <button aria-label={t.languageLabel} className="language-switch" onClick={toggleLanguage} type="button">{t.language}</button>
         <details className="account-menu">
           <summary aria-label={t.accountLabel} className="avatar">
@@ -414,24 +581,91 @@ export default function PortalClient({ user }: { user: PortalUser }) {
     </header>
 
     <main id="top">
-      <section className="registry-header">
-        <h1>{t.title}</h1>
-        <div className="registry-stats">
-          <span><strong>{catalog ? sampledVendors.length : "—"}</strong>{t.stats.vendors}</span>
-          <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.submissions}</span>
-          <span><strong>{catalog?.totals.taskVersions ?? "—"}</strong>{t.stats.tasks}</span>
-        </div>
-      </section>
+      {activeView === "supply" ? <section className="registry-header">
+          <h1>{t.title}</h1>
+          <div className="registry-stats">
+            <span><strong>{catalog ? sampledVendors.length : "—"}</strong>{t.stats.vendors}</span>
+            <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.submissions}</span>
+            <span><strong>{catalog?.totals.taskVersions ?? "—"}</strong>{t.stats.tasks}</span>
+          </div>
+        </section> : <DemandHero language={language} />}
 
       <div className="page-body">
-        {catalogState === "loading" && <StateCard value={t.loading} />}
-        {catalogState === "unavailable" && <StateCard value={{ ...t.unavailable, body: `${unavailableReason ?? t.unavailable.fallback} ${t.unavailable.tail}` }} />}
-        {catalogState === "ready" && selectedVendor && <VendorView matchingSampledVendors={matchingSampledVendors} matchingContactedVendors={matchingContactedVendors} query={query} selectedVendor={selectedVendor} expandedBatches={expandedBatches} onSelect={selectVendor} onToggleBatch={toggleBatch} t={t} language={language} />}
-        {catalogState === "ready" && !selectedVendor && <StateCard value={t.searchEmpty} />}
+        {activeView === "demand" && (localPreview || catalogState === "ready") && <DemandBoard demands={demands} language={language} localPreview={localPreview} onToggleDemand={(id) => setDemands((current) => current.map((demand) => demand.id === id ? { ...demand, checked: !demand.checked } : demand))} query={query} />}
+        {activeView === "demand" && !localPreview && catalogState === "loading" && <StateCard value={marketCopy[language].loading} />}
+        {activeView === "demand" && !localPreview && catalogState === "unavailable" && <StateCard value={marketCopy[language].unavailable} />}
+        {activeView === "supply" && catalogState === "loading" && <StateCard value={t.loading} />}
+        {activeView === "supply" && catalogState === "unavailable" && <StateCard value={{ ...t.unavailable, body: `${unavailableReason ?? t.unavailable.fallback} ${t.unavailable.tail}` }} />}
+        {activeView === "supply" && catalogState === "ready" && selectedVendor && <VendorView matchingSampledVendors={matchingSampledVendors} matchingContactedVendors={matchingContactedVendors} query={query} selectedVendor={selectedVendor} expandedBatches={expandedBatches} onSelect={selectVendor} onToggleBatch={toggleBatch} t={t} language={language} />}
+        {activeView === "supply" && catalogState === "ready" && !selectedVendor && <StateCard value={t.searchEmpty} />}
       </div>
     </main>
-    {uploadOpen && <UploadPanel vendors={vendors} onClose={() => setUploadOpen(false)} onUploaded={(vendorId) => { setSelectedVendorId(vendorId); setCatalogRevision((value) => value + 1); }} t={t} />}
+    {activeView === "supply" && uploadOpen && <UploadPanel vendors={vendors} onClose={() => setUploadOpen(false)} onUploaded={(vendorId) => { setSelectedVendorId(vendorId); setCatalogRevision((value) => value + 1); }} t={t} />}
   </div>;
+}
+
+function DemandHero({ language }: { language: Language }) {
+  const t = marketCopy[language];
+  return <section className="registry-header demand-hero">
+    <div className="eyebrow">RESEARCH DEMAND</div>
+    <h1>{t.demandTitle}</h1>
+    <p>{t.demandSubtitle}</p>
+  </section>;
+}
+
+function DemandBoard({ demands, language, localPreview, onToggleDemand, query }: { demands: DemandItem[]; language: Language; localPreview: boolean; onToggleDemand(id: string): void; query: string }) {
+  const t = marketCopy[language];
+  const normalizedQuery = query.trim().toLowerCase();
+  const visible = demands.filter((demand) => !normalizedQuery || [
+    ...Object.values(demand.domain),
+    ...Object.values(demand.subdomain),
+    ...Object.values(demand.title),
+    ...Object.values(demand.note),
+    ...Object.values(demand.sourceLabel),
+  ].join(" ").toLowerCase().includes(normalizedQuery));
+  const groups = visible.reduce<Array<{ id: string; label: string; items: DemandItem[] }>>((current, demand) => {
+    const group = current.find((entry) => entry.id === demand.domain.en);
+    if (group) group.items.push(demand); else current.push({ id: demand.domain.en, label: demand.domain[language], items: [demand] });
+    return current;
+  }, []);
+
+  return <section className="demand-board" aria-labelledby="demand-board-title">
+    {localPreview && <div className="preview-notice" role="note"><span>{t.preview}</span><p>{t.previewNote}</p><code>LOCAL ONLY</code></div>}
+    <section className="demand-baseline" aria-labelledby="demand-baseline-title">
+      <header><h2 id="demand-baseline-title">{t.baselineTitle}</h2><p>{t.baselineNote}</p></header>
+      <div className="baseline-items">
+        <div><strong>{t.baselineDifficulty}</strong><span>{t.baselineDifficultyNote}</span></div>
+        <div><strong>{t.baselineReliability}</strong><span>{t.baselineReliabilityNote}</span></div>
+      </div>
+    </section>
+    <div className="demand-checklist">
+      <header><h2 id="demand-board-title">{t.boardTitle}</h2><p>{t.boardNote}</p></header>
+      <div className="demand-groups">
+        {groups.map((group) => <section className="demand-group" key={group.id}>
+          <header><h3>{group.label}</h3><span>{group.items.length}</span></header>
+          <div className="demand-list">
+            {group.items.map((demand) => <article className={`demand-row${demand.checked ? " done" : ""}`} key={demand.id}>
+              <input aria-label={`${demand.checked ? t.reopen : t.complete}: ${demand.title[language]}`} checked={demand.checked} onChange={() => onToggleDemand(demand.id)} type="checkbox" />
+              <div className="demand-row-copy">
+                <span className="demand-subdomain">{demand.subdomain[language]}</span>
+                <strong>{demand.title[language]}</strong>
+                {demand.note[language] && <p>{demand.note[language]}</p>}
+                <small>{t.source}: {demand.sourceLabel[language]} · {formatDemandDate(demand.sourceDate, language)}</small>
+              </div>
+            </article>)}
+          </div>
+        </section>)}
+      </div>
+      {!visible.length && <div className="demand-empty">{t.empty}</div>}
+    </div>
+  </section>;
+}
+
+function formatDemandDate(value: string, language: Language): string {
+  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
 function VendorButton({ vendor, selected, onSelect, t }: { vendor: CatalogVendor; selected: boolean; onSelect(vendor: CatalogVendor): void; t: UiCopy }) {

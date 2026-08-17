@@ -137,8 +137,24 @@ export type CatalogVendor = {
   batches: CatalogBatch[];
 };
 
+export type LocalizedCatalogText = {
+  en: string;
+  zh: string;
+};
+
+export type CatalogResearchDemand = {
+  id: string;
+  domain: LocalizedCatalogText;
+  subdomain: LocalizedCatalogText;
+  title: LocalizedCatalogText;
+  note: LocalizedCatalogText;
+  sourceLabel: LocalizedCatalogText;
+  sourceDate: string;
+};
+
 export type CatalogSnapshot = {
   generatedAt: string;
+  demands: CatalogResearchDemand[];
   vendors: CatalogVendor[];
   totals: { vendors: number; batches: number; taskVersions: number };
 };
