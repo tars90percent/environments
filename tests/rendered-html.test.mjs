@@ -74,6 +74,8 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /Quantitative research/);
   assert.match(source, /软件工程/);
   assert.match(source, /从零创建程序/);
+  assert.match(source, /当前需要的任务类型/);
+  assert.doesNotMatch(source, /正在需求的任务类型/);
   assert.match(source, /TARS 研究需求工作草案/);
   assert.match(source, /not live CASE records/);
   assert.doesNotMatch(source, /Illustrative working draft|demand-add-inline/);

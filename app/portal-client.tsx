@@ -453,7 +453,7 @@ const marketCopy = {
     baselineDifficultyNote: "对当前目标模型具有足够挑战性；具体通过率目标由当时的研究需求决定。",
     baselineReliability: "环境可靠性与规范性",
     baselineReliabilityNote: "可运行、可重建、自包含且评分可信；不得依赖隐藏私有资源、密钥或损坏的 grader。",
-    boardTitle: "正在需求的任务类型",
+    boardTitle: "当前需要的任务类型",
     boardNote: "目前保持宽泛；后续可把子领域拆成更具体的任务族。",
     source: "来源",
     complete: "标记完成",
