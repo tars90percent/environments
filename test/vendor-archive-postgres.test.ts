@@ -81,6 +81,11 @@ test("archives and restores vendors through the admin API", { skip: !testDatabas
     assert.equal(ids(researchCatalog.body.vendors).includes("internal-vendor"), false);
     const portalCatalog = await api(server.url, catalogToken, "GET", "/v1/catalog?scope=all");
     assert.equal(ids(portalCatalog.body.vendors).includes("internal-vendor"), false);
+    const demands = entries(portalCatalog.body.demands);
+    assert.equal(demands.length, 14);
+    assert.equal(demands.some((demand) => demand.id === "long-horizon-greenfield-coding"), true);
+    assert.equal(demands.some((demand) => demand.id === "quantitative-modeling"), false);
+    assert.equal(demands.every((demand) => String(demand.sourceUrl).startsWith("https://")), true);
     const visibleCatalogVendor = entries(portalCatalog.body.vendors).find((entry) => entry.id === "visible-vendor");
     assert.deepEqual(visibleCatalogVendor?.procurementSummary, {
       stage: "negotiating",

@@ -472,6 +472,145 @@ const migrations: Migration[] = [
         ON registry_research_demands(sort_order, id);
     `,
   },
+  {
+    id: "008_source_backed_research_demands",
+    sql: `
+      ALTER TABLE registry_research_demands
+        ADD COLUMN IF NOT EXISTS source_url text;
+      ALTER TABLE registry_research_demands
+        ADD COLUMN IF NOT EXISTS superseded_at timestamptz;
+
+      UPDATE registry_research_demands
+      SET source_url = 'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ',
+          superseded_at = now()
+      WHERE superseded_at IS NULL;
+
+      ALTER TABLE registry_research_demands
+        ALTER COLUMN source_url SET NOT NULL;
+
+      INSERT INTO registry_research_demands(
+        id, domain_en, domain_zh, subdomain_en, subdomain_zh,
+        title_en, title_zh, note_en, note_zh,
+        source_label_en, source_label_zh, source_date, source_url, sort_order
+      ) VALUES
+        (
+          'long-horizon-greenfield-coding', 'Software engineering', '软件工程', 'Greenfield development', '从零开发',
+          'Long-horizon 0→1 greenfield development', '长程 0→1 从零开发',
+          'Create a large project from scratch from a product requirement. ProgramBench and NL2Repo are references, and at least 100 model steps are requested.',
+          '根据产品需求从零创建大型项目。参考 ProgramBench 和 NL2Repo，并要求至少 100 个模型步骤。',
+          'TARS sample requirement', 'TARS 样本需求', '2026-08-12',
+          'https://applink.feishu.cn/client/chat/open?openChatId=oc_4e735446cffdf7e72eecbcdf0b3f2856&position=4', 10
+        ),
+        (
+          'long-horizon-feature-development', 'Software engineering', '软件工程', 'Existing codebases', '现有代码库',
+          'Long-horizon feature development', '长程功能开发',
+          'Develop a substantial feature within an existing codebase; DeepSWE and EvoCode are reference task families.',
+          '在现有代码库中完成大型功能开发；参考 DeepSWE 和 EvoCode 任务族。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 20
+        ),
+        (
+          'repository-aligned-code-quality', 'Software engineering', '软件工程', 'Code quality', '代码质量',
+          'Code changes that match the repository', '符合代码库风格的改动',
+          'Produce verifiable changes consistent with the repository''s existing developer style and conventions; FrontierCode is the reference.',
+          '产出可验证、且符合代码库既有开发者风格与约定的改动；参考 FrontierCode。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 30
+        ),
+        (
+          'difficult-standard-bugfix', 'Software engineering', '软件工程', 'Bug fixing', '缺陷修复',
+          'Difficult ordinary bug fixes', '高难度常规缺陷修复',
+          'Normal bug-fix tasks that a strong frontier model completes inconsistently and M3 does not; difficulty must come from the task rather than broken infrastructure.',
+          '强前沿模型也只能不稳定完成、而 M3 无法完成的正常缺陷修复任务；难度必须来自任务本身，而非损坏的基础设施。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 40
+        ),
+        (
+          'cuda-optimization', 'ML & systems engineering', '机器学习与系统工程', 'CUDA optimization', 'CUDA 优化',
+          'CUDA optimization environments', 'CUDA 优化环境',
+          'Optimization work represented by KernelBench and FlashInferBench; the source marks this need as urgent.',
+          '以 KernelBench 和 FlashInferBench 为代表的优化任务；来源将该需求标为紧急。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 50
+        ),
+        (
+          'ml-research-environments', 'ML & systems engineering', '机器学习与系统工程', 'ML research', '机器学习研究',
+          'ML research environments', '机器学习研究环境',
+          'Research tasks similar to MLE Bench, PostTrainBench, MLS Bench, ExpBench, AutoLab, InferenceBench, and SWE-Marathon.',
+          '类似 MLE Bench、PostTrainBench、MLS Bench、ExpBench、AutoLab、InferenceBench 和 SWE-Marathon 的研究任务。',
+          'TARS sample requirement', 'TARS 样本需求', '2026-08-12',
+          'https://applink.feishu.cn/client/chat/open?openChatId=oc_4e735446cffdf7e72eecbcdf0b3f2856&position=4', 60
+        ),
+        (
+          'ml-inference-engineering', 'ML & systems engineering', '机器学习与系统工程', 'ML engineering', '机器学习工程',
+          'ML and inference engineering', '机器学习与推理工程',
+          'Inspectable environments for infrastructure debugging, vLLM inference, and related ML engineering work; no single benchmark is yet designated.',
+          '用于基础设施调试、vLLM 推理及相关机器学习工程工作的可检查环境；目前尚未指定单一 benchmark。',
+          'TARS sample requirement', 'TARS 样本需求', '2026-08-12',
+          'https://applink.feishu.cn/client/chat/open?openChatId=oc_4e735446cffdf7e72eecbcdf0b3f2856&position=4', 70
+        ),
+        (
+          'general-systems-optimization', 'ML & systems engineering', '机器学习与系统工程', 'Systems optimization', '系统优化',
+          'General systems optimization', '通用系统优化',
+          'Optimization tasks represented by FrontierSWE, SWEfficiency, GSO Bench, and FrontierCS.',
+          '以 FrontierSWE、SWEfficiency、GSO Bench 和 FrontierCS 为代表的优化任务。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 80
+        ),
+        (
+          'paper-reproduction', 'ML & systems engineering', '机器学习与系统工程', 'Paper reproduction', '论文复现',
+          'Paper reproduction tasks', '论文复现任务',
+          'Reproduce research results in inspectable environments; PaperBench and NatureBench are references, including non-ML papers.',
+          '在可检查环境中复现研究结果；参考 PaperBench 和 NatureBench，也包括非机器学习论文。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 90
+        ),
+        (
+          'terminal-tool-use', 'Tool use', '工具使用', 'Terminal workflows', '终端工作流',
+          'Terminal and tool-use tasks', '终端与工具使用任务',
+          'The demand matrix tracks terminal-benchmark and tool-use tasks and notes that one batch has already been purchased; the next increment still needs researcher confirmation.',
+          '需求矩阵记录了终端 benchmark 与工具使用任务，并注明已采购过一批；下一批具体需求仍需研究员确认。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 100
+        ),
+        (
+          'cybersecurity-environments-trajectories', 'Cybersecurity', '网络安全', 'Security environments', '安全环境',
+          'Cybersecurity environments and trajectories', '网络安全环境与轨迹',
+          'High-quality security tasks with environments and verifiers, plus cyber trajectories; demos are required for inspection.',
+          '带环境和 verifier 的高质量安全任务，以及网络安全轨迹；需要提供 demo 供审查。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 110
+        ),
+        (
+          'finance-work-scenarios', 'Finance', '金融', 'Professional work', '专业工作',
+          'Difficult finance work scenarios', '高难度金融工作场景',
+          'High-quality, correct, comparatively difficult tasks grounded in realistic finance work.',
+          '以真实金融工作为基础、质量高、答案正确且难度较大的任务。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 120
+        ),
+        (
+          'computer-use-office-workflows', 'Computer use', '计算机操作', 'Office workflows', '办公工作流',
+          'Computer-use and Office workflows', '计算机操作与办公工作流',
+          'RL tasks and trajectories in professional software, including domain documents such as finance or legal work and educational presentations.',
+          '专业软件中的 RL 任务与轨迹，包括金融、法律等领域文档以及教学类演示文稿。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 130
+        ),
+        (
+          'wide-time-sensitive-search', 'Information work', '信息检索', 'Search', '搜索',
+          'Wide and time-sensitive search', '广度搜索与时效搜索',
+          'Query-and-answer tasks for wide research and time-sensitive search; WideSearch and SealQA are the named references.',
+          '面向广度研究和时效搜索的问答任务；指定参考为 WideSearch 和 SealQA。',
+          'Data Procurement Wiki — demand matrix', '《数据采购》Wiki — 需求矩阵', '2026-08-14',
+          'https://vrfi1sk8a0.feishu.cn/wiki/Fii7wKxOKipox3kYrfVcuCSonrJ', 140
+        );
+
+      CREATE INDEX IF NOT EXISTS registry_research_demands_active_order_idx
+        ON registry_research_demands(sort_order, id)
+        WHERE superseded_at IS NULL;
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

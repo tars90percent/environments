@@ -50,6 +50,7 @@ type ResearchDemandRow = {
   source_label_en: string;
   source_label_zh: string;
   source_date: string | Date;
+  source_url: string;
 };
 type VendorArchiveRow = {
   id: string;
@@ -1107,8 +1108,9 @@ export class PostgresRegistry implements RegistryRepository {
       this.pool.query<ResearchDemandRow>(
         `SELECT id, domain_en, domain_zh, subdomain_en, subdomain_zh,
                 title_en, title_zh, note_en, note_zh,
-                source_label_en, source_label_zh, source_date
+                source_label_en, source_label_zh, source_date, source_url
          FROM registry_research_demands
+         WHERE superseded_at IS NULL
          ORDER BY sort_order, id`,
       ),
       this.pool.query<VendorRow>(
@@ -1278,6 +1280,7 @@ export class PostgresRegistry implements RegistryRepository {
         note: { en: row.note_en, zh: row.note_zh },
         sourceLabel: { en: row.source_label_en, zh: row.source_label_zh },
         sourceDate: isoDate(row.source_date),
+        sourceUrl: row.source_url,
       })),
       vendors,
       totals: {
