@@ -37,6 +37,20 @@ import type {
 } from "./types.js";
 
 type VendorRow = { id: string; name: string; short: string; description: string };
+type ResearchDemandRow = {
+  id: string;
+  domain_en: string;
+  domain_zh: string;
+  subdomain_en: string;
+  subdomain_zh: string;
+  title_en: string;
+  title_zh: string;
+  note_en: string;
+  note_zh: string;
+  source_label_en: string;
+  source_label_zh: string;
+  source_date: string | Date;
+};
 type VendorArchiveRow = {
   id: string;
   archived_at: string | Date | null;
@@ -1089,7 +1103,14 @@ export class PostgresRegistry implements RegistryRepository {
 
   async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
     const visibility = catalogVisibility(scope);
-    const [vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, procurementEventsResult] = await Promise.all([
+    const [demandsResult, vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, procurementEventsResult] = await Promise.all([
+      this.pool.query<ResearchDemandRow>(
+        `SELECT id, domain_en, domain_zh, subdomain_en, subdomain_zh,
+                title_en, title_zh, note_en, note_zh,
+                source_label_en, source_label_zh, source_date
+         FROM registry_research_demands
+         ORDER BY sort_order, id`,
+      ),
       this.pool.query<VendorRow>(
         `SELECT v.id, v.name, v.short, v.description
          FROM registry_vendors v
@@ -1249,6 +1270,15 @@ export class PostgresRegistry implements RegistryRepository {
     const batches = vendors.flatMap((vendor) => vendor.batches);
     return {
       generatedAt: new Date().toISOString(),
+      demands: demandsResult.rows.map((row) => ({
+        id: row.id,
+        domain: { en: row.domain_en, zh: row.domain_zh },
+        subdomain: { en: row.subdomain_en, zh: row.subdomain_zh },
+        title: { en: row.title_en, zh: row.title_zh },
+        note: { en: row.note_en, zh: row.note_zh },
+        sourceLabel: { en: row.source_label_en, zh: row.source_label_zh },
+        sourceDate: isoDate(row.source_date),
+      })),
       vendors,
       totals: {
         vendors: vendors.length,

@@ -371,6 +371,107 @@ const migrations: Migration[] = [
         WHERE archived_at IS NULL;
     `,
   },
+  {
+    id: "007_research_demand_catalog",
+    sql: `
+      CREATE TABLE IF NOT EXISTS registry_research_demands (
+        id text PRIMARY KEY,
+        domain_en text NOT NULL,
+        domain_zh text NOT NULL,
+        subdomain_en text NOT NULL,
+        subdomain_zh text NOT NULL,
+        title_en text NOT NULL,
+        title_zh text NOT NULL,
+        note_en text NOT NULL,
+        note_zh text NOT NULL,
+        source_label_en text NOT NULL,
+        source_label_zh text NOT NULL,
+        source_date date NOT NULL,
+        sort_order integer NOT NULL CHECK (sort_order >= 0),
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      INSERT INTO registry_research_demands(
+        id, domain_en, domain_zh, subdomain_en, subdomain_zh,
+        title_en, title_zh, note_en, note_zh,
+        source_label_en, source_label_zh, source_date, sort_order
+      ) VALUES
+        (
+          'greenfield-program-creation', 'Software engineering', '软件工程', 'Program creation', '程序创建',
+          'Greenfield program creation', '从零创建程序',
+          'Build a new application, service, library, or tool from a functional specification.',
+          '根据功能规格新建应用、服务、库或工具。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 10
+        ),
+        (
+          'software-defect-repair', 'Software engineering', '软件工程', 'Debugging', '调试',
+          'Diagnose and repair software defects', '诊断并修复软件缺陷',
+          'Start broad, then split into concrete issue families such as build, correctness, performance, concurrency, or integration defects.',
+          '先保持宽泛，随后再按构建、正确性、性能、并发或集成等具体问题族细分。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 20
+        ),
+        (
+          'existing-codebase-feature', 'Software engineering', '软件工程', 'Feature development', '功能开发',
+          'Extend an existing codebase', '扩展现有代码库',
+          'Implement a scoped feature while preserving existing behavior and working within the repository''s conventions.',
+          '在遵循代码库既有约定并保持现有行为的前提下，实现范围明确的功能。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 30
+        ),
+        (
+          'repository-maintenance', 'Software engineering', '软件工程', 'Maintenance & migration', '维护与迁移',
+          'Maintain or modernize a repository', '维护或现代化改造代码库',
+          'Refactors, dependency upgrades, migrations, or multi-repository changes with a verifiable outcome.',
+          '完成重构、依赖升级、迁移或跨仓库变更，并提供可验证的结果。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 40
+        ),
+        (
+          'quantitative-investigation', 'Quantitative research', '定量研究', 'Research analysis', '研究分析',
+          'Conduct a quantitative research investigation', '开展定量研究分析',
+          'Turn a research question and source data into a defensible method, analysis, and reproducible result.',
+          '将研究问题和源数据转化为可论证的方法、分析过程和可复现结果。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 50
+        ),
+        (
+          'quantitative-modeling', 'Quantitative research', '定量研究', 'Modeling', '建模',
+          'Build and validate a quantitative model', '构建并验证定量模型',
+          'Statistical, econometric, forecasting, or optimization work with inspectable assumptions and validation.',
+          '完成统计、计量、预测或优化建模，并使假设和验证过程可检查。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 60
+        ),
+        (
+          'data-diagnostics', 'Quantitative research', '定量研究', 'Data diagnostics', '数据诊断',
+          'Investigate anomalies or conflicting results', '调查异常或矛盾结果',
+          'Trace a discrepancy, test plausible explanations, and reconcile the evidence.',
+          '追查差异，检验合理解释，并对证据进行核对与统一。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 70
+        ),
+        (
+          'structured-document-work', 'Knowledge work', '知识工作', 'Documents', '文档',
+          'Produce or revise a structured document', '创建或修订结构化文档',
+          'Create a usable document from source material, or repair an existing one against explicit requirements.',
+          '根据源材料创建可用文档，或按照明确要求修订现有文档。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 80
+        ),
+        (
+          'spreadsheet-model-work', 'Knowledge work', '知识工作', 'Spreadsheets', '电子表格',
+          'Build or repair a spreadsheet model', '构建或修复电子表格模型',
+          'Work with formulas, structure, source data, and a reviewable final workbook.',
+          '处理公式、结构和源数据，并交付可复核的最终工作簿。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 90
+        ),
+        (
+          'multi-step-browser-workflow', 'Computer use', '计算机操作', 'Browser workflows', '浏览器工作流',
+          'Complete a multi-step browser workflow', '完成多步骤浏览器工作流',
+          'Carry a realistic workflow through multiple states with an inspectable and verifiable final result.',
+          '完成跨越多个状态的真实工作流，并产出可检查、可验证的最终结果。',
+          'TARS working demand outline', 'TARS 研究需求工作草案', '2026-08-17', 100
+        )
+      ON CONFLICT (id) DO NOTHING;
+
+      CREATE INDEX IF NOT EXISTS registry_research_demands_order_idx
+        ON registry_research_demands(sort_order, id);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {
