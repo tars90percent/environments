@@ -150,6 +150,7 @@ export type CatalogResearchDemand = {
   note: LocalizedCatalogText;
   sourceLabel: LocalizedCatalogText;
   sourceDate: string;
+  sourceUrl: string;
 };
 
 export type CatalogSnapshot = {
