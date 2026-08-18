@@ -57,15 +57,22 @@ RUN npm run build \
     && ln -sfn /app/dist/mail-intake-plan-cli.js /usr/local/bin/case-mail-intake \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/harbor \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/case-harbor \
-    && mkdir -p /root/.agents/skills/case-registry \
-    && cp /app/skills/case-registry/SKILL.md /root/.agents/skills/case-registry/SKILL.md \
+    && mkdir -p /root/.agents/skills \
+    && cp -R /app/skills/. /root/.agents/skills/ \
     && test -x /usr/local/bin/case-registry \
     && test -x /usr/local/bin/case-intake \
     && test -x /usr/local/bin/case-mail-intake \
     && test -x /usr/local/bin/harbor \
     && test -x /usr/local/bin/case-harbor \
     && test -x /usr/local/bin/modal \
-    && test -f /root/.agents/skills/case-registry/SKILL.md
+    && test -f /root/.agents/skills/case-registry/SKILL.md \
+    && test -f /root/.agents/skills/case-registry/references/source-envelope.md \
+    && test -f /root/.agents/skills/case-harbor-normalization/SKILL.md \
+    && test -f /root/.agents/skills/case-harbor-normalization/agents/openai.yaml \
+    && test -f /root/.agents/skills/case-harbor-normalization/references/case-recording.md \
+    && test -f /root/.agents/skills/case-harbor-normalization/references/harbor-contract.md \
+    && test -f /root/.agents/skills/case-harbor-normalization/references/interpretation.md \
+    && test -f /root/.agents/skills/case-harbor-normalization/references/verifier-classification.md
 
 ENV NODE_ENV=production \
     CASE_HARBOR_BIN=/opt/harbor-bin/harbor \

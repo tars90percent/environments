@@ -125,6 +125,11 @@ flow. Authentication is ordinary agent work rather than a special harness
 command: ask the agent whether it can access a calendar, document, mailbox, or
 other Feishu resource, then follow its explanation.
 
+The image also installs every source-controlled CASE skill under `skills/` as a
+complete directory, including its references and agent metadata. This currently
+ships `case-registry` and `case-harbor-normalization` so the runtime guide and
+its companion procedures stay on the same deployed revision.
+
 The resulting renewable user login is stored by `lark-cli` under its configured
 directory. On Railway, `LARKSUITE_CLI_CONFIG_DIR` points to `/data/lark-cli`, so
 the login survives image rebuilds and service restarts. The outer harness only

@@ -1,0 +1,4 @@
+interface:
+  display_name: "CASE Harbor Normalization"
+  short_description: "Normalize messy task samples faithfully"
+  default_prompt: "Use $case-harbor-normalization to inspect this evaluation-sample delivery and organize its tasks into provenance-preserving Harbor task versions."
