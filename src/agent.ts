@@ -52,7 +52,6 @@ export class ChatAgent {
       approvalPolicy: config.codexApprovalPolicy,
       networkAccessEnabled: config.codexNetworkAccess,
       webSearchMode: config.codexWebSearchMode,
-      modelReasoningEffort: "medium" as const,
     };
     const savedThreadId = this.state.threadId(chatId);
     const thread = savedThreadId
