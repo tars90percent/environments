@@ -62,12 +62,6 @@ The portal uses separate read-only catalog, append-only review, and upload-only 
 
 The vendor/submission overview, Feishu login, researcher-upload, and submission-review data flows exist. Individual task-detail and download experiences are still being developed. Do not describe a planned screen or adapter as implemented.
 
-### Legacy procurement Base
-
-The [`数据采购` Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJbss0Cxpcq9YXn0c?table=tblhtxsKZF8YqjJZ&view=vewS64aBxe) is deprecated. It remains a read-only historical reference while useful decisions, vendor context, and source links are migrated into CASE. It is not a current system of record, a required workflow step, or evidence that a vendor status remains current.
-
-Consult the Base only when reconstructing historical context, then verify the fact against its dated source and record the recovered evidence in CASE. Do not update it unless the user explicitly requests legacy maintenance. Creating a Base row also sends a **“新增数据采购项目”** card to the sourcing chat and therefore always requires explicit user confirmation.
-
 ## Intake contract
 
 Intake is broader than review readiness but remains limited to evaluation samples. Preserve and log incomplete or failed sample material; do not discard it merely because it cannot yet be shown as research-ready. Once a sample is purchased, its full delivery belongs to a separate downstream pipeline. CASE may retain the dated handoff fact needed to prevent accidental re-intake, but it must remove purchased delivery submissions, production packages, and container-image bundles from its database and object storage.
@@ -92,13 +86,32 @@ Three dedicated capture paths currently exist: a reviewed plan of exact Feishu m
 
 Both capture plans must explicitly declare `"purpose": "sample_evaluation"`. That declaration is reviewed scope, not a filename heuristic, and purchased deliveries must be excluded. If an upload succeeds but source linking fails, remove the artifact when it remains unreferenced. If a previous capture failed, record a provenance-preserving retry rather than treating the failed event as completed.
 
+## Task interpretation and Harbor normalization
+
+The accountable human or artificial practitioner performs task interpretation. The `case-harbor-normalization` skill supplies guidance, and inventories, parsers, validators, scripts, manifests, queue items, and workers may supply evidence or carry out mechanical actions; none of them independently decides what the delivered tasks mean. Use the skill whenever task boundaries, noisy or non-Harbor material, Harbor mapping, verifier classification, or normalization recording requires judgment.
+
+Normalize from the immutable capture into a separate working location. Never edit a local vendor folder or replace the original artifact. For every interpreted task:
+
+- decide the task boundary from the objective, initial environment, solution or golden deliverable, verifier and reward contract, stable vendor identity, and any essential shared state—not from folder similarity alone;
+- use Harbor multi-step only for ordered stages that intentionally share one environment and form one trial-level outcome, never to bundle independent tasks, variants, or a category;
+- prefer the smallest faithful transformation and distinguish **representational** changes from **interpretive** judgments and **reparative** changes. Record mechanical mappings; make semantic choices explicit; treat grader fixes, invented tests or solutions, changed requirements, and dependency substitutions as a separately reviewed repair or vendor correction, never as silent normalization;
+- preserve a vendor-supplied stable task identifier when the evidence supports it. Otherwise derive a provisional key deterministically from vendor identity, source identity, and original task path, and record that derivation;
+- record the exact source-item IDs and the original internal `source_path` for every contributing file or task root. A normalized destination path or object-storage key is not the source path; when several source paths were combined, retain all of them and the mapping;
+- store any produced normalized package as a new immutable, content-addressed artifact and link the task-version record directly to it, while retaining separate links to the original artifact and source graph. If the registry interface cannot represent a required link or field, record the gap and leave the normalization pending rather than implying it exists;
+- record the normalization outcome (`already_harbor`, `normalized`, `needs_review`, `incomplete`, `blocked`, or `not_a_task`), practitioner, guidance version, confidence, transformation log, unresolved issues, and next action; and
+- keep the task `unchecked` until separately recorded sandbox evidence establishes the applicable review-readiness conditions.
+
+Keep **Harbor validity** distinct from the **CASE-preferred review shape**. Validate against the Harbor version pinned by CASE. A conventional single-step task has `instruction.md`, `task.toml`, an environment definition, an OS-appropriate verifier entrypoint, and any needed supporting files. Harbor can support environment adapters other than a Dockerfile and treats the solution as optional; CASE normally prefers a publicly rebuildable Dockerfile, a gold solution or task-appropriate golden deliverable, and inspectable tests for coding-environment review. Additional files are allowed when the task depends on them. Do not report a CASE procurement preference as a universal Harbor rule.
+
+Harbor has no universal flag that proves verifier type. Trace the effective verifier entrypoint and record the vendor's **declared**, statically **observed**, and evidence-backed **resolved** classification separately as `deterministic`, `llm_judge`, `agent_judge`, `hybrid`, or `unknown`, together with evidence paths and operational requirements. API-key names, imports, metadata tags, and model references are signals, not proof that a model affects the reward.
+
 ## Review-readiness contract
 
 Review readiness means that the currently agreed deterministic conditions have recorded evidence. It does not mean that CASE believes the sample is good.
 
 Unless a dated requirement document specifies otherwise, a coding-environment sample is ready for researcher inspection only when CASE can record evidence for:
 
-- the required package shape, preferably Harbor format and directly runnable with the agreed Harbor CLI version;
+- an exact normalized package, preferably Harbor-valid and directly runnable with the agreed pinned Harbor CLI version, that also satisfies the applicable CASE review shape;
 - a Dockerfile rebuildable from public dependencies, without a private base image or inaccessible dependency;
 - a gold solution or task-appropriate golden deliverable;
 - tests and solution scripts that run inside the container without private local data, secrets, or undeclared environment variables;
@@ -124,7 +137,7 @@ Use no-network execution by default. Permit only the minimal, phase-scoped egres
 ## Operating workflow
 
 1. Identify the research decision and the post-training researcher who currently holds final authority for it.
-2. Read the latest dated researcher requirement, the relevant Wiki context, and the corresponding CASE records. Consult the deprecated Base only when reconstructing unmigrated history.
+2. Read the latest dated researcher requirement, the relevant Wiki context, and the corresponding CASE records.
 3. Find the latest internal and vendor communications. The most relevant Feishu chats are pinned in TARS's feed shortcuts; list the live shortcuts rather than hard-coding channel names.
 4. Query CASE for submissions, source provenance, artifacts, checks, trajectories, follow-ups, statuses, and researcher responses.
 5. Inspect the exact delivered version and prior evaluation before asking the vendor for more work.
