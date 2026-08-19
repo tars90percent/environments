@@ -70,6 +70,7 @@ RUN npm run build \
     && test -f /root/.agents/skills/case-harbor-normalization/SKILL.md \
     && test -f /root/.agents/skills/case-harbor-normalization/agents/openai.yaml \
     && test -f /root/.agents/skills/case-harbor-normalization/references/case-recording.md \
+    && test -f /root/.agents/skills/case-harbor-normalization/references/clean-runnable.md \
     && test -f /root/.agents/skills/case-harbor-normalization/references/harbor-contract.md \
     && test -f /root/.agents/skills/case-harbor-normalization/references/interpretation.md \
     && test -f /root/.agents/skills/case-harbor-normalization/references/verifier-classification.md

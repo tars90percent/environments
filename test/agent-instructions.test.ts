@@ -30,6 +30,17 @@ test("the CASE guide develops taste while reserving final authority", async () =
   assert.doesNotMatch(guide, /not a research taste model/);
 });
 
+test("the CASE guide assigns capture and cleaning to CASE and final review to researchers", async () => {
+  const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
+  assert.match(guide, /Submission capture and registration — CASE/);
+  assert.match(guide, /Task parsing, normalization, cleaning, and runtime verification — CASE/);
+  assert.match(guide, /Research review and purchasing decision — designated post-training researchers/);
+  assert.match(guide, /Routine model trials.*are not part of CASE's required/s);
+  assert.match(guide, /DeepSeek for a bounded diagnostic question/);
+  assert.match(guide, /forces Harbor runs onto the Modal environment/);
+  assert.doesNotMatch(guide, /required complete trajectories/);
+});
+
 test("the CASE guide uses live requirements without routing to the legacy procurement Base", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
   assert.match(guide, /Research demand and requirements:.*数据采购.*Wiki/);
@@ -45,6 +56,7 @@ test("ships the Harbor normalization guidance referenced by the CASE guide", asy
   const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
   const references = [
     "case-recording.md",
+    "clean-runnable.md",
     "harbor-contract.md",
     "interpretation.md",
     "verifier-classification.md",

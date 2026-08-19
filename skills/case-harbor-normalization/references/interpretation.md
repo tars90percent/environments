@@ -47,6 +47,26 @@ Use a Harbor multi-step task when ordered steps intentionally share one environm
 
 If a purported task contains several variants, determine whether they are versions, parameterizations, fixtures, or distinct tasks. Do not decide from filename similarity alone.
 
+## Choose the representation path
+
+Harbor is CASE's default and preferred format for executable tasks. Apply this decision order:
+
+1. retain an already-valid Harbor package;
+2. normalize to Harbor when a behavior-preserving mapping is supported by the evidence; or
+3. retain a reviewed native-format exception when Harbor cannot faithfully express or execute the task.
+
+The presumption in favor of Harbor is operational, not semantic. Do not convert merely to improve format coverage when conversion would change the objective, initial state, environment behavior, solution, verifier, reward contract, or essential shared state.
+
+A native-format exception requires a concrete reason, such as:
+
+- Harbor lacks a capability essential to the task;
+- the native runner provides behavior that a thin adapter cannot preserve;
+- conversion would require inventing or repairing material;
+- the task is not an executable environment task and a Harbor package would misrepresent it; or
+- the required adapter is unavailable and the task must remain preserved pending support.
+
+Record the native format and runner, exception reason, whether the gap is intrinsic or temporary, adapter name and version when available, equivalent positive and negative controls, confidence, and next action. Non-Harbor is an anomaly requiring explanation, not by itself evidence of low quality or incompleteness.
+
 ## Preserve stable identity
 
 Prefer a vendor-supplied stable identifier supported by the source. Otherwise derive a provisional key deterministically from the vendor, source identity, and original task path, and record the derivation.
@@ -68,6 +88,8 @@ These can usually be applied when their equivalence is inspectable:
 - adding a thin `solve.sh` or `test.sh` wrapper that invokes an existing command unchanged;
 - copying required fixtures or helpers into a self-contained task package;
 - translating a declared environment format when behavior and dependencies remain explicit.
+
+A thin native execution adapter can also be representational when it invokes the original runner unchanged and does not reinterpret the task or reward contract.
 
 Record the before path, after path, action, reason, and relevant hashes.
 

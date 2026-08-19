@@ -1,6 +1,8 @@
 # Harbor task contract for CASE normalization
 
-Read this reference when constructing or statically validating a Harbor task. Validate final output against the Harbor version pinned by CASE; current public documentation can be newer than the production controller.
+Read this reference when constructing or statically validating a Harbor task. Harbor is CASE's default and preferred executable-task format. Validate final output against the Harbor version pinned by CASE; current public documentation can be newer than the production controller.
+
+Do not use this contract to reject a faithfully preserved native-format exception or to force a semantic conversion. For representation-path decisions, read [interpretation.md](interpretation.md). For the format-neutral runtime milestone, read [clean-runnable.md](clean-runnable.md).
 
 CASE currently pins Harbor `0.21.0`. The official task documentation checked on 2026-08-18 is:
 
@@ -14,6 +16,8 @@ CASE currently pins Harbor `0.21.0`. The official task documentation checked on 
 **CASE-preferred review shape** adds procurement requirements such as a publicly rebuildable environment, a gold solution or task-appropriate golden deliverable, inspectable tests, provenance, and deterministic evidence. A package can be Harbor-valid without being review-ready for CASE.
 
 Do not report a CASE preference as a universal Harbor requirement.
+
+Harbor validity is also not the universal definition of a task. A reviewed native-format exception must satisfy its own named adapter contract and the common runtime gate; it is an operational anomaly recorded separately from quality.
 
 ## Single-step shape
 

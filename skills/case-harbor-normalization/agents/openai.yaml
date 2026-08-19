@@ -1,4 +1,4 @@
 interface:
-  display_name: "CASE Harbor Normalization"
-  short_description: "Normalize messy task samples faithfully"
-  default_prompt: "Use $case-harbor-normalization to inspect this evaluation-sample delivery and organize its tasks into provenance-preserving Harbor task versions."
+  display_name: "CASE Task Normalization"
+  short_description: "Normalize tasks with Harbor as the default"
+  default_prompt: "Use $case-harbor-normalization during CASE task cleaning to interpret this delivery, normalize faithfully to Harbor by default, and continue task processing through separately recorded sandbox checks."
