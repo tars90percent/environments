@@ -25,6 +25,7 @@ import type {
   SubmissionRemovalResult,
   SubmissionReview,
   SubmissionReviewInput,
+  TaskFindingInput,
   TaskSourceLinksInput,
   VendorArchiveContext,
   VendorArchiveInput,
@@ -94,6 +95,17 @@ type TaskRow = {
   fail_count: string;
   blocked_count: string;
   not_run_count: string;
+};
+type TaskFindingRow = {
+  id: string;
+  task_version_id: string;
+  kind: CatalogTask["findings"][number]["kind"];
+  title: string;
+  summary: string;
+  resolution: string | null;
+  actor: string;
+  occurred_at: string | Date;
+  evidence_check_run_ids: string[];
 };
 type SourceEventRow = {
   batch_id: string;
@@ -830,6 +842,63 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
+  async recordTaskFinding(input: TaskFindingInput): Promise<{ findingId: string; created: boolean }> {
+    const payloadSha256 = hashValue(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const task = await client.query<{ id: string }>(
+        "SELECT id FROM registry_task_versions WHERE id = $1",
+        [input.taskVersionId],
+      );
+      if (!task.rowCount) throw new RegistryNotFoundError(`task_version ${input.taskVersionId} does not exist`);
+
+      if (input.evidenceCheckRunIds.length) {
+        const checks = await client.query<{ id: string }>(
+          "SELECT id FROM registry_check_runs WHERE id = ANY($1::text[])",
+          [input.evidenceCheckRunIds],
+        );
+        if (checks.rowCount !== input.evidenceCheckRunIds.length) {
+          throw new RegistryNotFoundError("One or more evidence check runs do not exist");
+        }
+      }
+
+      const existing = await client.query<{ payload_sha256: string }>(
+        "SELECT payload_sha256 FROM registry_task_findings WHERE id = $1",
+        [input.id],
+      );
+      if (existing.rows[0]?.payload_sha256 && existing.rows[0].payload_sha256 !== payloadSha256) {
+        throw new RegistryConflictError(`Task finding ${input.id} already exists with different immutable contents`);
+      }
+      if (existing.rowCount) {
+        await client.query("COMMIT");
+        return { findingId: input.id, created: false };
+      }
+
+      await client.query(
+        `INSERT INTO registry_task_findings(
+           id, task_version_id, kind, title, summary, resolution, actor, occurred_at,
+           evidence_check_run_ids, visibility, metadata, payload_sha256
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12)`,
+        [input.id, input.taskVersionId, input.kind, input.title, input.summary, input.resolution ?? null,
+          input.actor, input.occurredAt, json(input.evidenceCheckRunIds), input.visibility,
+          json(input.metadata ?? {}), payloadSha256],
+      );
+      await this.insertStatusEvent(client, "task_version", input.taskVersionId, "finding.recorded", input.actor, {
+        findingId: input.id,
+        kind: input.kind,
+        visibility: input.visibility,
+      });
+      await client.query("COMMIT");
+      return { findingId: input.id, created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async recordFollowUp(input: FollowUpInput): Promise<void> {
     await this.pool.query(
       `INSERT INTO registry_follow_ups(
@@ -1104,7 +1173,7 @@ export class PostgresRegistry implements RegistryRepository {
 
   async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
     const visibility = catalogVisibility(scope);
-    const [demandsResult, vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, procurementEventsResult] = await Promise.all([
+    const [demandsResult, vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, taskFindingsResult, procurementEventsResult] = await Promise.all([
       this.pool.query<ResearchDemandRow>(
         `SELECT id, domain_en, domain_zh, subdomain_en, subdomain_zh,
                 title_en, title_zh, note_en, note_zh,
@@ -1193,6 +1262,16 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY tsi.created_at`,
         [visibility],
       ),
+      this.pool.query<TaskFindingRow>(
+        `SELECT tf.id, tf.task_version_id, tf.kind, tf.title, tf.summary, tf.resolution,
+                tf.actor, tf.occurred_at, tf.evidence_check_run_ids
+         FROM registry_task_findings tf
+         JOIN registry_task_versions tv ON tv.id = tf.task_version_id
+         WHERE tv.catalog_visibility = ANY($1::text[])
+           AND ($2::boolean OR tf.visibility = 'portal')
+         ORDER BY tf.occurred_at DESC, tf.created_at DESC, tf.id`,
+        [visibility, scope === "all"],
+      ),
       this.pool.query<VendorEventRow>(
         `SELECT DISTINCT ON (vendor_id)
                 id, vendor_id, kind, event_type, summary, actor, occurred_at,
@@ -1205,11 +1284,16 @@ export class PostgresRegistry implements RegistryRepository {
     ]);
 
     const taskSourceIds = group(taskSourcesResult.rows, (row) => row.task_version_id);
+    const taskFindings = group(taskFindingsResult.rows, (row) => row.task_version_id);
     const tasksByCategory = group(tasksResult.rows, (row) => `${row.batch_id}\u0000${row.category_id}`);
     const categoriesByBatch = new Map<string, CatalogCategory[]>();
     for (const row of categoriesResult.rows) {
       const tasks = (tasksByCategory.get(`${row.batch_id}\u0000${row.id}`) ?? [])
-        .map((task) => taskFromRow(task, (taskSourceIds.get(task.id) ?? []).map((source) => source.source_item_id)));
+        .map((task) => taskFromRow(
+          task,
+          (taskSourceIds.get(task.id) ?? []).map((source) => source.source_item_id),
+          (taskFindings.get(task.id) ?? []).map(taskFindingFromRow),
+        ));
       append(categoriesByBatch, row.batch_id, {
         id: row.id,
         name: row.name,
@@ -1462,7 +1546,7 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
-function taskFromRow(row: TaskRow, sourceItemIds: string[] = []): CatalogTask {
+function taskFromRow(row: TaskRow, sourceItemIds: string[] = [], findings: CatalogTask["findings"] = []): CatalogTask {
   return {
     id: row.id,
     stableKey: row.stable_key,
@@ -1479,6 +1563,20 @@ function taskFromRow(row: TaskRow, sourceItemIds: string[] = []): CatalogTask {
       notRun: Number(row.not_run_count),
     },
     sourceItemIds,
+    findings,
+  };
+}
+
+function taskFindingFromRow(row: TaskFindingRow): CatalogTask["findings"][number] {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    summary: row.summary,
+    resolution: row.resolution,
+    actor: row.actor,
+    occurredAt: new Date(row.occurred_at).toISOString(),
+    evidenceCheckRunIds: row.evidence_check_run_ids,
   };
 }
 

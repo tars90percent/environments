@@ -611,6 +611,32 @@ const migrations: Migration[] = [
         WHERE superseded_at IS NULL;
     `,
   },
+  {
+    id: "009_task_findings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS registry_task_findings (
+        id text PRIMARY KEY,
+        task_version_id text NOT NULL REFERENCES registry_task_versions(id) ON DELETE CASCADE,
+        kind text NOT NULL CHECK (kind IN (
+          'observed_fact', 'vendor_claim', 'deterministic_result',
+          'heuristic_assessment', 'human_judgment', 'binding_term'
+        )),
+        title text NOT NULL,
+        summary text NOT NULL,
+        resolution text,
+        actor text NOT NULL,
+        occurred_at timestamptz NOT NULL,
+        evidence_check_run_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+        visibility text NOT NULL CHECK (visibility IN ('portal', 'internal')),
+        metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+        payload_sha256 text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS registry_task_findings_task_idx
+        ON registry_task_findings(task_version_id, occurred_at DESC, created_at DESC);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

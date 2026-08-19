@@ -17,6 +17,7 @@ import type {
   SubmissionRemovalResult,
   SubmissionReview,
   SubmissionReviewInput,
+  TaskFindingInput,
   TaskSourceLinksInput,
   VendorArchiveInput,
   VendorArchiveResult,
@@ -39,6 +40,7 @@ export interface RegistryRepository {
   archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   recordCheckResult(input: CheckResultInput): Promise<void>;
+  recordTaskFinding(input: TaskFindingInput): Promise<{ findingId: string; created: boolean }>;
   recordFollowUp(input: FollowUpInput): Promise<void>;
   recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview>;
   listSubmissionReviews(batchId: string): Promise<SubmissionReview[]>;

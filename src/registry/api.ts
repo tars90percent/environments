@@ -16,6 +16,7 @@ import {
   parseSubmissionManifest,
   parseSubmissionRemoval,
   parseSubmissionReview,
+  parseTaskFinding,
   parseTaskSourceLinks,
   parseVendorArchive,
   parseVendorEvent,
@@ -198,6 +199,10 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   if (method === "POST" && url.pathname === "/v1/check-results") {
     await options.repository.recordCheckResult(parseCheckResult(await readJson(request)));
     return sendJson(response, 201, { recorded: true });
+  }
+  if (method === "POST" && url.pathname === "/v1/task-findings") {
+    const result = await options.repository.recordTaskFinding(parseTaskFinding(await readJson(request)));
+    return sendJson(response, result.created ? 201 : 200, result);
   }
   if (method === "POST" && url.pathname === "/v1/follow-ups") {
     await options.repository.recordFollowUp(parseFollowUp(await readJson(request)));

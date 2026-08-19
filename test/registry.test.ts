@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -210,4 +210,23 @@ test("validates append-only task-to-source repairs", () => {
   assert.equal(parseTaskSourceLinks(input).links.length, 1);
   assert.throws(() => parseTaskSourceLinks({ ...input, links: [] }), ValidationError);
   assert.throws(() => parseTaskSourceLinks({ ...input, links: [...input.links, ...input.links] }), ValidationError);
+});
+
+test("validates evidence-labeled task findings with explicit portal visibility", () => {
+  const finding = {
+    id: "finding:vendor-one:task-one:verifier-isolation",
+    taskVersionId: "vendor-one-2026-08-13:task-one",
+    kind: "deterministic_result",
+    title: "Verifier isolation defect",
+    summary: "The verifier tested a pristine environment rather than the Oracle-modified filesystem.",
+    resolution: "A separately recorded shared-environment diagnostic passed twice.",
+    actor: "TARS/Codex",
+    occurredAt: "2026-08-18T12:00:00.000Z",
+    evidenceCheckRunIds: ["check:vendor-one:oracle:one"],
+    visibility: "portal",
+  };
+  assert.equal(parseTaskFinding(finding).visibility, "portal");
+  assert.throws(() => parseTaskFinding({ ...finding, kind: "quality_score" }), ValidationError);
+  assert.throws(() => parseTaskFinding({ ...finding, visibility: "public" }), ValidationError);
+  assert.throws(() => parseTaskFinding({ ...finding, evidenceCheckRunIds: ["same", "same"] }), ValidationError);
 });

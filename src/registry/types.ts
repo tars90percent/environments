@@ -11,6 +11,14 @@ export type WorkflowStatus =
 export type CatalogVisibility = "featured" | "available" | "log_only" | "internal";
 export type CheckOutcome = "pass" | "fail" | "blocked" | "not_run";
 export type CatalogScope = "research" | "portal" | "all";
+export type TaskFindingKind =
+  | "observed_fact"
+  | "vendor_claim"
+  | "deterministic_result"
+  | "heuristic_assessment"
+  | "human_judgment"
+  | "binding_term";
+export type TaskFindingVisibility = "portal" | "internal";
 
 export type SourceChannel =
   | "email"
@@ -323,6 +331,26 @@ export type CheckResultInput = {
   completedAt: string;
 };
 
+export type TaskFindingInput = {
+  id: string;
+  taskVersionId: string;
+  kind: TaskFindingKind;
+  title: string;
+  summary: string;
+  resolution?: string;
+  actor: string;
+  occurredAt: string;
+  evidenceCheckRunIds: string[];
+  visibility: TaskFindingVisibility;
+  metadata?: Record<string, unknown>;
+};
+
+export type TaskFinding = TaskFindingInput & {
+  resolution: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
 export type FollowUpInput = {
   id: string;
   batchId: string;
@@ -380,6 +408,17 @@ export type ResearcherUploadInput = {
   };
 };
 
+export type CatalogTaskFinding = {
+  id: string;
+  kind: TaskFindingKind;
+  title: string;
+  summary: string;
+  resolution: string | null;
+  actor: string;
+  occurredAt: string;
+  evidenceCheckRunIds: string[];
+};
+
 export type CatalogTask = {
   id: string;
   stableKey: string;
@@ -396,6 +435,7 @@ export type CatalogTask = {
     notRun: number;
   };
   sourceItemIds: string[];
+  findings: CatalogTaskFinding[];
 };
 
 export type CatalogSourceItem = {

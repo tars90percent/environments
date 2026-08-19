@@ -8,6 +8,7 @@ import type {
   SubmissionManifest,
   SubmissionRemovalInput,
   SubmissionReviewInput,
+  TaskFindingInput,
   TaskSourceLinksInput,
   VendorArchiveInput,
   VendorEventInput,
@@ -35,6 +36,10 @@ const SOURCE_FETCH_STATUSES = new Set(["not_requested", "queued", "fetching", "s
 const SOURCE_PARSE_STATUSES = new Set(["not_requested", "queued", "parsing", "parsed", "partial", "blocked", "failed"]);
 const SOURCE_RELATIONS = new Set(["contains", "links_to", "derived_from", "describes", "mirrors", "supersedes"]);
 const VENDOR_EVENT_KINDS = new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]);
+const TASK_FINDING_KINDS = new Set<TaskFindingInput["kind"]>([
+  "observed_fact", "vendor_claim", "deterministic_result", "heuristic_assessment", "human_judgment", "binding_term",
+]);
+const TASK_FINDING_VISIBILITIES = new Set<TaskFindingInput["visibility"]>(["portal", "internal"]);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
@@ -319,6 +324,26 @@ export function parseCheckResult(value: unknown): CheckResultInput {
     startedAt: timestamp(input.startedAt, "startedAt"),
     completedAt: timestamp(input.completedAt, "completedAt"),
   } as CheckResultInput;
+}
+
+export function parseTaskFinding(value: unknown): TaskFindingInput {
+  const input = object(value, "task finding");
+  const resolution = input.resolution === undefined || input.resolution === null
+    ? undefined
+    : boundedString(input.resolution, "resolution", 5_000);
+  return {
+    id: identifier(input.id, "id"),
+    taskVersionId: identifier(input.taskVersionId, "taskVersionId"),
+    kind: enumValue(input.kind, TASK_FINDING_KINDS, "kind"),
+    title: boundedString(input.title, "title", 300),
+    summary: boundedString(input.summary, "summary", 5_000),
+    ...(resolution ? { resolution } : {}),
+    actor: boundedString(input.actor, "actor", 500),
+    occurredAt: timestamp(input.occurredAt, "occurredAt"),
+    evidenceCheckRunIds: uniqueIdentifiers(input.evidenceCheckRunIds, "evidenceCheckRunIds"),
+    visibility: enumValue(input.visibility, TASK_FINDING_VISIBILITIES, "visibility"),
+    metadata: optionalObject(input.metadata, "metadata"),
+  };
 }
 
 export function parseFollowUp(value: unknown): FollowUpInput {
