@@ -66,14 +66,14 @@ RUN npm run build \
     && test -x /usr/local/bin/case-harbor \
     && test -x /usr/local/bin/modal \
     && test -f /root/.agents/skills/case-registry/SKILL.md \
+    && test -f /root/.agents/skills/case-registry/agents/openai.yaml \
     && test -f /root/.agents/skills/case-registry/references/source-envelope.md \
-    && test -f /root/.agents/skills/case-harbor-normalization/SKILL.md \
-    && test -f /root/.agents/skills/case-harbor-normalization/agents/openai.yaml \
-    && test -f /root/.agents/skills/case-harbor-normalization/references/case-recording.md \
-    && test -f /root/.agents/skills/case-harbor-normalization/references/clean-runnable.md \
-    && test -f /root/.agents/skills/case-harbor-normalization/references/harbor-contract.md \
-    && test -f /root/.agents/skills/case-harbor-normalization/references/interpretation.md \
-    && test -f /root/.agents/skills/case-harbor-normalization/references/verifier-classification.md
+    && test -f /root/.agents/skills/case-sample-registration/SKILL.md \
+    && test -f /root/.agents/skills/case-sample-registration/agents/openai.yaml \
+    && test -f /root/.agents/skills/case-sample-registration/references/registry-recording.md \
+    && test -f /root/.agents/skills/case-sample-registration/references/runtime-evidence.md \
+    && test -f /root/.agents/skills/case-sample-registration/references/harbor-contract.md \
+    && test -f /root/.agents/skills/case-sample-registration/references/interpretation.md
 
 ENV NODE_ENV=production \
     CASE_HARBOR_BIN=/opt/harbor-bin/harbor \

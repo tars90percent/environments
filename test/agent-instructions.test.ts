@@ -23,53 +23,64 @@ test("installs the source-controlled guide into the persistent agent workspace",
   }
 });
 
-test("the CASE guide develops taste while reserving final authority", async () => {
+test("the CASE guide defines one complete registration workflow", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
-  assert.match(guide, /Develop taste rather than suppressing it/);
-  assert.match(guide, /Final authority .* currently rests with the designated post-training researchers/);
-  assert.doesNotMatch(guide, /not a research taste model/);
+
+  assert.match(guide, /turn messy evaluation-sample deliveries into exact, runnable, evidence-backed task versions/);
+  assert.match(guide, /Registration is one end-to-end process/);
+  assert.match(guide, /accumulating completeness steps, not separate products or organizational handoffs/);
+  assert.match(guide, /Storing the original payload first is a crash-safe checkpoint/);
+  assert.match(guide, /Complete registration does not require every task to pass/);
+  assert.doesNotMatch(guide, /case-harbor-normalization/);
 });
 
-test("the CASE guide assigns capture and cleaning to CASE and final review to researchers", async () => {
+test("the CASE guide defines architectural and decision boundaries", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
-  assert.match(guide, /Submission capture and registration — CASE/);
-  assert.match(guide, /Task parsing, normalization, cleaning, and runtime verification — CASE/);
-  assert.match(guide, /Research review and purchasing decision — designated post-training researchers/);
-  assert.match(guide, /Routine model trials.*are not part of CASE's required/s);
-  assert.match(guide, /DeepSeek for a bounded diagnostic question/);
-  assert.match(guide, /forces Harbor runs onto the Modal environment/);
-  assert.doesNotMatch(guide, /required complete trajectories/);
+
+  assert.match(guide, /PostgreSQL registry:.*authoritative relational record/s);
+  assert.match(guide, /S3-compatible object storage:.*immutable, content-addressed/s);
+  assert.match(guide, /Durable work queue:.*scheduling and recovery/s);
+  assert.match(guide, /Final upstreaming and purchasing authority:.*designated post-training researchers/);
+  assert.match(guide, /fresh disposable remote sandbox/);
+  assert.match(guide, /zero exit code or sandbox completion is not by itself a passing task result/);
 });
 
-test("the CASE guide uses live requirements without routing to the legacy procurement Base", async () => {
+test("the CASE guide resolves live requirements from governing evidence", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
-  assert.match(guide, /Research demand and requirements:.*数据采购.*Wiki/);
-  assert.doesNotMatch(guide, /procurement Base|Base is a legacy reference/);
+
+  assert.match(guide, /latest dated requirement or decision from the designated post-training researcher/);
+  assert.match(guide, /数据采购.*Wiki/);
+  assert.match(guide, /legacy.*Base.*read-only historical reference/s);
+  assert.match(guide, /package format, repeat counts, models, harnesses, trajectory counts, pass-rate bands/);
 });
 
-test("ships the Harbor normalization guidance referenced by the CASE guide", async () => {
+test("ships the complete-registration and registry skills referenced by the guide", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
-  const skill = await readFile(
-    new URL("../skills/case-harbor-normalization/SKILL.md", import.meta.url),
+  const registrationSkill = await readFile(
+    new URL("../skills/case-sample-registration/SKILL.md", import.meta.url),
+    "utf8",
+  );
+  const registrySkill = await readFile(
+    new URL("../skills/case-registry/SKILL.md", import.meta.url),
     "utf8",
   );
   const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
   const references = [
-    "case-recording.md",
-    "clean-runnable.md",
+    "registry-recording.md",
+    "runtime-evidence.md",
     "harbor-contract.md",
     "interpretation.md",
-    "verifier-classification.md",
   ];
 
-  assert.match(guide, /Use the `case-harbor-normalization` skill/);
-  assert.match(guide, /Distinguish \*\*Harbor-valid\*\* from \*\*CASE review-ready\*\*/);
+  assert.match(guide, /Use the `case-sample-registration` skill.*`case-registry`/);
+  assert.match(registrationSkill, /Registration is one workflow with resumable checkpoints/);
+  assert.match(registrySkill, /It does not define a separate capture or processing lifecycle/);
 
   for (const reference of references) {
-    assert.match(skill, new RegExp(`references/${reference.replace(".", "\\.")}`));
+    assert.match(registrationSkill, new RegExp(`references/${reference.replace(".", "\\.")}`));
     assert.match(
       await readFile(
-        new URL(`../skills/case-harbor-normalization/references/${reference}`, import.meta.url),
+        new URL(`../skills/case-sample-registration/references/${reference}`, import.meta.url),
         "utf8",
       ),
       /\S/,
@@ -79,6 +90,7 @@ test("ships the Harbor normalization guidance referenced by the CASE guide", asy
   assert.match(dockerfile, /cp -R \/app\/skills\/\. \/root\/\.agents\/skills\//);
   assert.match(
     dockerfile,
-    /test -f \/root\/\.agents\/skills\/case-harbor-normalization\/SKILL\.md/,
+    /test -f \/root\/\.agents\/skills\/case-sample-registration\/SKILL\.md/,
   );
+  assert.match(dockerfile, /test -f \/root\/\.agents\/skills\/case-registry\/SKILL\.md/);
 });

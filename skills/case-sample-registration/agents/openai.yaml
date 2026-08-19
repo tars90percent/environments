@@ -1,0 +1,4 @@
+interface:
+  display_name: "CASE Sample Registration"
+  short_description: "Register samples as runnable task evidence"
+  default_prompt: "Use $case-sample-registration to completely register this evaluation sample from its original delivery through exact task versions and sandbox evidence."

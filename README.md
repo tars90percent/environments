@@ -11,6 +11,11 @@ evidence. The portal is a catalog and authenticated intake client; it can append
 researcher responses and new researcher-upload submissions, but it does not own
 or edit canonical procurement state.
 
+CASE treats delivery preservation, task discovery and representation, remote
+checking, and evidence recording as one complete sample-registration workflow.
+An early `unchecked` submission is a durable checkpoint in that workflow, not a
+separate finished capture product.
+
 The service currently has a deliberately narrow chat-transport boundary:
 
 - receives direct messages through the configured Feishu app;
@@ -83,31 +88,34 @@ case-intake capture-feishu-plan /absolute/path/plan.json
 case-mail-intake capture-mail-plan /absolute/path/plan.json
 ```
 
-An intake manifest creates an immutable submission batch and queues a check
-work item. A corrected vendor package is always a new batch linked through
-`revisesBatchId`. Deterministic results, heuristic results, and human research
-judgment remain distinct records.
+Registration preserves an immutable submission checkpoint and can queue its
+next work. A corrected vendor package is always a new submission linked through
+`revisesBatchId`. As task boundaries become clear,
+`append-normalized-tasks`—a compatibility name in the current API—atomically
+adds provenance-linked categories and exact task versions to that same
+registration. Each task version must cite an existing immutable `task_package`
+artifact and a source item linked to the submission. Identical requests are
+idempotent; changed task contents are new versions rather than replacements.
 
-For attachment-first captures whose task boundaries become known later,
-`append-normalized-tasks` atomically registers provenance-linked categories and
-task versions without replacing the original submission manifest. It requires
-each task version to cite an existing immutable `task_package` artifact and a
-source item already linked to that submission. Identical requests are
-idempotent; changed task contents are rejected as conflicts.
+Deterministic results, heuristic assessments, vendor claims, and human research
+judgments remain distinct records within the completed registration.
 
 The intake commands accept only plans that explicitly declare
 `"purpose": "sample_evaluation"`. They capture exact Feishu message resources or Feishu Mail
 attachments through CASE's renewable user login, store immutable bytes in the
-registry bucket, and register visible `unchecked` submissions without opening
-or executing vendor material. Purchased deliveries move to a downstream pipeline
-and must not be captured in CASE. Catalog task totals count only normalized task
-versions; vendor-declared quantities and raw file counts remain separate.
+registry bucket, and register visible `unchecked` submission checkpoints. CASE
+then continues the registration by interpreting the preserved material,
+creating task versions, and recording remote execution evidence. Purchased
+deliveries move to a downstream pipeline and must not be registered as samples
+in CASE. Catalog task totals count only registered task versions;
+vendor-declared quantities and raw file counts remain separate.
 
 小环境 uses a separate upload-only registry role to request a content-addressed
 object URL and register an authenticated researcher's file as a visible
 `unchecked` submission for an existing vendor. That operation preserves the
 original filename, hash, size, upload event, and verified researcher identity;
-it does not parse the file, normalize tasks, or imply review readiness.
+it establishes the first durable registration checkpoint and does not by itself
+imply that task discovery or runtime evidence is complete.
 
 The vendor directory also retains contacted organizations before they have a
 submission. Append-only vendor events preserve contact, evaluation, commercial,
@@ -135,8 +143,9 @@ other Feishu resource, then follow its explanation.
 
 The image also installs every source-controlled CASE skill under `skills/` as a
 complete directory, including its references and agent metadata. This currently
-ships `case-registry` and `case-harbor-normalization` so the runtime guide and
-its companion procedures stay on the same deployed revision.
+ships `case-sample-registration` for the end-to-end workflow and `case-registry`
+for canonical reads and writes, keeping the operational guide and its companion
+procedures on the same deployed revision.
 
 The resulting renewable user login is stored by `lark-cli` under its configured
 directory. On Railway, `LARKSUITE_CLI_CONFIG_DIR` points to `/data/lark-cli`, so

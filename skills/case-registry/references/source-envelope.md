@@ -1,14 +1,32 @@
-# Source envelope contract
+# Registering source material
 
-Capture in this order:
+Source registration is the first durable checkpoint in complete sample registration. Its purpose is to make the inbound delivery recoverable and traceable while task discovery, interpretation, and execution continue.
 
-1. Save the exact inbound message, email, document, spreadsheet export, PDF, archive, or fetched file with `case-registry store-file`.
-2. Create a source envelope that names the vendor and transport event, lists every known source item, and records relations between them.
-3. Import it with `case-registry import-source`.
-4. Fetch and parse queued source items. Record each newly discovered item in a new immutable envelope/event or through the normalization worker; never mutate an older snapshot.
-5. Import the normalized submission batch and link task versions to their source item IDs.
+## Order of operations
 
-Minimal example:
+1. Resolve the inbound event and the exact resources within the reviewed scope.
+2. Store every accessible payload or snapshot content-addressably.
+3. Build the source event and source-item graph with explicit relations.
+4. Import the graph and create or update the visible submission checkpoint.
+5. Inspect the preserved material and register exact task versions.
+6. Record task artifacts, checks, trajectories, and resolution evidence against those versions.
+
+If storage succeeds but graph registration fails, delete the object only after confirming that no registry record references it. A retry is a new provenance-preserving attempt, not retroactive completion of the failed event.
+
+## Minimum source event
+
+Record:
+
+- stable event identifier and idempotency key;
+- vendor and submission association when known;
+- source channel and original locator;
+- sender or authenticated uploader;
+- event and observation timestamps;
+- declared purpose (`sample_evaluation` for reviewed capture plans);
+- fetch and parse states, including errors;
+- revision relation when this delivery corrects earlier material.
+
+## Minimal envelope
 
 ```json
 {
@@ -67,9 +85,33 @@ Minimal example:
 }
 ```
 
-Statuses are operational facts:
+`batchLinks` and `batchId` are compatibility field names for submission links.
 
-- `fetchStatus`: `not_requested`, `queued`, `fetching`, `snapshotted`, `external_only`, `blocked`, or `failed`.
+## Source items and relations
+
+Represent meaningful objects separately: message, attachment, document, worksheet, row, URL, webpage, PDF, archive, repository, directory, task package, image, or container-image reference.
+
+Connect them with explicit relations such as:
+
+- message `has_attachment` file;
+- document `contains` worksheet;
+- worksheet `contains` row;
+- archive `contains` task package;
+- URL `resolves_to` snapshot;
+- new item `revises` prior item;
+- derived artifact `extracted_from` source item.
+
+Do not flatten distinct objects into a single note when their identity affects provenance or task interpretation.
+
+## Object metadata
+
+For each stored object, retain its digest, byte size, media type, storage key, original filename when present, and the source item it represents. Snapshots of mutable sources need an observation time even when the locator did not change.
+
+## Partial and failed material
+
+Keep inaccessible, incomplete, malformed, and failed source items in the graph with accurate states. Their existence may define a task boundary or explain why registration is blocked. Absence of bytes is not a failed task check unless such a check ran.
+
+Allowed operational states are:
+
+- `fetchStatus`: `not_requested`, `queued`, `fetching`, `snapshotted`, `external_only`, `blocked`, or `failed`;
 - `parseStatus`: `not_requested`, `queued`, `parsing`, `parsed`, `partial`, `blocked`, or `failed`.
-
-Use a new source event or source item whenever remote bytes or observable contents change. A stable Google URL is only a locator; it is never a version identifier.
