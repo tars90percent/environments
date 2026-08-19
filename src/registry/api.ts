@@ -15,6 +15,7 @@ import {
   parseSourceEnvelope,
   parseStatusUpdate,
   parseSubmissionManifest,
+  parseSubmissionIntakeClassification,
   parseSubmissionRemoval,
   parseSubmissionReview,
   parseTaskFinding,
@@ -186,6 +187,11 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   }
   if (method === "POST" && url.pathname === "/v1/intake/normalized-tasks") {
     return sendJson(response, 200, await options.repository.appendNormalizedTasks(parseAppendNormalizedTasks(await readJson(request))));
+  }
+  if (method === "POST" && url.pathname === "/v1/intake/classify-submission") {
+    return sendJson(response, 200, await options.repository.classifySubmissionIntake(
+      parseSubmissionIntakeClassification(await readJson(request)),
+    ));
   }
   if (method === "POST" && url.pathname === "/v1/intake/remove-submission") {
     if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });

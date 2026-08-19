@@ -119,6 +119,20 @@ test("appends immutable normalized task versions to an attachment-first submissi
     assert.equal(unrelated.status, 409);
 
     await repository.ingestSubmission(catalogFirstManifest());
+    const classification = {
+      batchId: "vendor-one-catalog-first",
+      purpose: "sample_evaluation",
+      sourceEventIds: ["catalog-first-source"],
+      reason: "The governing source records this legacy delivery as an evaluation sample.",
+      actor: "TARS/CASE",
+    };
+    const classified = await api(server.url, adminToken, "/v1/intake/classify-submission", classification);
+    assert.equal(classified.status, 200);
+    assert.equal(classified.body.changed, true);
+    const classificationReplay = await api(server.url, adminToken, "/v1/intake/classify-submission", classification);
+    assert.equal(classificationReplay.status, 200);
+    assert.equal(classificationReplay.body.changed, false);
+
     const finalizedSha256 = "b".repeat(64);
     const finalizedArtifactId = `artifact:sha256:${finalizedSha256}`;
     await repository.registerArtifact({
@@ -213,7 +227,7 @@ function catalogFirstManifest(): SubmissionManifest {
       workflowStatus: "received",
       catalogVisibility: "available",
       delta: { added: 1, removed: 0, changedFiles: 1, note: "Task discovered before its exact package was bound." },
-      metadata: { intakePurpose: "sample_evaluation" },
+      metadata: { legacyImport: true },
     },
     categories: [{
       id: "vendor-one:catalog-systems",

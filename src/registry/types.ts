@@ -314,6 +314,20 @@ export type SubmissionRemovalResult = {
   unreferencedArtifacts: ArtifactRecord[];
 };
 
+export type SubmissionIntakeClassificationInput = {
+  batchId: string;
+  purpose: "sample_evaluation";
+  sourceEventIds: string[];
+  reason: string;
+  actor: string;
+};
+
+export type SubmissionIntakeClassificationResult = {
+  batchId: string;
+  purpose: "sample_evaluation";
+  changed: boolean;
+};
+
 export type StatusUpdateInput = {
   entityType: "submission_batch" | "task_version";
   entityId: string;

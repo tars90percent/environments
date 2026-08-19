@@ -23,6 +23,8 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionIntakeClassificationInput,
+  SubmissionIntakeClassificationResult,
   SubmissionRemovalInput,
   SubmissionRemovalResult,
   SubmissionReview,
@@ -579,12 +581,12 @@ export class PostgresRegistry implements RegistryRepository {
         `INSERT INTO registry_submission_batches(
            id, vendor_id, source_event_id, submission_date, label, source_label,
            declared_task_count, formats, workflow_status, catalog_visibility,
-           revises_batch_id, delta, metadata, manifest_sha256
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14)`,
+           revises_batch_id, delta, metadata, manifest_sha256, intake_purpose
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15)`,
         [manifest.batch.id, manifest.vendor.id, manifest.sourceEvent.id, manifest.batch.date, manifest.batch.label,
           manifest.batch.sourceLabel, manifest.batch.taskCount, json(manifest.batch.formats), manifest.batch.workflowStatus,
           manifest.batch.catalogVisibility, manifest.batch.revisesBatchId ?? null, json(manifest.batch.delta),
-          json(manifest.batch.metadata ?? {}), manifestSha256],
+          json(manifest.batch.metadata ?? {}), manifestSha256, manifest.batch.metadata?.intakePurpose ?? null],
       );
       await client.query(
         `INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
@@ -655,6 +657,71 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
+  async classifySubmissionIntake(
+    input: SubmissionIntakeClassificationInput,
+  ): Promise<SubmissionIntakeClassificationResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const batchResult = await client.query<{
+        vendor_id: string;
+        source_event_id: string;
+        intake_purpose: string | null;
+      }>(
+        `SELECT vendor_id, source_event_id, intake_purpose
+         FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
+        [input.batchId],
+      );
+      const batch = batchResult.rows[0];
+      if (!batch) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
+      if (batch.intake_purpose && batch.intake_purpose !== input.purpose) {
+        throw new RegistryConflictError(
+          `Submission ${input.batchId} is already classified as ${batch.intake_purpose}`,
+        );
+      }
+
+      const linkedSources = await client.query<{ id: string }>(
+        `SELECT DISTINCT se.id
+         FROM registry_source_events se
+         WHERE se.vendor_id = $1
+           AND se.id = ANY($2::text[])
+           AND (
+             se.id = $3
+             OR EXISTS (
+               SELECT 1 FROM registry_batch_source_events bse
+               WHERE bse.batch_id = $4 AND bse.source_event_id = se.id
+             )
+           )`,
+        [batch.vendor_id, input.sourceEventIds, batch.source_event_id, input.batchId],
+      );
+      if (linkedSources.rowCount !== input.sourceEventIds.length) {
+        throw new RegistryConflictError(
+          `Every governing source event must belong to vendor ${batch.vendor_id} and submission ${input.batchId}`,
+        );
+      }
+
+      const changed = batch.intake_purpose !== input.purpose;
+      if (changed) {
+        await client.query(
+          "UPDATE registry_submission_batches SET intake_purpose = $2, updated_at = now() WHERE id = $1",
+          [input.batchId, input.purpose],
+        );
+        await this.insertStatusEvent(client, "submission_batch", input.batchId, "intake.purpose_classified", input.actor, {
+          purpose: input.purpose,
+          sourceEventIds: input.sourceEventIds,
+          reason: input.reason,
+        });
+      }
+      await client.query("COMMIT");
+      return { batchId: input.batchId, purpose: input.purpose, changed };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult> {
     const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
@@ -664,15 +731,16 @@ export class PostgresRegistry implements RegistryRepository {
         vendor_id: string;
         workflow_status: string;
         catalog_visibility: string;
-        metadata: Record<string, unknown>;
+        intake_purpose: string | null;
       }>(
-        `SELECT vendor_id, workflow_status, catalog_visibility, metadata
+        `SELECT vendor_id, workflow_status, catalog_visibility,
+                COALESCE(intake_purpose, metadata->>'intakePurpose') AS intake_purpose
          FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
         [input.batchId],
       );
       const batch = batchResult.rows[0];
       if (!batch) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
-      if (batch.metadata?.intakePurpose !== "sample_evaluation") {
+      if (batch.intake_purpose !== "sample_evaluation") {
         throw new RegistryConflictError(`Submission ${input.batchId} is not an evaluation-sample intake`);
       }
 

@@ -637,6 +637,21 @@ const migrations: Migration[] = [
         ON registry_task_findings(task_version_id, occurred_at DESC, created_at DESC);
     `,
   },
+  {
+    id: "010_submission_intake_purpose",
+    sql: `
+      ALTER TABLE registry_submission_batches
+        ADD COLUMN IF NOT EXISTS intake_purpose text;
+
+      UPDATE registry_submission_batches
+      SET intake_purpose = metadata->>'intakePurpose'
+      WHERE intake_purpose IS NULL
+        AND metadata ? 'intakePurpose';
+
+      CREATE INDEX IF NOT EXISTS registry_submission_batches_intake_purpose_idx
+        ON registry_submission_batches(intake_purpose);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

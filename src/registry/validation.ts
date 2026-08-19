@@ -7,6 +7,7 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionIntakeClassificationInput,
   SubmissionRemovalInput,
   SubmissionReviewInput,
   TaskFindingInput,
@@ -330,6 +331,19 @@ export function parseSubmissionRemoval(value: unknown): SubmissionRemovalInput {
   const input = object(value, "submission removal");
   return {
     batchId: identifier(input.batchId, "batchId"),
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseSubmissionIntakeClassification(value: unknown): SubmissionIntakeClassificationInput {
+  const input = object(value, "submission intake classification");
+  const sourceEventIds = uniqueIdentifiers(input.sourceEventIds, "sourceEventIds");
+  if (!sourceEventIds.length) throw new ValidationError("sourceEventIds must contain at least one governing source event");
+  return {
+    batchId: identifier(input.batchId, "batchId"),
+    purpose: enumValue(input.purpose, new Set(["sample_evaluation"]), "purpose"),
+    sourceEventIds,
     reason: boundedString(input.reason, "reason", 5_000),
     actor: boundedString(input.actor, "actor", 500),
   };

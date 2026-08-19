@@ -15,6 +15,8 @@ import type {
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
+  SubmissionIntakeClassificationInput,
+  SubmissionIntakeClassificationResult,
   SubmissionRemovalInput,
   SubmissionRemovalResult,
   SubmissionReview,
@@ -35,6 +37,7 @@ export interface RegistryRepository {
   close(): Promise<void>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
   appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult>;
+  classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }>;

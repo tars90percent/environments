@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseAppendNormalizedTasks, parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseAppendNormalizedTasks, parseResearcherUpload, parseSourceEnvelope, parseSubmissionIntakeClassification, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -199,6 +199,25 @@ test("requires an auditable operator and reason for removing a handed-off submis
   assert.deepEqual(parseSubmissionRemoval(removal), removal);
   assert.throws(() => parseSubmissionRemoval({ ...removal, reason: "" }), ValidationError);
   assert.throws(() => parseSubmissionRemoval({ ...removal, batchId: "unsafe/id" }), ValidationError);
+});
+
+test("requires linked evidence to classify a legacy submission as an evaluation sample", () => {
+  const classification = {
+    batchId: "vendor-one-legacy-sample",
+    purpose: "sample_evaluation",
+    sourceEventIds: ["source-vendor-email"],
+    reason: "The dated vendor email identifies this delivery as an evaluation sample, not purchased production data.",
+    actor: "TARS/Codex",
+  };
+  assert.deepEqual(parseSubmissionIntakeClassification(classification), classification);
+  assert.throws(
+    () => parseSubmissionIntakeClassification({ ...classification, purpose: "purchased_delivery" }),
+    ValidationError,
+  );
+  assert.throws(
+    () => parseSubmissionIntakeClassification({ ...classification, sourceEventIds: [] }),
+    ValidationError,
+  );
 });
 
 test("validates append-only task-to-source repairs", () => {

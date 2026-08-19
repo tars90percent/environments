@@ -34,6 +34,7 @@ Choose the narrowest operation that represents the fact. Write operations use va
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
 case-registry append-normalized-tasks /absolute/path/normalized-tasks.json
+case-registry classify-submission /absolute/path/intake-classification.json
 case-registry record-vendor-event /absolute/path/vendor-event.json
 case-registry archive-vendor /absolute/path/vendor-archive.json
 case-registry restore-vendor /absolute/path/vendor-restore.json
@@ -60,6 +61,7 @@ In particular:
 - `import-source` for an inbound event, connected source items, artifacts, and a submission checkpoint.
 - `import` for a complete manifest that already contains source, submission, and task records.
 - `append-normalized-tasks` to append task versions to an existing submission after source interpretation.
+- `classify-submission` to mark a legacy submission as `sample_evaluation` exactly once, with governing linked source-event IDs, a reason, and an actor; do not use it for purchased deliveries or uncertain scope.
 - `link-task-sources` to add exact task-to-source relations.
 - `record-check`, `record-follow-up`, `record-submission-review`, and `record-vendor-event` for append-only evidence and history.
 - `set-status`, `archive-vendor`, and `restore-vendor` for explicit lifecycle changes.

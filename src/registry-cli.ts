@@ -47,6 +47,9 @@ switch (command) {
   case "append-normalized-tasks":
     output(await request("POST", "/v1/intake/normalized-tasks", await jsonFile(argument)));
     break;
+  case "classify-submission":
+    output(await request("POST", "/v1/intake/classify-submission", await jsonFile(argument)));
+    break;
   case "record-vendor-event":
     output(await request("POST", "/v1/vendor-events", await jsonFile(argument)));
     break;
@@ -102,7 +105,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|append-normalized-tasks|record-vendor-event|archive-vendor|restore-vendor|store-file|download-artifact|record-check|record-task-finding|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|append-normalized-tasks|classify-submission|record-vendor-event|archive-vendor|restore-vendor|store-file|download-artifact|record-check|record-task-finding|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {
