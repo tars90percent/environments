@@ -138,6 +138,21 @@ const copy = {
       blocked: "受阻",
       notRun: "未运行",
     },
+    findings: {
+      title: "记录发现",
+      resolution: "处理结果",
+      recordedBy: "记录人",
+      taskVersion: "任务版本",
+      evidence: "条核验证据",
+      kind: {
+        observed_fact: "观察事实",
+        vendor_claim: "供应商陈述",
+        deterministic_result: "确定性结果",
+        heuristic_assessment: "启发式评估",
+        human_judgment: "人工判断",
+        binding_term: "约束条款",
+      },
+    },
     status: {
       unchecked: "未核验",
       received: "已接收",
@@ -293,6 +308,21 @@ const copy = {
       fail: "fail",
       blocked: "blocked",
       notRun: "not run",
+    },
+    findings: {
+      title: "Recorded findings",
+      resolution: "Resolution",
+      recordedBy: "Recorded by",
+      taskVersion: "Task version",
+      evidence: "check evidence records",
+      kind: {
+        observed_fact: "Observed fact",
+        vendor_claim: "Vendor claim",
+        deterministic_result: "Deterministic result",
+        heuristic_assessment: "Heuristic assessment",
+        human_judgment: "Human judgment",
+        binding_term: "Binding term",
+      },
     },
     status: {
       unchecked: "Unchecked",
@@ -875,7 +905,7 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { bat
     {isExpanded && <div className="batch-body">
       <div className="delta-block"><div className="delta-grid">{batch.delta.retained !== undefined && <span><strong>{batch.delta.retained}</strong><small>{t.delta.retained}</small></span>}<span><strong>{batch.delta.added}</strong><small>{t.delta.added}</small></span><span><strong>{batch.delta.removed}</strong><small>{t.delta.removed}</small></span>{batch.delta.changedFiles !== undefined && <span><strong>{batch.delta.changedFiles}</strong><small>{t.delta.changedFiles}</small></span>}</div><p>{batch.delta.note}</p></div>
       <div className="batch-section-head"><h4>{t.taskCategories}</h4><span>{batch.categories.length} {batch.categories.length === 1 ? t.category : t.categories}</span></div>
-      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
+      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} language={language} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
       <SubmissionSources sourceEvents={batch.sourceEvents ?? []} t={t} language={language} />
       <SubmissionReviewPanel batch={batch} t={t} language={language} />
     </div>}
@@ -1006,9 +1036,21 @@ function SourceItem({ item, t, language }: { item: CatalogSourceItem; t: UiCopy;
   </div>;
 }
 
-function TaskRow({ task, t }: { task: CatalogTask; t: UiCopy }) {
+function TaskRow({ task, t, language }: { task: CatalogTask; t: UiCopy; language: Language }) {
   const checks = task.checks.pass + task.checks.fail + task.checks.blocked + task.checks.notRun;
-  return <div className="task-row"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></div>;
+  const findings = task.findings ?? [];
+  return <div className="task-record">
+    <div className="task-row"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></div>
+    {findings.length > 0 && <details className="task-findings">
+      <summary><span>{t.findings.title}</span><i>{findings.length}</i></summary>
+      <div className="task-finding-list">{findings.map((finding) => <article className="task-finding" key={finding.id}>
+        <header><span className={`finding-kind finding-${finding.kind}`}>{t.findings.kind[finding.kind]}</span><strong>{finding.title}</strong><time dateTime={finding.occurredAt}>{formatDate(finding.occurredAt, language)}</time></header>
+        <p>{finding.summary}</p>
+        {finding.resolution && <div className="finding-resolution"><strong>{t.findings.resolution}</strong><p>{finding.resolution}</p></div>}
+        <footer><span>{t.findings.recordedBy} {finding.actor}</span><span>{t.findings.taskVersion} <code>{task.id}</code></span>{finding.evidenceCheckRunIds.length > 0 && <span>{finding.evidenceCheckRunIds.length} {t.findings.evidence}</span>}</footer>
+      </article>)}</div>
+    </details>}
+  </div>;
 }
 
 function StatusBadge({ status, label }: { status: WorkflowStatus; label: string }) {

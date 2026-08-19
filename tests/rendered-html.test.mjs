@@ -90,6 +90,10 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次|Update history|RL Environment Catalog|强化学习环境目录/);
   assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);
   assert.match(source, /No check results recorded/);
+  assert.match(source, /Recorded findings/);
+  assert.match(source, /记录发现/);
+  assert.match(source, /findings\.length > 0/);
+  assert.match(source, /finding\.evidenceCheckRunIds\.length/);
   assert.match(source, /isExpanded \? "▴" : "▾"/);
   assert.doesNotMatch(source, /task-details|task-evidence|task-criteria|RECORDED EVIDENCE|CURRENT INTAKE CONTRACT/);
   assert.match(source, /切换至英文/);

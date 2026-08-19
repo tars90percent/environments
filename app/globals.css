@@ -145,11 +145,34 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .category-table strong { font-size: 11px; font-weight: 610; }
 .category-table small { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .task-list { min-width: 0; display: grid; gap: 1px; border-radius: 10px; background: var(--line); overflow: hidden; }
+.task-record { min-width: 0; background: var(--card); }
 .task-row { width: 100%; min-height: 50px; padding: 8px 10px; display: grid; grid-template-columns: minmax(150px, 1fr) minmax(145px, auto) auto; align-items: center; gap: 10px; background: var(--card); text-align: left; }
 .task-row > span:first-child { min-width: 0; display: grid; gap: 3px; }
 .task-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-row small, .task-checks, .empty-task-list { color: var(--muted); font-size: 9px; }
 .task-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-findings { margin: 0 10px 10px; border: 1px solid rgba(125,31,42,.09); border-radius: 10px; background: #fffdf9; overflow: hidden; }
+.task-findings > summary { min-height: 36px; padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--burgundy); cursor: pointer; list-style: none; }
+.task-findings > summary::-webkit-details-marker { display: none; }
+.task-findings > summary:hover { background: var(--burgundy-soft); }
+.task-findings > summary span { font-size: 9px; font-weight: 650; }
+.task-findings > summary span::before { margin-right: 7px; content: "◆"; font-size: 7px; }
+.task-findings > summary i { min-width: 21px; height: 21px; display: grid; place-items: center; border-radius: 999px; background: var(--burgundy-soft); font-size: 8px; font-style: normal; font-weight: 650; }
+.task-finding-list { display: grid; gap: 1px; border-top: 1px solid rgba(125,31,42,.09); background: var(--line); }
+.task-finding { padding: 12px; background: var(--card); }
+.task-finding header { display: flex; align-items: center; gap: 8px; }
+.task-finding header strong { min-width: 0; overflow: hidden; font-size: 10px; font-weight: 640; text-overflow: ellipsis; white-space: nowrap; }
+.task-finding time { margin-left: auto; color: var(--faint); font-size: 8px; white-space: nowrap; }
+.finding-kind { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 8px; font-weight: 640; }
+.finding-deterministic_result, .finding-observed_fact { background: #e2f7e9; color: var(--green); }
+.finding-vendor_claim { background: #f3e6cb; color: #825b18; }
+.finding-heuristic_assessment, .finding-human_judgment { background: var(--burgundy-soft); color: var(--burgundy); }
+.task-finding > p { margin: 9px 0 0; color: var(--ink); font-size: 10px; line-height: 1.58; white-space: pre-wrap; }
+.finding-resolution { margin-top: 10px; padding: 9px 10px; border-left: 2px solid var(--green); border-radius: 0 8px 8px 0; background: #edf8f0; }
+.finding-resolution strong { color: var(--green); font-size: 8px; font-weight: 680; text-transform: uppercase; }
+.finding-resolution p { margin: 4px 0 0; color: #31523a; font-size: 9px; line-height: 1.55; }
+.task-finding footer { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px 13px; color: var(--faint); font-size: 8px; line-height: 1.45; }
+.task-finding footer code { color: var(--muted); overflow-wrap: anywhere; }
 .empty-task-list { padding: 14px; background: var(--card); }
 .status-badge { width: max-content; padding: 5px 8px; border-radius: 999px; background: var(--surface-strong); color: var(--muted); font-size: 9px; font-weight: 620; white-space: nowrap; }
 .status-unchecked { background: #f3e6cb; color: #825b18; }
@@ -342,6 +365,9 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .category-row { grid-template-columns: 32px 1fr; padding: 10px; }
   .task-row { grid-template-columns: 1fr auto; }
   .task-checks { grid-column: 1 / -1; }
+  .task-finding header { flex-wrap: wrap; }
+  .task-finding header strong { flex: 1 1 150px; white-space: normal; }
+  .task-finding time { width: 100%; margin-left: 0; }
   .source-event-head, .source-item { grid-template-columns: 72px minmax(0, 1fr); }
   .review-comment > span { display: grid; gap: 4px; }
   .review-submit { align-items: flex-start; flex-direction: column; padding-top: 10px; }
