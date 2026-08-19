@@ -1,6 +1,8 @@
 import type {
   ArtifactInput,
   ArtifactRecord,
+  AppendNormalizedTasksInput,
+  AppendNormalizedTasksResult,
   CatalogBatch,
   CatalogScope,
   CatalogSourceEvent,
@@ -32,6 +34,7 @@ export interface RegistryRepository {
   initialize(): Promise<void>;
   close(): Promise<void>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
+  appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult>;
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }>;

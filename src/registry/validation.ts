@@ -1,5 +1,6 @@
 import type {
   ArtifactInput,
+  AppendNormalizedTasksInput,
   CheckResultInput,
   FollowUpInput,
   ResearcherUploadInput,
@@ -123,6 +124,76 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
     categories,
     tasks,
   } as SubmissionManifest;
+}
+
+export function parseAppendNormalizedTasks(value: unknown): AppendNormalizedTasksInput {
+  const input = object(value, "normalized task registration");
+  const categories = array(input.categories, "categories").map((value, index) => {
+    const category = object(value, `categories[${index}]`);
+    return {
+      id: identifier(category.id, `categories[${index}].id`),
+      name: boundedString(category.name, `categories[${index}].name`, 300),
+      description: boundedString(category.description, `categories[${index}].description`, 5_000),
+      count: nonNegativeInteger(category.count, `categories[${index}].count`),
+      examples: optionalStringArray(category.examples, `categories[${index}].examples`),
+    };
+  });
+  if (!categories.length) throw new ValidationError("categories must contain at least one category");
+  const categoryIds = new Set(categories.map((category) => category.id));
+  if (categoryIds.size !== categories.length) throw new ValidationError("categories must use unique ids");
+
+  const tasks = array(input.tasks, "tasks").map((value, index) => {
+    const task = object(value, `tasks[${index}]`);
+    const categoryId = identifier(task.categoryId, `tasks[${index}].categoryId`);
+    if (!categoryIds.has(categoryId)) {
+      throw new ValidationError(`tasks[${index}].categoryId does not name a supplied category`);
+    }
+    const artifactId = identifier(task.artifactId, `tasks[${index}].artifactId`);
+    const contentSha256 = sha256(task.contentSha256, `tasks[${index}].contentSha256`);
+    if (artifactId !== `artifact:sha256:${contentSha256}`) {
+      throw new ValidationError(`tasks[${index}].artifactId must identify contentSha256`);
+    }
+    const sourceItemIds = uniqueIdentifiers(task.sourceItemIds, `tasks[${index}].sourceItemIds`);
+    if (!sourceItemIds.length) {
+      throw new ValidationError(`tasks[${index}].sourceItemIds must contain at least one source item`);
+    }
+    return {
+      id: identifier(task.id, `tasks[${index}].id`),
+      stableKey: boundedString(task.stableKey, `tasks[${index}].stableKey`, 1_000),
+      title: boundedString(task.title, `tasks[${index}].title`, 500),
+      summary: optionalString(task.summary, `tasks[${index}].summary`),
+      categoryId,
+      sourcePath: boundedString(task.sourcePath, `tasks[${index}].sourcePath`, 2_000),
+      format: boundedString(task.format, `tasks[${index}].format`, 200),
+      artifactId,
+      contentSha256,
+      sourceItemIds,
+      workflowStatus: optionalEnum(task.workflowStatus, WORKFLOW_STATUSES, `tasks[${index}].workflowStatus`),
+      catalogVisibility: optionalEnum(task.catalogVisibility, VISIBILITIES, `tasks[${index}].catalogVisibility`),
+      metadata: optionalObject(task.metadata, `tasks[${index}].metadata`),
+    };
+  });
+  if (!tasks.length) throw new ValidationError("tasks must contain at least one normalized task version");
+  if (new Set(tasks.map((task) => task.id)).size !== tasks.length) {
+    throw new ValidationError("tasks must use unique version ids");
+  }
+  if (new Set(tasks.map((task) => task.stableKey)).size !== tasks.length) {
+    throw new ValidationError("tasks must use unique stable keys within one registration");
+  }
+  for (const category of categories) {
+    const taskCount = tasks.filter((task) => task.categoryId === category.id).length;
+    if (category.count !== taskCount) {
+      throw new ValidationError(`category ${category.id} count must equal its normalized task count`);
+    }
+  }
+
+  return {
+    batchId: identifier(input.batchId, "batchId"),
+    categories,
+    tasks,
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  } as AppendNormalizedTasksInput;
 }
 
 export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {

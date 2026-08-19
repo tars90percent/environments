@@ -30,6 +30,7 @@ Write through validated JSON documents:
 ```sh
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
+case-registry append-normalized-tasks /absolute/path/normalized-tasks.json
 case-registry record-vendor-event /absolute/path/vendor-event.json
 case-registry archive-vendor /absolute/path/vendor-archive.json
 case-registry restore-vendor /absolute/path/vendor-restore.json
@@ -69,6 +70,8 @@ Archive a vendor instead of deleting it. Archival is allowed only after every su
 An unresolved attribution placeholder is a provenance identity, not an actionable vendor relationship. Preserve its source graph, but keep it out of normal vendor and catalog views by making its submissions `internal` and archiving the placeholder identity.
 
 Use `link-task-sources` when immutable sample artifacts were captured after task normalization. It only appends provenance links from existing task versions to existing source items; it does not rewrite either record.
+
+Use `append-normalized-tasks` after an attachment-first capture created an immutable submission before its task boundaries were known. The request atomically adds categories and task versions to that existing submission, requires each task to cite a registered `task_package` artifact and source item already linked to the submission, and is idempotent for identical contents. It preserves the original declared intake count; catalog `taskCount` is derived from the normalized task-version rows. Never use this operation to revise an existing task version or represent a later vendor correction; those require a new submission.
 
 Use `case-intake capture-feishu-plan` for a reviewed list of Feishu sample resources. The plan must declare `"purpose": "sample_evaluation"`; this is an explicit assertion that purchased delivery files have been excluded. It downloads each exact message/file-key pair through CASE's renewable user login, stores the bytes content-addressably, creates per-message source records, and groups them into visible `unchecked` submissions. The command never opens or executes downloaded vendor material. Re-running a successful immutable plan is idempotent; a failed capture can be retried as a provenance-preserving retry event.
 

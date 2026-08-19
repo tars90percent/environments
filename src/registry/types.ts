@@ -252,6 +252,31 @@ export type SubmissionManifest = {
   tasks?: SubmissionTaskInput[];
 };
 
+export type NormalizedTaskRegistrationInput = Omit<
+  SubmissionTaskInput,
+  "sourcePath" | "contentSha256" | "sourceItemIds"
+> & {
+  sourcePath: string;
+  artifactId: string;
+  contentSha256: string;
+  sourceItemIds: string[];
+};
+
+export type AppendNormalizedTasksInput = {
+  batchId: string;
+  categories: SubmissionCategoryInput[];
+  tasks: NormalizedTaskRegistrationInput[];
+  reason: string;
+  actor: string;
+};
+
+export type AppendNormalizedTasksResult = {
+  batchId: string;
+  categoriesAdded: number;
+  taskVersionsAdded: number;
+  taskVersionIds: string[];
+};
+
 export type ArtifactInput = {
   id: string;
   kind:
@@ -426,6 +451,8 @@ export type CatalogTask = {
   summary: string | null;
   sourcePath: string | null;
   format: string;
+  artifactId: string | null;
+  contentSha256: string | null;
   workflowStatus: WorkflowStatus;
   catalogVisibility: CatalogVisibility;
   checks: {

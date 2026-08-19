@@ -6,6 +6,8 @@ import type { RegistryRepository } from "./repository.js";
 import type {
   ArtifactInput,
   ArtifactRecord,
+  AppendNormalizedTasksInput,
+  AppendNormalizedTasksResult,
   CatalogBatch,
   CatalogCategory,
   CatalogScope,
@@ -89,6 +91,8 @@ type TaskRow = {
   summary: string | null;
   source_path: string | null;
   format: string;
+  artifact_id: string | null;
+  content_sha256: string | null;
   workflow_status: CatalogTask["workflowStatus"];
   catalog_visibility: CatalogTask["catalogVisibility"];
   pass_count: string;
@@ -643,6 +647,210 @@ export class PostgresRegistry implements RegistryRepository {
       await this.enqueueWork(client, "check_submission", "submission_batch", manifest.batch.id, { manifestSha256 });
       await client.query("COMMIT");
       return { batchId: manifest.batch.id, created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult> {
+    const requestSha256 = hashValue(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const batchResult = await client.query<{
+        vendor_id: string;
+        workflow_status: string;
+        catalog_visibility: string;
+        metadata: Record<string, unknown>;
+      }>(
+        `SELECT vendor_id, workflow_status, catalog_visibility, metadata
+         FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
+        [input.batchId],
+      );
+      const batch = batchResult.rows[0];
+      if (!batch) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
+      if (batch.metadata?.intakePurpose !== "sample_evaluation") {
+        throw new RegistryConflictError(`Submission ${input.batchId} is not an evaluation-sample intake`);
+      }
+
+      const artifactIds = [...new Set(input.tasks.map((task) => task.artifactId))];
+      const artifactResult = await client.query<{ id: string; kind: string; sha256: string }>(
+        `SELECT id, kind, sha256 FROM registry_artifacts WHERE id = ANY($1::text[])`,
+        [artifactIds],
+      );
+      const artifacts = new Map(artifactResult.rows.map((artifact) => [artifact.id, artifact]));
+      for (const task of input.tasks) {
+        const artifact = artifacts.get(task.artifactId);
+        if (!artifact) throw new RegistryNotFoundError(`Task artifact ${task.artifactId} does not exist`);
+        if (artifact.kind !== "task_package" || artifact.sha256 !== task.contentSha256) {
+          throw new RegistryConflictError(`Task artifact ${task.artifactId} is not the declared immutable task package`);
+        }
+      }
+
+      const sourceItemIds = [...new Set(input.tasks.flatMap((task) => task.sourceItemIds))];
+      const sourceResult = await client.query<{ id: string; artifact_id: string | null }>(
+        `SELECT DISTINCT si.id, si.artifact_id
+         FROM registry_source_items si
+         WHERE si.id = ANY($1::text[])
+           AND (
+             EXISTS (
+               SELECT 1 FROM registry_batch_source_items bsi
+               WHERE bsi.batch_id = $2 AND bsi.source_item_id = si.id
+             )
+             OR EXISTS (
+               SELECT 1 FROM registry_batch_source_events bse
+               WHERE bse.batch_id = $2 AND bse.source_event_id = si.source_event_id
+             )
+           )`,
+        [sourceItemIds, input.batchId],
+      );
+      const sources = new Map(sourceResult.rows.map((source) => [source.id, source]));
+      for (const sourceItemId of sourceItemIds) {
+        if (!sources.has(sourceItemId)) {
+          throw new RegistryConflictError(`Source item ${sourceItemId} is not linked to submission ${input.batchId}`);
+        }
+      }
+      for (const task of input.tasks) {
+        if (!task.sourceItemIds.some((sourceItemId) => sources.get(sourceItemId)?.artifact_id === task.artifactId)) {
+          throw new RegistryConflictError(`Task ${task.id} must cite its task-package source item`);
+        }
+      }
+
+      let categoriesAdded = 0;
+      for (const category of input.categories) {
+        const existingCategory = await client.query<{ name: string; description: string }>(
+          "SELECT name, description FROM registry_categories WHERE id = $1",
+          [category.id],
+        );
+        if (existingCategory.rows[0]) {
+          if (existingCategory.rows[0].name !== category.name || existingCategory.rows[0].description !== category.description) {
+            throw new RegistryConflictError(`Category ${category.id} already exists with different contents`);
+          }
+        } else {
+          await client.query(
+            `INSERT INTO registry_categories(id, name, description) VALUES ($1, $2, $3)`,
+            [category.id, category.name, category.description],
+          );
+        }
+
+        const existingBatchCategory = await client.query<{ declared_count: number; examples: string[] }>(
+          `SELECT declared_count, examples FROM registry_batch_categories
+           WHERE batch_id = $1 AND category_id = $2`,
+          [input.batchId, category.id],
+        );
+        if (existingBatchCategory.rows[0]) {
+          if (
+            existingBatchCategory.rows[0].declared_count !== category.count
+            || hashValue(existingBatchCategory.rows[0].examples) !== hashValue(category.examples ?? [])
+          ) {
+            throw new RegistryConflictError(`Submission category ${category.id} already exists with different contents`);
+          }
+        } else {
+          await client.query(
+            `INSERT INTO registry_batch_categories(batch_id, category_id, declared_count, examples)
+             VALUES ($1, $2, $3, $4::jsonb)`,
+            [input.batchId, category.id, category.count, json(category.examples ?? [])],
+          );
+          categoriesAdded += 1;
+        }
+      }
+
+      let taskVersionsAdded = 0;
+      for (const task of input.tasks) {
+        const taskId = stableTaskId(batch.vendor_id, task.stableKey);
+        await client.query(
+          `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT(vendor_id, stable_key) DO UPDATE SET
+             title = EXCLUDED.title,
+             summary = COALESCE(EXCLUDED.summary, registry_tasks.summary),
+             updated_at = now()`,
+          [taskId, batch.vendor_id, task.stableKey, task.title, task.summary ?? null, input.batchId],
+        );
+
+        const existingVersion = await client.query<{
+          id: string;
+          task_id: string;
+          batch_id: string;
+          category_id: string;
+          source_path: string | null;
+          format: string;
+          artifact_id: string | null;
+          content_sha256: string | null;
+          workflow_status: string;
+          catalog_visibility: string;
+          metadata: Record<string, unknown>;
+        }>(
+          `SELECT id, task_id, batch_id, category_id, source_path, format, artifact_id,
+                  content_sha256, workflow_status, catalog_visibility, metadata
+           FROM registry_task_versions
+           WHERE id = $1 OR (batch_id = $2 AND task_id = $3)
+           FOR UPDATE`,
+          [task.id, input.batchId, taskId],
+        );
+        const expected = {
+          id: task.id,
+          task_id: taskId,
+          batch_id: input.batchId,
+          category_id: task.categoryId,
+          source_path: task.sourcePath,
+          format: task.format,
+          artifact_id: task.artifactId,
+          content_sha256: task.contentSha256,
+          workflow_status: task.workflowStatus ?? batch.workflow_status,
+          catalog_visibility: task.catalogVisibility ?? batch.catalog_visibility,
+          metadata: task.metadata ?? {},
+        };
+        if (existingVersion.rows[0]) {
+          if (hashValue(existingVersion.rows[0]) !== hashValue(expected)) {
+            throw new RegistryConflictError(`Task version ${task.id} already exists with different immutable contents`);
+          }
+        } else {
+          await client.query(
+            `INSERT INTO registry_task_versions(
+               id, task_id, batch_id, category_id, source_path, format, artifact_id, content_sha256,
+               workflow_status, catalog_visibility, metadata
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
+            [task.id, taskId, input.batchId, task.categoryId, task.sourcePath, task.format,
+              task.artifactId, task.contentSha256, expected.workflow_status, expected.catalog_visibility,
+              json(task.metadata ?? {})],
+          );
+          taskVersionsAdded += 1;
+        }
+        for (const sourceItemId of task.sourceItemIds) {
+          await client.query(
+            `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
+             VALUES ($1, $2, 'normalized_from')
+             ON CONFLICT(task_version_id, source_item_id, role) DO NOTHING`,
+            [task.id, sourceItemId],
+          );
+        }
+      }
+
+      if (taskVersionsAdded > 0 || categoriesAdded > 0) {
+        await this.insertStatusEvent(client, "submission_batch", input.batchId, "normalization.tasks_appended", input.actor, {
+          reason: input.reason,
+          requestSha256,
+          categoriesAdded,
+          taskVersionsAdded,
+          taskVersionIds: input.tasks.map((task) => task.id),
+        });
+        await this.enqueueWork(client, "check_submission", "submission_batch", input.batchId, {
+          reason: "normalized_tasks_appended",
+          requestSha256,
+          taskVersionIds: input.tasks.map((task) => task.id),
+        });
+      }
+      await client.query("COMMIT");
+      return {
+        batchId: input.batchId,
+        categoriesAdded,
+        taskVersionsAdded,
+        taskVersionIds: input.tasks.map((task) => task.id),
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1208,7 +1416,8 @@ export class PostgresRegistry implements RegistryRepository {
       ),
       this.pool.query<TaskRow>(
         `SELECT tv.batch_id, tv.category_id, tv.id, t.stable_key, t.title, t.summary,
-                tv.source_path, tv.format, tv.workflow_status, tv.catalog_visibility,
+                tv.source_path, tv.format, tv.artifact_id, tv.content_sha256,
+                tv.workflow_status, tv.catalog_visibility,
                 COUNT(cr.id) FILTER (WHERE cr.outcome = 'pass')::text AS pass_count,
                 COUNT(cr.id) FILTER (WHERE cr.outcome = 'fail')::text AS fail_count,
                 COUNT(cr.id) FILTER (WHERE cr.outcome = 'blocked')::text AS blocked_count,
@@ -1218,7 +1427,8 @@ export class PostgresRegistry implements RegistryRepository {
          LEFT JOIN registry_check_runs cr ON cr.task_version_id = tv.id
          WHERE tv.catalog_visibility = ANY($1::text[])
          GROUP BY tv.batch_id, tv.category_id, tv.id, t.stable_key, t.title, t.summary,
-                  tv.source_path, tv.format, tv.workflow_status, tv.catalog_visibility
+                  tv.source_path, tv.format, tv.artifact_id, tv.content_sha256,
+                  tv.workflow_status, tv.catalog_visibility
          ORDER BY t.title`,
         [visibility],
       ),
@@ -1554,6 +1764,8 @@ function taskFromRow(row: TaskRow, sourceItemIds: string[] = [], findings: Catal
     summary: row.summary,
     sourcePath: row.source_path,
     format: row.format,
+    artifactId: row.artifact_id,
+    contentSha256: row.content_sha256,
     workflowStatus: row.workflow_status,
     catalogVisibility: row.catalog_visibility,
     checks: {

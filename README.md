@@ -67,6 +67,7 @@ case-registry operations
 case-registry catalog
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
+case-registry append-normalized-tasks /absolute/path/normalized-tasks.json
 case-registry record-vendor-event /absolute/path/vendor-event.json
 case-registry archive-vendor /absolute/path/vendor-archive.json
 case-registry restore-vendor /absolute/path/vendor-restore.json
@@ -86,6 +87,13 @@ An intake manifest creates an immutable submission batch and queues a check
 work item. A corrected vendor package is always a new batch linked through
 `revisesBatchId`. Deterministic results, heuristic results, and human research
 judgment remain distinct records.
+
+For attachment-first captures whose task boundaries become known later,
+`append-normalized-tasks` atomically registers provenance-linked categories and
+task versions without replacing the original submission manifest. It requires
+each task version to cite an existing immutable `task_package` artifact and a
+source item already linked to that submission. Identical requests are
+idempotent; changed task contents are rejected as conflicts.
 
 The intake commands accept only plans that explicitly declare
 `"purpose": "sample_evaluation"`. They capture exact Feishu message resources or Feishu Mail

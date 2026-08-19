@@ -8,6 +8,7 @@ import type { RegistryRepository } from "./repository.js";
 import type { ResearcherUploadInput } from "./types.js";
 import {
   parseArtifact,
+  parseAppendNormalizedTasks,
   parseCheckResult,
   parseFollowUp,
   parseResearcherUpload,
@@ -182,6 +183,9 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   if (method === "POST" && url.pathname === "/v1/intake/submissions") {
     const result = await options.repository.ingestSubmission(parseSubmissionManifest(await readJson(request)));
     return sendJson(response, result.created ? 201 : 200, result);
+  }
+  if (method === "POST" && url.pathname === "/v1/intake/normalized-tasks") {
+    return sendJson(response, 200, await options.repository.appendNormalizedTasks(parseAppendNormalizedTasks(await readJson(request))));
   }
   if (method === "POST" && url.pathname === "/v1/intake/remove-submission") {
     if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });

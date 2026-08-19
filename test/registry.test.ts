@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseAppendNormalizedTasks, parseResearcherUpload, parseSourceEnvelope, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -210,6 +210,55 @@ test("validates append-only task-to-source repairs", () => {
   assert.equal(parseTaskSourceLinks(input).links.length, 1);
   assert.throws(() => parseTaskSourceLinks({ ...input, links: [] }), ValidationError);
   assert.throws(() => parseTaskSourceLinks({ ...input, links: [...input.links, ...input.links] }), ValidationError);
+});
+
+test("validates provenance-complete task registration for an existing submission", () => {
+  const sha256 = "a".repeat(64);
+  const input = {
+    batchId: manifest.batch.id,
+    categories: [{
+      id: "vendor-one:normalized:systems",
+      name: "Normalized systems",
+      description: "Interpreted systems tasks.",
+      count: 1,
+      examples: ["task-one"],
+    }],
+    tasks: [{
+      id: "vendor-one-2026-08-13:task-one:normalized",
+      stableKey: "task-one",
+      title: "Task one",
+      summary: "A normalized systems task.",
+      categoryId: "vendor-one:normalized:systems",
+      sourcePath: "delivery/tasks/task-one",
+      format: "Harbor",
+      artifactId: `artifact:sha256:${sha256}`,
+      contentSha256: sha256,
+      sourceItemIds: ["source-task-package-one", "source-archive-one"],
+      workflowStatus: "unchecked",
+      catalogVisibility: "log_only",
+      metadata: { normalizationOutcome: "already_harbor" },
+    }],
+    reason: "Register the interpreted task after attachment-first capture.",
+    actor: "TARS/CASE",
+  };
+  const parsed = parseAppendNormalizedTasks(input);
+  assert.equal(parsed.tasks[0]?.artifactId, `artifact:sha256:${sha256}`);
+  assert.equal(parsed.tasks[0]?.sourcePath, "delivery/tasks/task-one");
+  assert.throws(
+    () => parseAppendNormalizedTasks({
+      ...input,
+      tasks: [{ ...input.tasks[0], artifactId: `artifact:sha256:${"b".repeat(64)}` }],
+    }),
+    ValidationError,
+  );
+  assert.throws(
+    () => parseAppendNormalizedTasks({ ...input, tasks: [{ ...input.tasks[0], sourceItemIds: [] }] }),
+    ValidationError,
+  );
+  assert.throws(
+    () => parseAppendNormalizedTasks({ ...input, categories: [{ ...input.categories[0], count: 2 }] }),
+    ValidationError,
+  );
 });
 
 test("validates evidence-labeled task findings with explicit portal visibility", () => {
