@@ -127,7 +127,7 @@ Unless a dated requirement document changes the deterministic check policy, a co
 - a clean build or equivalent provisioning step from public, accessible dependencies, followed by a successful boot or ready-state check;
 - a gold solution or task-appropriate golden deliverable;
 - tests and solution scripts that run inside the container without private local data, secrets, or undeclared environment variables;
-- repeated gold runs that consistently return reward `1` and repeated untouched runs that consistently return reward `0`;
+- one gold/Oracle run that returns reward `1` and one untouched/Nop run that returns reward `0`, each in a fresh sandbox;
 - absence of workstation files, production credentials, inaccessible private data, cross-trial state, and undeclared network or environment dependencies; and
 - pinned runner or adapter versions plus complete commands, logs, rewards, sandbox metadata, and evidence records.
 
@@ -143,7 +143,7 @@ CASE is the runtime-verification orchestrator and evidence owner, not the execut
 
 The current CASE image exposes `harbor` and `case-harbor` as the supported Harbor controller commands. The wrapper in `feishu-codex-agent/src/harbor-runtime.ts` forces Harbor runs onto Modal, passes only allowlisted evaluation credentials, and strips production credentials; do not bypass it through the upstream binary named by `CASE_HARBOR_BIN`. The `modal` CLI is available for authentication and provider diagnostics. Before claiming execution is available, verify the live Harbor and Modal versions, `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, Modal authentication, and wrapper configuration without printing credential values.
 
-For Harbor-compatible tasks, pin the Harbor CLI and verifier versions and evaluate the exact immutable task artifact. A normal deterministic sequence is: validate the package shape; build and boot from the declared public dependencies; run repeated Oracle/gold trials; then run repeated Nop/untouched trials. Preserve build logs, commands, timeouts, rewards, and environment metadata as immutable evidence and write named check results back through CASE. If CASE performs an optional DeepSeek diagnostic, separately preserve its exact model and harness versions, turn count, and complete trajectory. Sandbox completion or a zero exit code is not itself a passing task result.
+For Harbor-compatible tasks, pin the Harbor CLI and verifier versions and evaluate the exact immutable task artifact. A normal deterministic sequence is: validate the package shape; build and boot from the declared public dependencies; run one Oracle/gold trial; then run one Nop/untouched trial in a different fresh sandbox. Repeat a control only when a dated researcher requirement calls for repetition or when diagnosing suspected nondeterminism. Preserve build logs, commands, timeouts, rewards, and environment metadata as immutable evidence and write named check results back through CASE. If CASE performs an optional DeepSeek diagnostic, separately preserve its exact model and harness versions, turn count, and complete trajectory. Sandbox completion or a zero exit code is not itself a passing task result.
 
 Use no-network execution by default. Permit only the minimal, phase-scoped egress required by a declared task or model harness. Destroy each sandbox after evidence collection, including on timeout or error. A new sandbox provider or custom Harbor environment adapter must pass a disposable proof-of-concept before it is trusted for purchased-sample evaluation.
 
