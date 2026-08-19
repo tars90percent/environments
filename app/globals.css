@@ -64,8 +64,8 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .demand-hero p { max-width: 720px; margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
 
 .page-body { width: min(1380px, calc(100% - 64px)); margin: 0 auto; padding: 0 0 96px; }
-.portal-grid { display: grid; grid-template-columns: 272px minmax(0, 1fr); align-items: start; gap: 28px; }
-.vendor-sidebar { position: sticky; top: 102px; padding: 8px; border: 1px solid rgba(125,31,42,.08); border-radius: 24px; background: rgba(225,198,196,.72); box-shadow: 0 14px 38px rgba(86,35,41,.06); backdrop-filter: blur(18px); }
+.portal-grid { height: calc(100vh - 102px); min-height: 620px; display: grid; grid-template-columns: 272px minmax(0, 1fr); align-items: stretch; gap: 28px; overflow: hidden; }
+.vendor-sidebar { min-height: 0; padding: 8px; border: 1px solid rgba(125,31,42,.08); border-radius: 24px; background: rgba(225,198,196,.72); box-shadow: 0 14px 38px rgba(86,35,41,.06); backdrop-filter: blur(18px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .sidebar-head { min-height: 48px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
 .sidebar-head strong { font-weight: 620; }
 .sidebar-head span { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: var(--card); color: var(--burgundy); font-size: 10px; }
@@ -88,7 +88,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .contacted-list { margin-top: 3px; }
 .contacted-list button { min-height: 56px; }
 
-.vendor-main { min-width: 0; }
+.vendor-main { min-width: 0; min-height: 0; padding-right: 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .vendor-profile { min-height: 206px; padding: 32px 34px; border: 1px solid rgba(255,250,246,.12); border-radius: 24px; background: linear-gradient(135deg, var(--burgundy-deep) 0%, var(--burgundy) 62%, #9b4650 125%); color: var(--ivory); box-shadow: 0 20px 50px rgba(83,21,30,.12); }
 .vendor-profile h2 { margin: 5px 0 9px; font-size: 32px; line-height: 1.08; letter-spacing: -.035em; font-weight: 550; }
 .vendor-profile p { max-width: 740px; margin: 0; color: rgba(255,250,246,.72); line-height: 1.6; }
@@ -325,8 +325,9 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .registry-header { padding: 48px 0 44px; }
   .registry-stats { margin-top: 28px; }
   .registry-stats span { padding: 0 18px; }
-  .portal-grid { grid-template-columns: 1fr; }
-  .vendor-sidebar { position: static; }
+  .portal-grid { height: auto; min-height: 0; grid-template-columns: 1fr; align-items: start; overflow: visible; }
+  .vendor-sidebar, .vendor-main { min-height: 0; overflow: visible; scrollbar-gutter: auto; }
+  .vendor-main { padding-right: 0; }
   .vendor-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vendor-profile { min-height: 0; padding: 25px; }
   .submission-history { margin-top: 40px; }

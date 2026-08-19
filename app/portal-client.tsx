@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import type { CatalogBatch, CatalogProcurementSummary, CatalogResearchDemand, CatalogSnapshot, CatalogSourceEvent, CatalogSourceItem, CatalogTask, CatalogVendor, LocalizedCatalogText, SourceFetchStatus, SourceParseStatus, SubmissionReview, SubmissionReviewScope, SubmissionReviewSignal, WorkflowStatus } from "./catalog";
 
@@ -843,23 +843,36 @@ function VendorView({ matchingSampledVendors, matchingContactedVendors, query, s
   t: UiCopy;
   language: Language;
 }) {
+  const vendorMainRef = useRef<HTMLElement>(null);
   const records = selectedVendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
   const sampleFiles = selectedVendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
   const declaredTasks = selectedVendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
+
+  function selectAndReveal(vendor: CatalogVendor) {
+    onSelect(vendor);
+    const vendorMain = vendorMainRef.current;
+    if (!vendorMain) return;
+    if (window.matchMedia("(max-width: 820px)").matches) {
+      vendorMain.scrollIntoView({ block: "start" });
+    } else {
+      vendorMain.scrollTo({ top: 0 });
+    }
+  }
+
   return <div className="portal-grid">
     <aside className="vendor-sidebar" aria-label={t.vendors}>
       <div className="sidebar-head"><strong>{t.vendors}</strong><span>{matchingSampledVendors.length}</span></div>
       <div className="vendor-list">
-        {matchingSampledVendors.map((vendor) => <VendorButton key={vendor.id} vendor={vendor} selected={selectedVendor.id === vendor.id} onSelect={onSelect} t={t} />)}
+        {matchingSampledVendors.map((vendor) => <VendorButton key={vendor.id} vendor={vendor} selected={selectedVendor.id === vendor.id} onSelect={selectAndReveal} t={t} />)}
         {matchingSampledVendors.length === 0 && matchingContactedVendors.length === 0 && <div className="sidebar-empty">{t.searchEmpty.title}</div>}
       </div>
       {matchingContactedVendors.length > 0 && <details className="contacted-vendors" open={query ? true : undefined}>
         <summary><span><strong>{t.contactedVendors}</strong><small>{t.contactedNote}</small></span><i>{matchingContactedVendors.length}</i></summary>
-        <div className="vendor-list contacted-list">{matchingContactedVendors.map((vendor) => <VendorButton key={vendor.id} vendor={vendor} selected={selectedVendor.id === vendor.id} onSelect={onSelect} t={t} />)}</div>
+        <div className="vendor-list contacted-list">{matchingContactedVendors.map((vendor) => <VendorButton key={vendor.id} vendor={vendor} selected={selectedVendor.id === vendor.id} onSelect={selectAndReveal} t={t} />)}</div>
       </details>}
     </aside>
 
-    <section className="vendor-main" aria-labelledby="vendor-name">
+    <section className="vendor-main" aria-labelledby="vendor-name" ref={vendorMainRef}>
       <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span>{records > 0 && <span>{records} {t.taskRecords}</span>}{sampleFiles > 0 && <span>{sampleFiles} {t.sampleFiles}</span>}{declaredTasks > 0 && <span>{declaredTasks} {t.declaredTasks}</span>}{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div>{selectedVendor.procurementSummary && <ProcurementSummary summary={selectedVendor.procurementSummary} t={t} language={language} />}</div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>

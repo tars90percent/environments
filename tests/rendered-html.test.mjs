@@ -48,6 +48,7 @@ test("does not expose the local demand preview in a production build", async () 
 test("keeps the portal narrowly scoped and free of vendor snapshot data", async () => {
   const { readFile } = await import("node:fs/promises");
   const source = await readFile(new URL("../app/portal-client.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   const worker = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
   assert.doesNotMatch(source, /axios|lark-cli|open\.feishu\.cn|webhook/i);
@@ -95,6 +96,11 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /findings\.length > 0/);
   assert.match(source, /finding\.evidenceCheckRunIds\.length/);
   assert.doesNotMatch(source, /format-stack|batch\.formats\.map/);
+  assert.match(source, /vendorMain\.scrollTo\(\{ top: 0 \}\)/);
+  assert.match(source, /vendorMain\.scrollIntoView\(\{ block: "start" \}\)/);
+  assert.match(styles, /\.portal-grid \{[^}]*height: calc\(100vh - 102px\)/);
+  assert.match(styles, /\.vendor-main \{[^}]*overflow-y: auto/);
+  assert.match(styles, /@media \(max-width: 820px\)[\s\S]*\.portal-grid \{[^}]*height: auto/);
   assert.match(source, /isExpanded \? "▴" : "▾"/);
   assert.doesNotMatch(source, /task-details|task-evidence|task-criteria|RECORDED EVIDENCE|CURRENT INTAKE CONTRACT/);
   assert.match(source, /切换至英文/);
