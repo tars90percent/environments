@@ -118,15 +118,13 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .batch-list { display: grid; gap: 14px; }
 .submission-empty { padding: 28px; border: 1px solid rgba(125,31,42,.08); border-radius: 18px; background: var(--surface); color: var(--muted); font-size: 11px; line-height: 1.6; }
 .batch-card { border: 1px solid rgba(125,31,42,.07); border-radius: 22px; background: var(--surface); box-shadow: 0 12px 34px rgba(88,37,42,.05); overflow: hidden; }
-.batch-summary { width: 100%; min-height: 92px; padding: 15px 20px; display: grid; grid-template-columns: 126px minmax(190px, 1fr) 76px minmax(88px, auto) minmax(112px, auto) 24px; align-items: center; gap: 16px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.batch-summary { width: 100%; min-height: 92px; padding: 15px 20px; display: grid; grid-template-columns: 126px minmax(190px, 1fr) 76px minmax(112px, auto) 24px; align-items: center; gap: 16px; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .batch-summary:hover { background: var(--surface-strong); }
 .batch-date, .batch-name, .batch-count { min-width: 0; display: grid; gap: 5px; }
 .batch-date strong, .batch-name strong { font-size: 12px; font-weight: 610; }
 .batch-date small, .batch-name code, .batch-count small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .batch-date small { width: max-content; padding: 3px 7px; border-radius: 999px; background: #e2f7e9; color: var(--green); font-weight: 620; }
 .batch-count strong { font-size: 22px; line-height: 1; font-weight: 540; }
-.format-stack { display: flex; flex-wrap: wrap; gap: 5px; }
-.format-stack i { width: max-content; padding: 4px 8px; border-radius: 999px; background: var(--burgundy-soft); color: var(--burgundy); font-size: 9px; font-style: normal; font-weight: 620; white-space: nowrap; }
 .disclosure { color: var(--muted); font-size: 13px; line-height: 1; text-align: right; }
 .batch-body { margin: 0 12px 12px; padding: 22px 22px 26px; border: 1px solid rgba(125,31,42,.06); border-radius: 16px; background: var(--card); }
 .delta-block { padding: 17px 18px; border-radius: 14px; background: var(--burgundy-soft); }
@@ -310,7 +308,6 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .global-search { width: 190px; }
   .portal-grid { grid-template-columns: 230px minmax(0, 1fr); gap: 20px; }
   .batch-summary { grid-template-columns: 112px minmax(170px, 1fr) 64px auto 24px; }
-  .batch-summary .format-stack { display: none; }
   .category-row { grid-template-columns: 38px 1fr; }
   .task-list { grid-column: 2; }
   .source-event-head, .source-item { grid-template-columns: 82px minmax(160px, 1fr); }

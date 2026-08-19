@@ -897,7 +897,6 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { bat
       <span className="batch-date"><strong>{batch.date}</strong>{isLatest && <small>{t.latest}</small>}</span>
       <span className="batch-name"><strong>{batch.label}</strong><code>{batch.source}</code></span>
       <span className="batch-count"><strong>{batch.taskCount || batch.delta.changedFiles || batch.declaredTaskCount || 0}</strong><small>{batch.taskCount ? t.taskRecords : batch.delta.changedFiles ? t.sampleFiles : t.declaredTasks}</small></span>
-      <span className="format-stack">{batch.formats.map((format) => <i key={format}>{format}</i>)}</span>
       <StatusBadge status={batch.workflowStatus} label={t.status[batch.workflowStatus]} />
       <span aria-hidden="true" className="disclosure">{isExpanded ? "▴" : "▾"}</span>
     </button>

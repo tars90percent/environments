@@ -94,6 +94,7 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /记录发现/);
   assert.match(source, /findings\.length > 0/);
   assert.match(source, /finding\.evidenceCheckRunIds\.length/);
+  assert.doesNotMatch(source, /format-stack|batch\.formats\.map/);
   assert.match(source, /isExpanded \? "▴" : "▾"/);
   assert.doesNotMatch(source, /task-details|task-evidence|task-criteria|RECORDED EVIDENCE|CURRENT INTAKE CONTRACT/);
   assert.match(source, /切换至英文/);
