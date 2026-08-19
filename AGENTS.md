@@ -62,9 +62,19 @@ The portal uses separate read-only catalog, append-only review, and upload-only 
 
 The vendor/submission overview, Feishu login, researcher-upload, and submission-review data flows exist. Individual task-detail and download experiences are still being developed. Do not describe a planned screen or adapter as implemented.
 
+## Sample workflow and ownership
+
+Use these phase names rather than the ambiguous word **intake** when ownership or completion matters:
+
+1. **Submission capture and registration — CASE.** Preserve the inbound event, metadata, provenance graph, raw files and snapshots, immutable hashes, and an `unchecked` submission record.
+2. **Task parsing, normalization, cleaning, and runtime verification — CASE.** Identify individual tasks, link them to exact sources, normalize them faithfully with Harbor as the default, confirm accessibility, and run the applicable clean-and-runnable checks in approved remote sandboxes. Finish with exact task versions and evidence, or an explicit incomplete, blocked, or failed result and next action.
+3. **Research review and purchasing decision — designated post-training researchers.** Researchers inspect the processed tasks and evidence and decide whether to request revision, decline, or purchase more. CASE may provide a labeled assessment or recommendation but does not make the final decision.
+
+Normalization and runtime verification are separate operations and evidence records inside the same CASE-owned task-processing phase. The transition between them is not a handoff to researchers or a deferred downstream job. Only purchased deliveries move to the separate downstream pipeline.
+
 ## Intake contract
 
-Intake is broader than review readiness but remains limited to evaluation samples. Preserve and log incomplete or failed sample material; do not discard it merely because it cannot yet be shown as research-ready. Once a sample is purchased, its full delivery belongs to a separate downstream pipeline. CASE may retain the dated handoff fact needed to prevent accidental re-intake, but it must remove purchased delivery submissions, production packages, and container-image bundles from its database and object storage.
+This contract spans CASE's submission-capture and task-processing phases and remains limited to evaluation samples. Preserve and log incomplete or failed sample material; do not discard it merely because it cannot yet be shown as research-ready. Once a sample is purchased, its full delivery belongs to a separate downstream pipeline. CASE may retain the dated handoff fact needed to prevent accidental re-intake, but it must remove purchased delivery submissions, production packages, and container-image bundles from its database and object storage.
 
 For every inbound sample delivery:
 
@@ -98,39 +108,42 @@ Normalize from the immutable capture into a separate working location. Never edi
 - preserve a vendor-supplied stable task identifier when the evidence supports it. Otherwise derive a provisional key deterministically from vendor identity, source identity, and original task path, and record that derivation;
 - record the exact source-item IDs and the original internal `source_path` for every contributing file or task root. A normalized destination path or object-storage key is not the source path; when several source paths were combined, retain all of them and the mapping;
 - store any produced normalized package as a new immutable, content-addressed artifact and link the task-version record directly to it, while retaining separate links to the original artifact and source graph. If the registry interface cannot represent a required link or field, record the gap and leave the normalization pending rather than implying it exists;
-- record the normalization outcome (`already_harbor`, `normalized`, `needs_review`, `incomplete`, `blocked`, or `not_a_task`), practitioner, guidance version, confidence, transformation log, unresolved issues, and next action; and
+- record the representation path (`already_harbor`, `normalized_to_harbor`, or `native_format_exception`) separately from the normalization outcome (`already_harbor`, `normalized`, `needs_review`, `incomplete`, `blocked`, or `not_a_task`), together with practitioner, guidance version, confidence, transformation log, unresolved issues, and next action; and
 - keep the task `unchecked` until separately recorded sandbox evidence establishes the applicable review-readiness conditions.
+
+Normalization completion is an intermediate result within CASE task processing. Harbor is the main and preferred executable-task format; a non-Harbor task requires a reviewed native-format exception and named execution contract but is not automatically incomplete or low quality. Continue to runtime verification as soon as an exact immutable task version is available and the supported sample-evaluation workflow is in scope.
 
 Keep **Harbor validity** distinct from the **CASE-preferred review shape**. Validate against the Harbor version pinned by CASE. A conventional single-step task has `instruction.md`, `task.toml`, an environment definition, an OS-appropriate verifier entrypoint, and any needed supporting files. Harbor can support environment adapters other than a Dockerfile and treats the solution as optional; CASE normally prefers a publicly rebuildable Dockerfile, a gold solution or task-appropriate golden deliverable, and inspectable tests for coding-environment review. Additional files are allowed when the task depends on them. Do not report a CASE procurement preference as a universal Harbor rule.
 
 Harbor has no universal flag that proves verifier type. Trace the effective verifier entrypoint and record the vendor's **declared**, statically **observed**, and evidence-backed **resolved** classification separately as `deterministic`, `llm_judge`, `agent_judge`, `hybrid`, or `unknown`, together with evidence paths and operational requirements. API-key names, imports, metadata tags, and model references are signals, not proof that a model affects the reward.
 
-## Review-readiness contract
+## Task cleaning and deterministic runtime verification
 
-Review readiness means that the currently agreed deterministic conditions have recorded evidence. It does not mean that CASE believes the sample is good.
+The clean-and-runnable milestone means that the exact immutable task version has the applicable deterministic evidence needed for researcher inspection. It belongs to CASE's task-processing phase and does not mean that CASE or a researcher believes the sample is good.
 
-Unless a dated requirement document specifies otherwise, a coding-environment sample is ready for researcher inspection only when CASE can record evidence for:
+Unless a dated requirement document changes the deterministic check policy, a coding-environment sample is clean and runnable only when CASE can record evidence for:
 
-- an exact normalized package, preferably Harbor-valid and directly runnable with the agreed pinned Harbor CLI version, that also satisfies the applicable CASE review shape;
-- a Dockerfile rebuildable from public dependencies, without a private base image or inaccessible dependency;
+- an exact immutable package, preferably Harbor-valid and directly runnable with the pinned Harbor CLI, or covered by a reviewed native-format exception and named adapter contract;
+- a clean build or equivalent provisioning step from public, accessible dependencies, followed by a successful boot or ready-state check;
 - a gold solution or task-appropriate golden deliverable;
 - tests and solution scripts that run inside the container without private local data, secrets, or undeclared environment variables;
 - repeated gold runs that consistently return reward `1` and repeated untouched runs that consistently return reward `0`;
-- the required complete trajectories from both the designated target model and designated frontier reference model;
-- exact model and harness versions, per-run reward and turn count, and computed pass rate;
-- the model, harness, pass-rate, turn-count, and sample-volume targets agreed for that procurement need.
+- absence of workstation files, production credentials, inaccessible private data, cross-trial state, and undeclared network or environment dependencies; and
+- pinned runner or adapter versions plus complete commands, logs, rewards, sandbox metadata, and evidence records.
 
-The number of trajectories, model identities, benchmark priorities, and target ranges are live requirements. Read the latest dated receiving-researcher requirement and its preserved source in CASE at evaluation time; use the Wiki and its linked documents as working context, but check time-sensitive details against newer researcher communications.
+Routine model trials—running target or reference agents inside task environments—are not part of CASE's required work and are not prerequisites for the clean-and-runnable milestone. This exclusion does not skip a declared model-based verifier required by the task's reward contract. CASE may optionally use DeepSeek for a bounded diagnostic question when `DEEPSEEK_API_KEY` is configured in Railway; retain the reason, model, harness, commands, outputs, and complete trajectory as separately labeled evidence without exposing the credential. An optional diagnostic does not satisfy or replace deterministic checks.
 
 For document or rubric data, deterministically flag blank files, error pages, advertising contamination, unusable text or missing OCR, and malformed or incorrect rubrics. A broken environment, ambiguous prompt, or faulty grader is a defect, not useful difficulty.
 
 Before purchase, verify provenance, consent where required, permitted uses, privacy and redaction, duplication and contamination controls, exclusivity, and downstream-use restrictions.
 
-## Evaluation execution boundary
+## Runtime-verification execution boundary
 
-CASE is the evaluation orchestrator and evidence owner, not the execution host. The always-on CASE service may invoke a pinned Harbor CLI as the controller, but CASE and the portal must never receive Docker control or execute vendor task code. Each task run must occur in a fresh, disposable remote sandbox with no production database, object-store, Feishu, portal, or CASE admin credentials and no production private-network access. A separate controller service is an optional scaling boundary, not a prerequisite for sandbox execution.
+CASE is the runtime-verification orchestrator and evidence owner, not the execution host. The always-on CASE service may invoke a pinned Harbor CLI as the controller, but CASE and the portal must never receive Docker control or execute vendor task code. Each task run must occur in a fresh, disposable remote sandbox with no production database, object-store, Feishu, portal, or CASE admin credentials and no production private-network access. A separate controller service is an optional scaling boundary, not a prerequisite for sandbox execution.
 
-For Harbor-compatible tasks, pin the Harbor CLI and agent/harness versions and evaluate the exact immutable task artifact. A normal deterministic sequence is: validate the package shape; build from the declared public dependencies; run repeated Oracle/gold trials; run repeated Nop/untouched trials; then run the currently designated target and frontier-reference trials. Preserve build logs, commands, timeouts, rewards, turn counts, complete trajectories, and environment metadata as immutable evidence, and write named check results and trajectory records back through CASE. Sandbox completion or a zero exit code is not itself a passing task result.
+The current CASE image exposes `harbor` and `case-harbor` as the supported Harbor controller commands. The wrapper in `feishu-codex-agent/src/harbor-runtime.ts` forces Harbor runs onto Modal, passes only allowlisted evaluation credentials, and strips production credentials; do not bypass it through the upstream binary named by `CASE_HARBOR_BIN`. The `modal` CLI is available for authentication and provider diagnostics. Before claiming execution is available, verify the live Harbor and Modal versions, `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, Modal authentication, and wrapper configuration without printing credential values.
+
+For Harbor-compatible tasks, pin the Harbor CLI and verifier versions and evaluate the exact immutable task artifact. A normal deterministic sequence is: validate the package shape; build and boot from the declared public dependencies; run repeated Oracle/gold trials; then run repeated Nop/untouched trials. Preserve build logs, commands, timeouts, rewards, and environment metadata as immutable evidence and write named check results back through CASE. If CASE performs an optional DeepSeek diagnostic, separately preserve its exact model and harness versions, turn count, and complete trajectory. Sandbox completion or a zero exit code is not itself a passing task result.
 
 Use no-network execution by default. Permit only the minimal, phase-scoped egress required by a declared task or model harness. Destroy each sandbox after evidence collection, including on timeout or error. A new sandbox provider or custom Harbor environment adapter must pass a disposable proof-of-concept before it is trusted for purchased-sample evaluation.
 
@@ -145,7 +158,7 @@ Use no-network execution by default. Permit only the minimal, phase-scoped egres
 7. Form an evidence-based assessment and recommendation where useful, then ask the designated post-training researchers for the final upstreaming or purchasing decision. Preserve both the recommendation and their response without collapsing disagreement.
 8. Record sample evidence, assessments, operational history, material decisions, and next actions in CASE when supported.
 
-Do not restart completed evaluation work unless the sample, requirement, harness, or target model changed.
+Do not restart completed deterministic work unless the sample, governing check policy, runner, adapter, verifier, or relevant requirement changed.
 
 ## Evidence and communication
 
