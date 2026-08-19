@@ -49,17 +49,21 @@ For each immutable task version:
 1. Validate the declared package shape without executing task code.
 2. Record the exact artifact hash plus the pinned Harbor, agent, model, and harness versions.
 3. Build the task environment from the declared public dependencies in Modal.
-4. Run the Oracle/gold solution repeatedly and retain each reward and log bundle.
-5. Run the Nop/untouched baseline repeatedly and retain each reward and log bundle.
+4. Run the Oracle/gold solution once in a fresh sandbox and retain its reward and log bundle.
+5. Run the Nop/untouched baseline once in a different fresh sandbox and retain its reward and log bundle.
 6. Run the currently designated target-model and frontier-reference trials with the required repetition count.
 7. Collect complete trajectories, rewards, turn counts, timing, resource metadata, stdout/stderr, verifier output, and declared artifacts.
 8. Write named deterministic check results and trajectory records through CASE, upload immutable evidence, and mark missing evidence separately from failed checks.
 
 Use no-network execution as the baseline when the provider and task support it. Grant only the minimum phase-scoped hosts required for dependency installation or model access. A successful process exit, sandbox completion, or image build is evidence for that step only; none is a quality endorsement.
 
-## Queue and scaling
+## Checker, worker, queue, and scaling
 
-CASE can start with one evaluation at a time from its own service. Introduce a separate evaluation-controller service only when concurrent work, long-running lease recovery, resource isolation, or deployment independence justifies it. That service would run the same Harbor launcher and still execute task code only in Modal; it is an operational scaling boundary, not a different sandbox model.
+The **task checker** is the head-to-toe operation for one exact immutable task version. It resolves the applicable check policy, validates the package, invokes the clean build and controls, collects evidence, records named outcomes, and derives the task's current technical state.
+
+A **worker** is only the long-running process around that operation. It leases one task work item, calls the task checker, heartbeats and records the attempt, completes or requeues the item, and then leases another. Multiple worker slots provide bounded task-level parallelism; they must all use the same versioned checker and must not contain separate evaluation logic.
+
+CASE can call the task checker directly for one evaluation. Introduce a separate evaluation-controller service when continuous queue consumption, concurrent work, long-running lease recovery, resource isolation, or deployment independence justifies it. That service runs worker slots around the same checker and Harbor launcher, while task code still executes only in Modal. It is an operational scaling boundary, not a different checking method or sandbox model.
 
 If the durable queue is used, a work item must identify the immutable task version, artifact hash, requested check policy, harness version, and requirement snapshot. Lease one item, heartbeat the lease, append attempt records, and make retries idempotent. Never overwrite a prior trial or evaluation when the task, requirement, model, harness, or sandbox backend changes.
 
@@ -71,8 +75,8 @@ Modal is eligible for purchased-sample evaluation only after a disposable trial 
 - a representative multi-container task works when the current task mix requires it;
 - CPU, memory, disk, wall-clock, process, and output limits are enforced;
 - default network isolation and explicit allowlists behave as recorded;
-- Oracle returns the expected positive reward repeatedly;
-- Nop returns the expected negative reward repeatedly;
+- one Oracle trial returns the expected positive reward;
+- one Nop trial returns the expected negative reward;
 - a deliberately hanging task is killed and its sandbox is destroyed;
 - task code cannot reach production CASE services or credentials;
 - logs and complete trajectories survive sandbox destruction and are registered against the exact task version.

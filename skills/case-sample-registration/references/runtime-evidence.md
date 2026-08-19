@@ -11,8 +11,8 @@ clean_runnable =
   AND complete_execution_contract
   AND (harbor_contract_pass OR reviewed_native_exception_contract_pass)
   AND clean_build_and_boot_pass
-  AND positive_control_repeat_pass
-  AND negative_control_repeat_pass
+  AND positive_control_pass
+  AND negative_control_pass
   AND no_hidden_dependencies
   AND complete_evidence
 ```
@@ -35,14 +35,14 @@ Before a run, verify the live CLI versions, wrapper configuration, Modal authent
 2. **Confirm static coherence.** Ensure the instruction, initial state, environment, solution or positive control, verifier, and reward contract describe the same task.
 3. **Validate the contract.** Use the pinned Harbor contract or the named, versioned native adapter contract.
 4. **Build and boot cleanly.** Use a fresh disposable remote sandbox and the exact artifact. Rebuild coding environments without cache from accessible declared dependencies, start all required services, and record readiness and timeouts.
-5. **Run positive controls.** Use a fresh sandbox for every trial. The current CASE minimum is two successful trials; for an ordinary binary Harbor task this is `[1, 1]`.
-6. **Run negative controls.** Again use a fresh sandbox per trial. The current minimum is two expected-negative trials; for an ordinary binary Harbor task this is `[0, 0]`. If untouched state should succeed, define an evidence-backed alternative negative baseline.
+5. **Run the positive control.** Use a fresh sandbox. The current CASE baseline is one successful Oracle/gold trial; for an ordinary binary Harbor task the expected reward is `1`.
+6. **Run the negative control.** Use a different fresh sandbox. The current CASE baseline is one expected-negative Nop/untouched trial; for an ordinary binary Harbor task the expected reward is `0`. If untouched state should succeed, define an evidence-backed alternative negative baseline.
 7. **Confirm hermeticity.** Exclude workstation files, production credentials, undeclared variables, inaccessible private assets, prior-trial state, and undeclared network access.
 8. **Retain evidence and destroy the sandbox.** Do this after success, timeout, and error.
 
 The execution contract must identify provisioning and startup, agent input and output, workdir, positive and negative controls, verifier and expected result, required files, resource limits, timeouts, variables, credential names, and operation-scoped network requirements.
 
-Current procurement requirements may add trials or stricter conditions. Preserve their dated source and apply them in addition to this technical baseline.
+Current procurement requirements may add trials or stricter conditions. Repeat a control only when a dated requirement calls for repetition or when investigating suspected nondeterminism; preserve the reason and every result. Preserve the governing source and apply it in addition to this technical baseline.
 
 ## Evidence record
 

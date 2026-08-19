@@ -97,7 +97,7 @@ Use these evidence labels consistently:
 
 The applicable package format, repeat counts, models, harnesses, trajectory counts, pass-rate bands, volume targets, and benchmark priorities are policy inputs that can change. Resolve them from the latest dated researcher requirement and preserve that source in CASE.
 
-For a Harbor-compatible coding task, the normal deterministic evidence includes package validation, a build from declared public dependencies, repeated gold/Oracle trials, and repeated untouched/Nop trials. Then run the target-model and frontier-reference trials required by the current procurement need. Preserve the exact versions and per-run outcomes.
+For a Harbor-compatible coding task, the normal deterministic evidence includes package validation, a build from declared public dependencies, one gold/Oracle trial, and one untouched/Nop trial, with every control run in a fresh sandbox. Repeat controls only when a dated researcher requirement calls for repetition or when diagnosing suspected nondeterminism. Then run the target-model and frontier-reference trials required by the current procurement need. Preserve the exact versions and per-run outcomes.
 
 For document or rubric data, deterministically inspect for blank files, error pages, advertising contamination, missing or unusable text/OCR, and malformed or incorrect rubrics. A broken environment, ambiguous prompt, or faulty grader is a defect rather than useful difficulty.
 

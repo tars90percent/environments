@@ -54,6 +54,17 @@ test("the CASE guide resolves live requirements from governing evidence", async 
   assert.match(guide, /package format, repeat counts, models, harnesses, trajectory counts, pass-rate bands/);
 });
 
+test("the default clean-runnable policy uses one Oracle and one Nop control", async () => {
+  const runtimeEvidence = await readFile(
+    new URL("../skills/case-sample-registration/references/runtime-evidence.md", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(runtimeEvidence, /baseline is one successful Oracle\/gold trial/);
+  assert.match(runtimeEvidence, /baseline is one expected-negative Nop\/untouched trial/);
+  assert.doesNotMatch(runtimeEvidence, /minimum is two (successful|expected-negative) trials/);
+});
+
 test("ships the complete-registration and registry skills referenced by the guide", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
   const registrationSkill = await readFile(
