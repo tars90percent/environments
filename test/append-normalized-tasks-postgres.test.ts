@@ -117,6 +117,75 @@ test("appends immutable normalized task versions to an attachment-first submissi
       tasks: [{ ...input.tasks[0], sourceItemIds: ["source-item-not-linked"] }],
     });
     assert.equal(unrelated.status, 409);
+
+    await repository.ingestSubmission(catalogFirstManifest());
+    const finalizedSha256 = "b".repeat(64);
+    const finalizedArtifactId = `artifact:sha256:${finalizedSha256}`;
+    await repository.registerArtifact({
+      id: finalizedArtifactId,
+      kind: "task_package",
+      storageKey: `objects/sha256/bb/${finalizedSha256}`,
+      sha256: finalizedSha256,
+      sizeBytes: 2048,
+      contentType: "application/x-tar",
+    });
+    await repository.ingestSourceEnvelope({
+      vendor: catalogFirstManifest().vendor,
+      sourceEvent: {
+        id: "catalog-finalization-source",
+        channel: "workspace",
+        externalRef: "case-normalization://vendor-one-catalog-first",
+        receivedAt: "2026-08-20T00:00:00.000Z",
+      },
+      items: [{
+        id: "source-catalog-task-package",
+        kind: "task_package",
+        displayName: "Catalog task package",
+        artifactId: finalizedArtifactId,
+        contentSha256: finalizedSha256,
+        sizeBytes: 2048,
+        fetchStatus: "snapshotted",
+        parseStatus: "parsed",
+        mutable: false,
+      }],
+      batchLinks: [{
+        batchId: "vendor-one-catalog-first",
+        role: "metadata",
+        sourceItemIds: ["source-catalog-task-package"],
+      }],
+    });
+    const finalization = normalizedCatalogTask(finalizedSha256);
+    const finalized = await api(server.url, adminToken, "/v1/intake/normalized-tasks", finalization);
+    assert.equal(finalized.status, 200);
+    assert.equal(finalized.body.taskVersionsAdded, 0);
+    assert.equal(finalized.body.taskVersionsFinalized, 1);
+
+    const finalizedReplay = await api(server.url, adminToken, "/v1/intake/normalized-tasks", finalization);
+    assert.equal(finalizedReplay.status, 200);
+    assert.equal(finalizedReplay.body.taskVersionsFinalized, 0);
+
+    const finalizedBatch = await repository.getBatch("vendor-one-catalog-first", "all");
+    assert.equal(finalizedBatch?.taskCount, 1);
+    assert.equal(finalizedBatch?.categories[0]?.tasks[0]?.artifactId, finalizedArtifactId);
+    assert.equal(finalizedBatch?.categories[0]?.tasks[0]?.workflowStatus, "unchecked");
+
+    const finalizedRow = await administrator.query<{
+      metadata: Record<string, unknown>;
+      event_count: string;
+    }>(
+      `SELECT tv.metadata,
+              (SELECT COUNT(*)::text FROM "${schema}".registry_status_events
+               WHERE entity_type = 'task_version'
+                 AND entity_id = 'vendor-one-catalog-first:catalog-task'
+                 AND event_type = 'normalization.task_finalized') AS event_count
+       FROM "${schema}".registry_task_versions tv
+       WHERE tv.id = 'vendor-one-catalog-first:catalog-task'`,
+    );
+    assert.deepEqual(finalizedRow.rows[0]?.metadata, {
+      discoveredFrom: "catalog",
+      normalizationOutcome: "already_harbor",
+    });
+    assert.equal(finalizedRow.rows[0]?.event_count, "1");
   } finally {
     await server?.close();
     await repository?.close();
@@ -124,6 +193,77 @@ test("appends immutable normalized task versions to an attachment-first submissi
     await administrator.end();
   }
 });
+
+function catalogFirstManifest(): SubmissionManifest {
+  return {
+    vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
+    sourceEvent: {
+      id: "catalog-first-source",
+      channel: "workspace",
+      externalRef: "workspace://catalog-first-source",
+      receivedAt: "2026-08-19T00:00:00.000Z",
+    },
+    batch: {
+      id: "vendor-one-catalog-first",
+      date: "2026-08-19",
+      label: "Catalog-first sample",
+      sourceLabel: "catalog-first-source",
+      taskCount: 1,
+      formats: ["Harbor"],
+      workflowStatus: "received",
+      catalogVisibility: "available",
+      delta: { added: 1, removed: 0, changedFiles: 1, note: "Task discovered before its exact package was bound." },
+      metadata: { intakePurpose: "sample_evaluation" },
+    },
+    categories: [{
+      id: "vendor-one:catalog-systems",
+      name: "Catalog systems",
+      description: "Systems tasks discovered from a catalog.",
+      count: 1,
+      examples: ["Catalog task"],
+    }],
+    tasks: [{
+      id: "vendor-one-catalog-first:catalog-task",
+      stableKey: "catalog-task",
+      title: "Catalog task",
+      categoryId: "vendor-one:catalog-systems",
+      sourcePath: "delivery/catalog-task",
+      format: "Harbor",
+      workflowStatus: "received",
+      catalogVisibility: "available",
+      metadata: { discoveredFrom: "catalog" },
+    }],
+  };
+}
+
+function normalizedCatalogTask(sha256: string): AppendNormalizedTasksInput {
+  return {
+    batchId: "vendor-one-catalog-first",
+    categories: [{
+      id: "vendor-one:catalog-systems",
+      name: "Catalog systems",
+      description: "Systems tasks discovered from a catalog.",
+      count: 1,
+      examples: ["Catalog task"],
+    }],
+    tasks: [{
+      id: "vendor-one-catalog-first:catalog-task",
+      stableKey: "catalog-task",
+      title: "Catalog task",
+      categoryId: "vendor-one:catalog-systems",
+      sourcePath: "delivery/catalog-task",
+      format: "Harbor",
+      artifactId: `artifact:sha256:${sha256}`,
+      contentSha256: sha256,
+      sourceItemIds: ["source-catalog-task-package"],
+      workflowStatus: "unchecked",
+      catalogVisibility: "available",
+      metadata: { normalizationOutcome: "already_harbor" },
+    }],
+    reason: "Bind the exact immutable package to the previously discovered task record.",
+    actor: "TARS/CASE",
+  };
+}
 
 function emptyManifest(): SubmissionManifest {
   return {

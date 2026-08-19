@@ -8,6 +8,8 @@ Work from immutable captures or read-only sources. Inventory paths, file types, 
 
 Extract archives with traversal, escaping-link, device-file, size, nesting, and decompression limits. Treat encrypted, corrupt, unsupported, or unsafe archives as blocked until they can be handled within those limits. Static inspection may parse text, manifests, and archive entries but may not execute macros, package hooks, notebooks, binaries, build steps, tests, or scripts.
 
+In the CASE service, use `case-registry download-artifact` to obtain checksum-verified registered bytes. For ZIP deliveries, `case-task-package inspect-zip`, `extract-zip`, and `package-dir` provide the bounded static path and deterministic per-task packaging. Use them only after task boundaries are known; they do not decide what constitutes a task.
+
 ## Determine authority
 
 Different records can govern different facts: a manifest may identify the task, a test may define scoring behavior, and a dated message may define the vendor's correction claim. When they conflict:

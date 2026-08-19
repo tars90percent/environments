@@ -759,6 +759,7 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       let taskVersionsAdded = 0;
+      let taskVersionsFinalized = 0;
       for (const task of input.tasks) {
         const taskId = stableTaskId(batch.vendor_id, task.stableKey);
         await client.query(
@@ -804,8 +805,27 @@ export class PostgresRegistry implements RegistryRepository {
           catalog_visibility: task.catalogVisibility ?? batch.catalog_visibility,
           metadata: task.metadata ?? {},
         };
-        if (existingVersion.rows[0]) {
-          if (hashValue(existingVersion.rows[0]) !== hashValue(expected)) {
+        const current = existingVersion.rows[0];
+        if (current) {
+          if (registeredTaskVersionMatches(current, expected)) {
+            // Idempotent replay of an already registered exact task version.
+          } else if (canFinalizeUnboundTaskVersion(current, expected)) {
+            const metadata = mergeCompatibleMetadata(current.metadata, expected.metadata, task.id);
+            await client.query(
+              `UPDATE registry_task_versions
+               SET artifact_id = $2, content_sha256 = $3, workflow_status = $4,
+                   metadata = $5::jsonb, updated_at = now()
+               WHERE id = $1`,
+              [task.id, task.artifactId, task.contentSha256, expected.workflow_status, json(metadata)],
+            );
+            taskVersionsFinalized += 1;
+            await this.insertStatusEvent(client, "task_version", task.id, "normalization.task_finalized", input.actor, {
+              reason: input.reason,
+              requestSha256,
+              artifactId: task.artifactId,
+              contentSha256: task.contentSha256,
+            });
+          } else {
             throw new RegistryConflictError(`Task version ${task.id} already exists with different immutable contents`);
           }
         } else {
@@ -830,12 +850,13 @@ export class PostgresRegistry implements RegistryRepository {
         }
       }
 
-      if (taskVersionsAdded > 0 || categoriesAdded > 0) {
+      if (taskVersionsAdded > 0 || taskVersionsFinalized > 0 || categoriesAdded > 0) {
         await this.insertStatusEvent(client, "submission_batch", input.batchId, "normalization.tasks_appended", input.actor, {
           reason: input.reason,
           requestSha256,
           categoriesAdded,
           taskVersionsAdded,
+          taskVersionsFinalized,
           taskVersionIds: input.tasks.map((task) => task.id),
         });
         await this.enqueueWork(client, "check_submission", "submission_batch", input.batchId, {
@@ -849,6 +870,7 @@ export class PostgresRegistry implements RegistryRepository {
         batchId: input.batchId,
         categoriesAdded,
         taskVersionsAdded,
+        taskVersionsFinalized,
         taskVersionIds: input.tasks.map((task) => task.id),
       };
     } catch (error) {
@@ -1734,6 +1756,67 @@ export class RegistryNotFoundError extends Error {
 
 function stableTaskId(vendorId: string, stableKey: string): string {
   return `${vendorId}:task:${createHash("sha256").update(stableKey).digest("hex").slice(0, 24)}`;
+}
+
+type StoredTaskVersion = {
+  id: string;
+  task_id: string;
+  batch_id: string;
+  category_id: string;
+  source_path: string | null;
+  format: string;
+  artifact_id: string | null;
+  content_sha256: string | null;
+  workflow_status: string;
+  catalog_visibility: string;
+  metadata: Record<string, unknown>;
+};
+
+function registeredTaskVersionMatches(current: StoredTaskVersion, expected: StoredTaskVersion): boolean {
+  return current.id === expected.id
+    && current.task_id === expected.task_id
+    && current.batch_id === expected.batch_id
+    && current.category_id === expected.category_id
+    && current.source_path === expected.source_path
+    && current.format === expected.format
+    && current.artifact_id === expected.artifact_id
+    && current.content_sha256 === expected.content_sha256
+    && metadataContains(current.metadata, expected.metadata);
+}
+
+function canFinalizeUnboundTaskVersion(current: StoredTaskVersion, expected: StoredTaskVersion): boolean {
+  return current.id === expected.id
+    && current.task_id === expected.task_id
+    && current.batch_id === expected.batch_id
+    && current.category_id === expected.category_id
+    && current.source_path === expected.source_path
+    && current.format === expected.format
+    && current.artifact_id === null
+    && current.content_sha256 === null
+    && expected.artifact_id !== null
+    && expected.content_sha256 !== null
+    && ["received", "unchecked", "normalizing"].includes(current.workflow_status)
+    && expected.workflow_status === "unchecked"
+    && current.catalog_visibility === expected.catalog_visibility;
+}
+
+function mergeCompatibleMetadata(
+  current: Record<string, unknown>,
+  additional: Record<string, unknown>,
+  taskVersionId: string,
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(additional)) {
+    if (key in current && hashValue(current[key]) !== hashValue(value)) {
+      throw new RegistryConflictError(
+        `Task version ${taskVersionId} metadata.${key} conflicts with its immutable catalog record`,
+      );
+    }
+  }
+  return { ...current, ...additional };
+}
+
+function metadataContains(current: Record<string, unknown>, expected: Record<string, unknown>): boolean {
+  return Object.entries(expected).every(([key, value]) => key in current && hashValue(current[key]) === hashValue(value));
 }
 
 function hashManifest(manifest: SubmissionManifest): string {

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { readFile, stat, unlink } from "node:fs/promises";
 import { basename, extname } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { contentAddressedStorageKey } from "./registry/artifacts.js";
 
 const [command, ...arguments_] = process.argv.slice(2);
@@ -57,6 +59,9 @@ switch (command) {
   case "store-file":
     output(await storeFile(required(argument, "artifact kind"), required(arguments_[1], "file path")));
     break;
+  case "download-artifact":
+    output(await downloadArtifact(required(argument, "artifact id"), required(arguments_[1], "output path")));
+    break;
   case "record-check":
     output(await request("POST", "/v1/check-results", await jsonFile(argument)));
     break;
@@ -97,7 +102,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|append-normalized-tasks|record-vendor-event|archive-vendor|restore-vendor|store-file|record-check|record-task-finding|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|append-normalized-tasks|record-vendor-event|archive-vendor|restore-vendor|store-file|download-artifact|record-check|record-task-finding|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {
@@ -125,6 +130,25 @@ async function storeFile(kind: string, path: string): Promise<unknown> {
   };
   await request("POST", "/v1/artifacts/confirm", artifact);
   return artifact;
+}
+
+async function downloadArtifact(artifactId: string, path: string): Promise<unknown> {
+  const expectedSha256 = artifactId.startsWith("artifact:sha256:") ? artifactId.slice("artifact:sha256:".length) : "";
+  if (!/^[a-f0-9]{64}$/.test(expectedSha256)) fail("artifact id must be content-addressed with SHA-256");
+  const download = await request("GET", `/v1/artifacts/${encodeURIComponent(artifactId)}/download-url`) as { url?: unknown };
+  if (typeof download.url !== "string" || !download.url) throw new Error("Registry returned no artifact download URL");
+  try {
+    const response = await fetch(download.url);
+    if (!response.ok || !response.body) throw new Error(`Artifact download failed with ${response.status}`);
+    await pipeline(Readable.fromWeb(response.body as never), createWriteStream(path, { flags: "wx", mode: 0o600 }));
+    const sha256 = await sha256File(path);
+    if (sha256 !== expectedSha256) throw new Error(`Artifact checksum mismatch: expected ${expectedSha256}, received ${sha256}`);
+    const fileStat = await stat(path);
+    return { artifactId, path, sha256, sizeBytes: fileStat.size };
+  } catch (error) {
+    await unlink(path).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function sha256File(path: string): Promise<string> {

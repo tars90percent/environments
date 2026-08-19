@@ -32,6 +32,8 @@ harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle
 
 The launcher supplies `--env modal`. Harbor creates its normal `jobs/` result tree under `/data/evaluations`. That controller-side tree contains the job and trial configuration, results, agent trajectory, verifier output, logs, and collected artifacts downloaded from the sandbox. Treat the Modal filesystem as temporary: evidence is durable only after Harbor downloads it and CASE stores the relevant files as immutable registry artifacts.
 
+For a source archive with known task boundaries, `case-task-package` performs bounded ZIP inspection and extraction and creates deterministic `tar.gz` task packages whose contents begin at the task root. It rejects traversal paths, links, devices, encrypted entries, duplicate paths, and configured size, depth, or compression-ratio violations. A catalog task record with no artifact may be finalized exactly once when its identity fields still match and the new content-addressed package is provenance-linked; an already bound task version remains immutable.
+
 Record the invocation, artifact digest, Harbor version, Modal environment, agent and model versions, start and finish time, and sandbox outcome. A controller crash or missing download is missing evidence, not a failed deterministic check.
 
 ## Trust boundaries

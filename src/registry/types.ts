@@ -274,6 +274,7 @@ export type AppendNormalizedTasksResult = {
   batchId: string;
   categoriesAdded: number;
   taskVersionsAdded: number;
+  taskVersionsFinalized: number;
   taskVersionIds: string[];
 };
 

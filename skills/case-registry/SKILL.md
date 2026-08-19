@@ -38,6 +38,7 @@ case-registry record-vendor-event /absolute/path/vendor-event.json
 case-registry archive-vendor /absolute/path/vendor-archive.json
 case-registry restore-vendor /absolute/path/vendor-restore.json
 case-registry store-file <artifact-kind> /absolute/path/file
+case-registry download-artifact <artifact-id> /absolute/path/output
 case-registry record-check /absolute/path/check-result.json
 case-registry record-follow-up /absolute/path/follow-up.json
 case-registry record-submission-review /absolute/path/review.json
@@ -55,6 +56,7 @@ case-mail-intake capture-mail-plan /absolute/path/plan.json
 In particular:
 
 - `store-file` and `register-artifact` for immutable objects and their metadata.
+- `download-artifact` to obtain and checksum the exact registered bytes without exposing object-store credentials.
 - `import-source` for an inbound event, connected source items, artifacts, and a submission checkpoint.
 - `import` for a complete manifest that already contains source, submission, and task records.
 - `append-normalized-tasks` to append task versions to an existing submission after source interpretation.

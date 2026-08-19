@@ -25,8 +25,10 @@ RUN mkdir -p /opt/harbor-bin /opt/modal-bin \
     && uv python install 3.12 \
     && UV_TOOL_BIN_DIR=/opt/harbor-bin uv tool install --python 3.12 "harbor[modal]==${HARBOR_VERSION}" \
     && UV_TOOL_BIN_DIR=/opt/modal-bin uv tool install --python 3.12 "modal==${MODAL_VERSION}" \
+    && ln -sfn /opt/uv/tools/harbor/bin/python /usr/local/bin/python3 \
     && /opt/harbor-bin/harbor --version \
     && /opt/modal-bin/modal --version \
+    && python3 --version \
     && ln -sfn /opt/modal-bin/modal /usr/local/bin/modal \
     && rm -rf /tmp/uv-cache
 
@@ -48,15 +50,18 @@ RUN npx --yes skills add larksuite/cli --yes --global \
 COPY tsconfig.json tsconfig.build.json ./
 COPY AGENTS.md ./AGENTS.md
 COPY src ./src
+COPY scripts ./scripts
 COPY skills ./skills
 RUN npm run build \
     && npm prune --omit=dev \
+    && chmod 0755 /app/scripts/case-task-package.py \
     && chmod 0755 /app/dist/registry-cli.js /app/dist/intake-plan-cli.js /app/dist/mail-intake-plan-cli.js /app/dist/harbor-cli.js \
     && ln -sfn /app/dist/registry-cli.js /usr/local/bin/case-registry \
     && ln -sfn /app/dist/intake-plan-cli.js /usr/local/bin/case-intake \
     && ln -sfn /app/dist/mail-intake-plan-cli.js /usr/local/bin/case-mail-intake \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/harbor \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/case-harbor \
+    && ln -sfn /app/scripts/case-task-package.py /usr/local/bin/case-task-package \
     && mkdir -p /root/.agents/skills \
     && cp -R /app/skills/. /root/.agents/skills/ \
     && test -x /usr/local/bin/case-registry \
@@ -64,6 +69,7 @@ RUN npm run build \
     && test -x /usr/local/bin/case-mail-intake \
     && test -x /usr/local/bin/harbor \
     && test -x /usr/local/bin/case-harbor \
+    && test -x /usr/local/bin/case-task-package \
     && test -x /usr/local/bin/modal \
     && test -f /root/.agents/skills/case-registry/SKILL.md \
     && test -f /root/.agents/skills/case-registry/agents/openai.yaml \
