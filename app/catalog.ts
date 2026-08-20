@@ -44,10 +44,7 @@ export type CatalogTask = {
   sourceItemIds: string[];
   findings?: Array<{
     id: string;
-    finding?: string;
-    title?: string;
-    summary?: string;
-    resolution?: string | null;
+    finding: string;
   }>;
 };
 

@@ -1082,7 +1082,7 @@ function TaskRow({ task, t, taskDownloadBase }: { task: CatalogTask; t: UiCopy; 
     {findings.length > 0 && <details className="task-findings">
       <summary><span>{t.findings.title}</span><i>{findings.length}</i></summary>
       <div className="task-finding-list">{findings.map((finding) => <article className="task-finding" key={finding.id}>
-        <p>{finding.finding ?? [finding.title, finding.summary, finding.resolution].filter(Boolean).join("\n\n")}</p>
+        <p>{finding.finding}</p>
       </article>)}</div>
     </details>}
   </div>;
