@@ -652,6 +652,53 @@ const migrations: Migration[] = [
         ON registry_submission_batches(intake_purpose);
     `,
   },
+  {
+    id: "011_plain_mutable_task_findings",
+    sql: `
+      ALTER TABLE registry_task_findings
+        ADD COLUMN IF NOT EXISTS finding text,
+        ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+      UPDATE registry_task_findings
+      SET finding = concat_ws(E'\n\n',
+            NULLIF(btrim(title), ''),
+            NULLIF(btrim(summary), ''),
+            NULLIF(btrim(resolution), '')
+          ),
+          updated_at = created_at
+      WHERE finding IS NULL OR updated_at IS NULL;
+
+      ALTER TABLE registry_task_findings
+        ALTER COLUMN finding SET NOT NULL,
+        ALTER COLUMN updated_at SET DEFAULT now(),
+        ALTER COLUMN updated_at SET NOT NULL,
+        ALTER COLUMN visibility SET DEFAULT 'portal';
+
+      DROP INDEX IF EXISTS registry_task_findings_task_idx;
+
+      ALTER TABLE registry_task_findings
+        DROP COLUMN IF EXISTS kind,
+        DROP COLUMN IF EXISTS title,
+        DROP COLUMN IF EXISTS summary,
+        DROP COLUMN IF EXISTS resolution,
+        DROP COLUMN IF EXISTS actor,
+        DROP COLUMN IF EXISTS occurred_at,
+        DROP COLUMN IF EXISTS evidence_check_run_ids,
+        DROP COLUMN IF EXISTS metadata,
+        DROP COLUMN IF EXISTS payload_sha256;
+
+      ALTER TABLE registry_task_findings
+        ADD CONSTRAINT registry_task_findings_finding_nonempty
+        CHECK (length(btrim(finding)) > 0);
+
+      CREATE INDEX registry_task_findings_task_idx
+        ON registry_task_findings(task_version_id, updated_at DESC, created_at DESC);
+
+      UPDATE registry_status_events
+      SET payload = payload - 'kind' - 'visibility'
+      WHERE event_type = 'finding.recorded';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

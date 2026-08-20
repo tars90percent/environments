@@ -30,6 +30,7 @@ import type {
   SubmissionReview,
   SubmissionReviewInput,
   TaskFindingInput,
+  TaskFindingUpdateInput,
   TaskSourceLinksInput,
   VendorArchiveContext,
   VendorArchiveInput,
@@ -105,13 +106,7 @@ type TaskRow = {
 type TaskFindingRow = {
   id: string;
   task_version_id: string;
-  kind: CatalogTask["findings"][number]["kind"];
-  title: string;
-  summary: string;
-  resolution: string | null;
-  actor: string;
-  occurred_at: string | Date;
-  evidence_check_run_ids: string[];
+  finding: string;
 };
 type SourceEventRow = {
   batch_id: string;
@@ -1141,7 +1136,6 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async recordTaskFinding(input: TaskFindingInput): Promise<{ findingId: string; created: boolean }> {
-    const payloadSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1151,44 +1145,83 @@ export class PostgresRegistry implements RegistryRepository {
       );
       if (!task.rowCount) throw new RegistryNotFoundError(`task_version ${input.taskVersionId} does not exist`);
 
-      if (input.evidenceCheckRunIds.length) {
-        const checks = await client.query<{ id: string }>(
-          "SELECT id FROM registry_check_runs WHERE id = ANY($1::text[])",
-          [input.evidenceCheckRunIds],
-        );
-        if (checks.rowCount !== input.evidenceCheckRunIds.length) {
-          throw new RegistryNotFoundError("One or more evidence check runs do not exist");
-        }
-      }
-
-      const existing = await client.query<{ payload_sha256: string }>(
-        "SELECT payload_sha256 FROM registry_task_findings WHERE id = $1",
+      const existing = await client.query<{ task_version_id: string; finding: string }>(
+        "SELECT task_version_id, finding FROM registry_task_findings WHERE id = $1",
         [input.id],
       );
-      if (existing.rows[0]?.payload_sha256 && existing.rows[0].payload_sha256 !== payloadSha256) {
-        throw new RegistryConflictError(`Task finding ${input.id} already exists with different immutable contents`);
-      }
       if (existing.rowCount) {
+        if (existing.rows[0]?.task_version_id !== input.taskVersionId || existing.rows[0]?.finding !== input.finding) {
+          throw new RegistryConflictError(`Task finding ${input.id} already exists; use the update operation to change its words`);
+        }
         await client.query("COMMIT");
         return { findingId: input.id, created: false };
       }
 
       await client.query(
-        `INSERT INTO registry_task_findings(
-           id, task_version_id, kind, title, summary, resolution, actor, occurred_at,
-           evidence_check_run_ids, visibility, metadata, payload_sha256
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12)`,
-        [input.id, input.taskVersionId, input.kind, input.title, input.summary, input.resolution ?? null,
-          input.actor, input.occurredAt, json(input.evidenceCheckRunIds), input.visibility,
-          json(input.metadata ?? {}), payloadSha256],
+        `INSERT INTO registry_task_findings(id, task_version_id, finding, visibility)
+         VALUES ($1, $2, $3, 'portal')`,
+        [input.id, input.taskVersionId, input.finding],
       );
-      await this.insertStatusEvent(client, "task_version", input.taskVersionId, "finding.recorded", input.actor, {
+      await this.insertStatusEvent(client, "task_version", input.taskVersionId, "finding.recorded", "CASE", {
         findingId: input.id,
-        kind: input.kind,
-        visibility: input.visibility,
       });
       await client.query("COMMIT");
       return { findingId: input.id, created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateTaskFinding(input: TaskFindingUpdateInput): Promise<{ findingId: string; updated: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query<{ task_version_id: string; finding: string }>(
+        "SELECT task_version_id, finding FROM registry_task_findings WHERE id = $1 FOR UPDATE",
+        [input.id],
+      );
+      if (!existing.rowCount) throw new RegistryNotFoundError(`Task finding ${input.id} does not exist`);
+      if (existing.rows[0]?.finding === input.finding) {
+        await client.query("COMMIT");
+        return { findingId: input.id, updated: false };
+      }
+
+      await client.query(
+        "UPDATE registry_task_findings SET finding = $2, updated_at = now() WHERE id = $1",
+        [input.id, input.finding],
+      );
+      await this.insertStatusEvent(client, "task_version", existing.rows[0]!.task_version_id, "finding.updated", "CASE", {
+        findingId: input.id,
+      });
+      await client.query("COMMIT");
+      return { findingId: input.id, updated: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteTaskFinding(id: string): Promise<{ findingId: string; deleted: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query<{ task_version_id: string }>(
+        "SELECT task_version_id FROM registry_task_findings WHERE id = $1 FOR UPDATE",
+        [id],
+      );
+      if (!existing.rowCount) throw new RegistryNotFoundError(`Task finding ${id} does not exist`);
+
+      await client.query("DELETE FROM registry_task_findings WHERE id = $1", [id]);
+      await this.insertStatusEvent(client, "task_version", existing.rows[0]!.task_version_id, "finding.deleted", "CASE", {
+        findingId: id,
+      });
+      await client.query("COMMIT");
+      return { findingId: id, deleted: true };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1563,13 +1596,12 @@ export class PostgresRegistry implements RegistryRepository {
         [visibility],
       ),
       this.pool.query<TaskFindingRow>(
-        `SELECT tf.id, tf.task_version_id, tf.kind, tf.title, tf.summary, tf.resolution,
-                tf.actor, tf.occurred_at, tf.evidence_check_run_ids
+        `SELECT tf.id, tf.task_version_id, tf.finding
          FROM registry_task_findings tf
          JOIN registry_task_versions tv ON tv.id = tf.task_version_id
          WHERE tv.catalog_visibility = ANY($1::text[])
            AND ($2::boolean OR tf.visibility = 'portal')
-         ORDER BY tf.occurred_at DESC, tf.created_at DESC, tf.id`,
+         ORDER BY tf.updated_at DESC, tf.created_at DESC, tf.id`,
         [visibility, scope === "all"],
       ),
       this.pool.query<VendorEventRow>(
@@ -1933,13 +1965,7 @@ function taskFromRow(row: TaskRow, sourceItemIds: string[] = [], findings: Catal
 function taskFindingFromRow(row: TaskFindingRow): CatalogTask["findings"][number] {
   return {
     id: row.id,
-    kind: row.kind,
-    title: row.title,
-    summary: row.summary,
-    resolution: row.resolution,
-    actor: row.actor,
-    occurredAt: new Date(row.occurred_at).toISOString(),
-    evidenceCheckRunIds: row.evidence_check_run_ids,
+    finding: row.finding,
   };
 }
 

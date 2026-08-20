@@ -41,6 +41,9 @@ case-registry restore-vendor /absolute/path/vendor-restore.json
 case-registry store-file <artifact-kind> /absolute/path/file
 case-registry download-artifact <artifact-id> /absolute/path/output
 case-registry record-check /absolute/path/check-result.json
+case-registry record-task-finding /absolute/path/finding.json
+case-registry update-task-finding /absolute/path/finding-update.json
+case-registry delete-task-finding <finding-id>
 case-registry record-follow-up /absolute/path/follow-up.json
 case-registry record-submission-review /absolute/path/review.json
 case-registry register-artifact /absolute/path/artifact.json
@@ -64,6 +67,7 @@ In particular:
 - `classify-submission` to mark a legacy submission as `sample_evaluation` exactly once, with governing linked source-event IDs, a reason, and an actor; do not use it for purchased deliveries or uncertain scope.
 - `link-task-sources` to add exact task-to-source relations.
 - `record-check`, `record-follow-up`, `record-submission-review`, and `record-vendor-event` for append-only evidence and history.
+- `record-task-finding`, `update-task-finding`, and `delete-task-finding` for plain CASE-owned working notes attached to a task version. A finding is only `{id, taskVersionId, finding}` when created and must not be used as a substitute for a check, assessment, trajectory, or researcher response.
 - `set-status`, `archive-vendor`, and `restore-vendor` for explicit lifecycle changes.
 - `lease-work` and `complete-work` for durable queued work.
 - `remove-submission` and `delete-artifact` for the purchased-delivery cleanup boundary or an unreferenced failed upload.
@@ -89,7 +93,7 @@ These operations create the first durable checkpoint of registration. Continue i
 - Link every task version to its governing source items and exact task-package artifact.
 - `append-normalized-tasks` requires an existing `task_package` artifact and source item. Use stable idempotency keys so retries do not duplicate versions.
 - Corrections are new submissions or task versions with explicit revision links such as `revisesBatchId`; never overwrite history.
-- Reviews, checks, trajectories, assessments, and operational events are append-only records with identified producers.
+- Reviews, checks, trajectories, assessments, and operational events are append-only records with identified producers. Plain task findings are mutable working notes and may be updated or deleted.
 - Archive a vendor only after its submissions are internal. Archiving must not erase evidence.
 - After purchase, retain only the minimal handoff fact and remove full purchased deliveries and production packages from CASE storage.
 - Remove an uploaded object after registration failure only when it is confirmed unreferenced.

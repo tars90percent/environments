@@ -19,6 +19,8 @@ import {
   parseSubmissionRemoval,
   parseSubmissionReview,
   parseTaskFinding,
+  parseTaskFindingId,
+  parseTaskFindingUpdate,
   parseTaskSourceLinks,
   parseVendorArchive,
   parseVendorEvent,
@@ -213,6 +215,18 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   if (method === "POST" && url.pathname === "/v1/task-findings") {
     const result = await options.repository.recordTaskFinding(parseTaskFinding(await readJson(request)));
     return sendJson(response, result.created ? 201 : 200, result);
+  }
+  const taskFindingMatch = url.pathname.match(/^\/v1\/task-findings\/([^/]+)$/);
+  if (method === "PATCH" && taskFindingMatch?.[1]) {
+    const findingId = decodeURIComponent(taskFindingMatch[1]);
+    return sendJson(response, 200, await options.repository.updateTaskFinding(
+      parseTaskFindingUpdate(await readJson(request), findingId),
+    ));
+  }
+  if (method === "DELETE" && taskFindingMatch?.[1]) {
+    return sendJson(response, 200, await options.repository.deleteTaskFinding(
+      parseTaskFindingId(decodeURIComponent(taskFindingMatch[1])),
+    ));
   }
   if (method === "POST" && url.pathname === "/v1/follow-ups") {
     await options.repository.recordFollowUp(parseFollowUp(await readJson(request)));

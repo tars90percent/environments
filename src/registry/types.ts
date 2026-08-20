@@ -11,14 +11,6 @@ export type WorkflowStatus =
 export type CatalogVisibility = "featured" | "available" | "log_only" | "internal";
 export type CheckOutcome = "pass" | "fail" | "blocked" | "not_run";
 export type CatalogScope = "research" | "portal" | "all";
-export type TaskFindingKind =
-  | "observed_fact"
-  | "vendor_claim"
-  | "deterministic_result"
-  | "heuristic_assessment"
-  | "human_judgment"
-  | "binding_term";
-export type TaskFindingVisibility = "portal" | "internal";
 
 export type SourceChannel =
   | "email"
@@ -374,21 +366,12 @@ export type CheckResultInput = {
 export type TaskFindingInput = {
   id: string;
   taskVersionId: string;
-  kind: TaskFindingKind;
-  title: string;
-  summary: string;
-  resolution?: string;
-  actor: string;
-  occurredAt: string;
-  evidenceCheckRunIds: string[];
-  visibility: TaskFindingVisibility;
-  metadata?: Record<string, unknown>;
+  finding: string;
 };
 
-export type TaskFinding = TaskFindingInput & {
-  resolution: string | null;
-  metadata: Record<string, unknown>;
-  createdAt: string;
+export type TaskFindingUpdateInput = {
+  id: string;
+  finding: string;
 };
 
 export type FollowUpInput = {
@@ -450,13 +433,7 @@ export type ResearcherUploadInput = {
 
 export type CatalogTaskFinding = {
   id: string;
-  kind: TaskFindingKind;
-  title: string;
-  summary: string;
-  resolution: string | null;
-  actor: string;
-  occurredAt: string;
-  evidenceCheckRunIds: string[];
+  finding: string;
 };
 
 export type CatalogTask = {

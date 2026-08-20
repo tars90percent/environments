@@ -71,6 +71,14 @@ switch (command) {
   case "record-task-finding":
     output(await request("POST", "/v1/task-findings", await jsonFile(argument)));
     break;
+  case "update-task-finding": {
+    const update = await jsonFile(argument);
+    output(await request("PATCH", `/v1/task-findings/${encode(jsonId(update), "finding id")}`, update));
+    break;
+  }
+  case "delete-task-finding":
+    output(await request("DELETE", `/v1/task-findings/${encode(argument, "finding id")}`));
+    break;
   case "record-follow-up":
     output(await request("POST", "/v1/follow-ups", await jsonFile(argument)));
     break;
@@ -105,7 +113,7 @@ switch (command) {
     output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
     break;
   default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|append-normalized-tasks|classify-submission|record-vendor-event|archive-vendor|restore-vendor|store-file|download-artifact|record-check|record-task-finding|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
+    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|append-normalized-tasks|classify-submission|record-vendor-event|archive-vendor|restore-vendor|store-file|download-artifact|record-check|record-task-finding|update-task-finding|delete-task-finding|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
 }
 
 async function storeFile(kind: string, path: string): Promise<unknown> {
@@ -203,6 +211,12 @@ async function jsonFile(path: string | undefined): Promise<unknown> {
 function encode(value: string | undefined, name: string): string {
   if (!value) fail(`${name} is required`);
   return encodeURIComponent(value);
+}
+
+function jsonId(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === "string" ? id : undefined;
 }
 
 function required(value: string | undefined, name: string): string {

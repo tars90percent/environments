@@ -11,6 +11,7 @@ import type {
   SubmissionRemovalInput,
   SubmissionReviewInput,
   TaskFindingInput,
+  TaskFindingUpdateInput,
   TaskSourceLinksInput,
   VendorArchiveInput,
   VendorEventInput,
@@ -38,10 +39,6 @@ const SOURCE_FETCH_STATUSES = new Set(["not_requested", "queued", "fetching", "s
 const SOURCE_PARSE_STATUSES = new Set(["not_requested", "queued", "parsing", "parsed", "partial", "blocked", "failed"]);
 const SOURCE_RELATIONS = new Set(["contains", "links_to", "derived_from", "describes", "mirrors", "supersedes"]);
 const VENDOR_EVENT_KINDS = new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]);
-const TASK_FINDING_KINDS = new Set<TaskFindingInput["kind"]>([
-  "observed_fact", "vendor_claim", "deterministic_result", "heuristic_assessment", "human_judgment", "binding_term",
-]);
-const TASK_FINDING_VISIBILITIES = new Set<TaskFindingInput["visibility"]>(["portal", "internal"]);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
@@ -413,22 +410,29 @@ export function parseCheckResult(value: unknown): CheckResultInput {
 
 export function parseTaskFinding(value: unknown): TaskFindingInput {
   const input = object(value, "task finding");
-  const resolution = input.resolution === undefined || input.resolution === null
-    ? undefined
-    : boundedString(input.resolution, "resolution", 5_000);
+  onlyKeys(input, new Set(["id", "taskVersionId", "finding"]), "task finding");
   return {
     id: identifier(input.id, "id"),
     taskVersionId: identifier(input.taskVersionId, "taskVersionId"),
-    kind: enumValue(input.kind, TASK_FINDING_KINDS, "kind"),
-    title: boundedString(input.title, "title", 300),
-    summary: boundedString(input.summary, "summary", 5_000),
-    ...(resolution ? { resolution } : {}),
-    actor: boundedString(input.actor, "actor", 500),
-    occurredAt: timestamp(input.occurredAt, "occurredAt"),
-    evidenceCheckRunIds: uniqueIdentifiers(input.evidenceCheckRunIds, "evidenceCheckRunIds"),
-    visibility: enumValue(input.visibility, TASK_FINDING_VISIBILITIES, "visibility"),
-    metadata: optionalObject(input.metadata, "metadata"),
+    finding: boundedString(input.finding, "finding", 20_000),
   };
+}
+
+export function parseTaskFindingUpdate(value: unknown, findingId: string): TaskFindingUpdateInput {
+  const input = object(value, "task finding update");
+  onlyKeys(input, new Set(["id", "finding"]), "task finding update");
+  const id = identifier(findingId, "id");
+  if (input.id !== undefined && identifier(input.id, "id") !== id) {
+    throw new ValidationError("id must match the task finding in the request path");
+  }
+  return {
+    id,
+    finding: boundedString(input.finding, "finding", 20_000),
+  };
+}
+
+export function parseTaskFindingId(value: unknown): string {
+  return identifier(value, "id");
 }
 
 export function parseFollowUp(value: unknown): FollowUpInput {
@@ -512,6 +516,11 @@ export class ValidationError extends Error {
 function object(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError(`${name} must be an object`);
   return value as Record<string, unknown>;
+}
+
+function onlyKeys(value: Record<string, unknown>, allowed: Set<string>, name: string): void {
+  const unsupported = Object.keys(value).filter((key) => !allowed.has(key));
+  if (unsupported.length) throw new ValidationError(`${name} contains unsupported fields: ${unsupported.join(", ")}`);
 }
 
 function optionalObject(value: unknown, name: string): Record<string, unknown> | undefined {

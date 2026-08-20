@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseAppendNormalizedTasks, parseResearcherUpload, parseSourceEnvelope, parseSubmissionIntakeClassification, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseAppendNormalizedTasks, parseResearcherUpload, parseSourceEnvelope, parseSubmissionIntakeClassification, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskFindingUpdate, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -280,21 +280,19 @@ test("validates provenance-complete task registration for an existing submission
   );
 });
 
-test("validates evidence-labeled task findings with explicit portal visibility", () => {
+test("validates plain task findings and updates without classification fields", () => {
   const finding = {
     id: "finding:vendor-one:task-one:verifier-isolation",
     taskVersionId: "vendor-one-2026-08-13:task-one",
-    kind: "deterministic_result",
-    title: "Verifier isolation defect",
-    summary: "The verifier tested a pristine environment rather than the Oracle-modified filesystem.",
-    resolution: "A separately recorded shared-environment diagnostic passed twice.",
-    actor: "TARS/Codex",
-    occurredAt: "2026-08-18T12:00:00.000Z",
-    evidenceCheckRunIds: ["check:vendor-one:oracle:one"],
-    visibility: "portal",
+    finding: "The verifier tested a pristine environment rather than the Oracle-modified filesystem.",
   };
-  assert.equal(parseTaskFinding(finding).visibility, "portal");
-  assert.throws(() => parseTaskFinding({ ...finding, kind: "quality_score" }), ValidationError);
-  assert.throws(() => parseTaskFinding({ ...finding, visibility: "public" }), ValidationError);
-  assert.throws(() => parseTaskFinding({ ...finding, evidenceCheckRunIds: ["same", "same"] }), ValidationError);
+  assert.deepEqual(parseTaskFinding(finding), finding);
+  assert.deepEqual(
+    parseTaskFindingUpdate({ id: finding.id, finding: "The verifier now checks the modified filesystem." }, finding.id),
+    { id: finding.id, finding: "The verifier now checks the modified filesystem." },
+  );
+  assert.throws(() => parseTaskFinding({ ...finding, kind: "deterministic_result" }), ValidationError);
+  assert.throws(() => parseTaskFinding({ ...finding, title: "Verifier isolation defect" }), ValidationError);
+  assert.throws(() => parseTaskFindingUpdate({ id: "finding:other", finding: "Changed." }, finding.id), ValidationError);
+  assert.throws(() => parseTaskFindingUpdate({ finding: "" }, finding.id), ValidationError);
 });
