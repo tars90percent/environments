@@ -24,7 +24,6 @@ const copy = {
     vendor: "供应商",
     submission: "次提交",
     submissions: "次提交",
-    records: "条记录",
     taskRecords: "条任务记录",
     sampleFiles: "个样本文件",
     declaredTasks: "个申报任务",
@@ -205,7 +204,6 @@ const copy = {
     vendor: "Vendor",
     submission: "submission",
     submissions: "submissions",
-    records: "records",
     taskRecords: "task records",
     sampleFiles: "sample files",
     declaredTasks: "declared tasks",
@@ -590,11 +588,8 @@ export default function PortalClient({ user, initialView = "supply", localPrevie
   const vendors = useMemo(() => catalog?.vendors ?? [], [catalog]);
   const sampledVendors = useMemo(() => vendors.filter((vendor) => vendor.batches.length > 0), [vendors]);
   const contactedVendors = useMemo(() => vendors.filter((vendor) => vendor.batches.length === 0), [vendors]);
-  const logicalTaskCount = useMemo(() => new Set(vendors.flatMap((vendor) =>
-    vendor.batches.flatMap((batch) => batch.categories.flatMap((category) =>
-      category.tasks.map((task) => `${vendor.id}\u0000${task.stableKey}`),
-    )),
-  )).size, [vendors]);
+  const logicalTaskCount = useMemo(() => vendors.reduce((sum, vendor) =>
+    sum + logicalTaskCountForVendor(vendor), 0), [vendors]);
   const t = copy[language];
 
   useEffect(() => {
@@ -761,12 +756,17 @@ function formatDemandDate(value: string, language: Language): string {
   }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
+function logicalTaskCountForVendor(vendor: CatalogVendor): number {
+  return new Set(vendor.batches.flatMap((batch) =>
+    batch.categories.flatMap((category) =>
+      category.tasks.map((task) => task.stableKey),
+    ),
+  )).size;
+}
+
 function VendorButton({ vendor, selected, onSelect, t }: { vendor: CatalogVendor; selected: boolean; onSelect(vendor: CatalogVendor): void; t: UiCopy }) {
-  const count = vendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
-  const sampleFiles = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
-  const declaredTasks = vendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
-  const inventory = [count > 0 ? `${count} ${t.records}` : "", sampleFiles > 0 ? `${sampleFiles} ${t.sampleFiles}` : "", declaredTasks > 0 ? `${declaredTasks} ${t.declaredTasks}` : ""].filter(Boolean).join(" · ") || t.noSamples;
-  return <button className={selected ? "active" : ""} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {inventory}</small></span></button>;
+  const taskCount = logicalTaskCountForVendor(vendor);
+  return <button className={selected ? "active" : ""} onClick={() => onSelect(vendor)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.batches.length} {vendor.batches.length === 1 ? t.submission : t.submissions} · {taskCount} {t.stats.tasks}</small></span></button>;
 }
 
 function UploadPanel({ vendors, onClose, onUploaded, t }: { vendors: CatalogVendor[]; onClose(): void; onUploaded(vendorId: string): void; t: UiCopy }) {
@@ -869,9 +869,7 @@ function VendorView({ matchingSampledVendors, matchingContactedVendors, query, s
   language: Language;
 }) {
   const vendorMainRef = useRef<HTMLElement>(null);
-  const records = selectedVendor.batches.reduce((sum, batch) => sum + batch.taskCount, 0);
-  const sampleFiles = selectedVendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 ? batch.delta.changedFiles ?? 0 : 0), 0);
-  const declaredTasks = selectedVendor.batches.reduce((sum, batch) => sum + (batch.taskCount === 0 && (batch.delta.changedFiles ?? 0) === 0 ? batch.declaredTaskCount ?? 0 : 0), 0);
+  const taskCount = logicalTaskCountForVendor(selectedVendor);
 
   function selectAndReveal(vendor: CatalogVendor) {
     onSelect(vendor);
@@ -898,7 +896,7 @@ function VendorView({ matchingSampledVendors, matchingContactedVendors, query, s
     </aside>
 
     <section className="vendor-main" aria-labelledby="vendor-name" ref={vendorMainRef}>
-      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span>{records > 0 && <span>{records} {t.taskRecords}</span>}{sampleFiles > 0 && <span>{sampleFiles} {t.sampleFiles}</span>}{declaredTasks > 0 && <span>{declaredTasks} {t.declaredTasks}</span>}{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div>{selectedVendor.procurementSummary && <ProcurementSummary summary={selectedVendor.procurementSummary} t={t} language={language} />}</div></header>
+      <header className="vendor-profile"><div><div className="vendor-kicker">{t.vendor}</div><h2 id="vendor-name">{selectedVendor.name}</h2><p>{selectedVendor.description}</p><div className="vendor-meta"><span>{selectedVendor.batches.length} {selectedVendor.batches.length === 1 ? t.submission : t.submissions}</span><span>{taskCount} {t.stats.tasks}</span>{selectedVendor.batches.length > 0 && <span>{selectedVendor.batches.at(-1)?.date} — {selectedVendor.batches[0]?.date}</span>}</div>{selectedVendor.procurementSummary && <ProcurementSummary summary={selectedVendor.procurementSummary} t={t} language={language} />}</div></header>
       <section className="submission-history" aria-labelledby="history-title">
         <div className="section-title"><div><h3 id="history-title">{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="batch-list">{selectedVendor.batches.length ? selectedVendor.batches.map((batch, index) => <BatchCard batch={batch} isExpanded={expandedBatches.has(batch.id)} isLatest={index === 0} key={batch.id} onToggle={() => onToggleBatch(batch.id)} t={t} language={language} />) : <div className="submission-empty">{t.noSubmissions}</div>}</div>

@@ -59,6 +59,11 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /stats: \{ vendors: "vendors", submissions: "submissions", tasks: "tasks" \}/);
   assert.match(source, /const logicalTaskCount = useMemo/);
   assert.match(source, /task\.stableKey/);
+  assert.match(source, /function logicalTaskCountForVendor/);
+  assert.match(source, /const taskCount = logicalTaskCountForVendor\(vendor\)/);
+  assert.match(source, /const taskCount = logicalTaskCountForVendor\(selectedVendor\)/);
+  assert.doesNotMatch(source, /const inventory =/);
+  assert.doesNotMatch(source, /t\.records/);
   assert.doesNotMatch(source, /catalog\?\.totals\.taskVersions/);
   assert.match(source, /Submission history/);
   assert.match(source, /Original sources/);
