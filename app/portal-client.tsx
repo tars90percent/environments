@@ -650,7 +650,7 @@ export default function PortalClient({ user, initialView = "supply", localPrevie
 
   return <div className={`app-shell app-shell-${activeView}`}>
     <header className="global-header">
-      <a aria-label="小环境" className="wordmark" href="#top"><Image alt="" height={40} priority src="/favicon.png" width={40} /></a>
+      <a aria-label="小环境" className="wordmark" href="#top"><Image alt="" height={40} priority src="/octopus-icon.png" width={40} /></a>
       <nav aria-label={marketCopy[language].marketNav} className="market-switch">
         <button aria-pressed={activeView === "supply"} className={activeView === "supply" ? "active" : ""} onClick={() => { setActiveView("supply"); setQuery(""); }} type="button">{marketCopy[language].nav.supply}</button>
         <button aria-pressed={activeView === "demand"} className={activeView === "demand" ? "active" : ""} onClick={() => { setActiveView("demand"); setQuery(""); }} type="button">{marketCopy[language].nav.demand}</button>
