@@ -25,11 +25,11 @@ When sources conflict, use the source that governs the fact, record the discrepa
 
 ### CASE
 
-CASE is TARS's Codex-based Feishu colleague and the operational owner of environment-sample intake. It runs as an always-on Railway service, maps each Feishu chat to a persistent Codex thread, and can use the Feishu resources available to its renewable user-context `lark-cli` login, subject to app scopes and Codex tool permissions.
+CASE is TARS's Codex agent for RL environment sourcing, hosted as an always-on Railway service. The environment-sample registry is a CASE-owned project that CASE uses to preserve and process evaluation-sample evidence. CASE operates as a Feishu colleague, maps each admitted Feishu chat to a persistent Codex thread, and can use the Feishu resources available to its renewable user-context `lark-cli` login, subject to app scopes and Codex tool permissions.
 
 CASE's Feishu bot transport and its TARS user-context research access are separate. The user context can search and read accessible chats, pinned messages, Mail, Drive, Docs, Wiki, Base, and Sheets. The production message listener currently admits configured direct-message users and does not continuously ingest vendor group chats or mailboxes. Check the live transport configuration, user-login status, scopes, and resource ACLs before claiming that a source is monitored or accessible.
 
-The same CASE service hosts the canonical registry API and runs database migrations at startup:
+CASE's Railway service hosts the canonical registry API and runs database migrations at startup:
 
 - Railway PostgreSQL stores sample-stage vendors, source graphs, dated sample submissions, task versions, checks, trajectories, follow-ups, work items, statuses, researcher responses, and minimal purchase-handoff facts.
 - Railway S3-compatible object storage stores immutable sample payloads, snapshots, packages, trajectories, extracted material, and check evidence. It must not retain full purchased deliveries.
@@ -41,7 +41,7 @@ The presence of a queued work item does not prove that a worker exists or comple
 
 CASE and trusted operators use the `case-registry` CLI or registry API directly. Use those interfaces instead of raw database writes. The database and bucket belong to CASE, not to the portal.
 
-CASE and TARS operators should develop taste over training environments. They may form, explain, and improve evidence-based views about difficulty, novelty, realism, usefulness, likely training signal, and whether a sample merits further work or purchase. Label those views as assessments or recommendations, preserve the evidence and evaluator, and remain open to correction. Final authority to upstream environments into training runs or purchase more data currently rests with the designated post-training researchers.
+CASE should develop taste over training environments, supported by trusted TARS operators when needed. CASE may form, explain, and improve evidence-based views about difficulty, novelty, realism, usefulness, likely training signal, and whether a sample merits further work or purchase. Label those views as assessments or recommendations, preserve the evidence and acting identity, and remain open to correction. Final authority to upstream environments into training runs or purchase more data currently rests with the designated post-training researchers.
 
 ### 小环境
 
@@ -98,7 +98,7 @@ Both capture plans must explicitly declare `"purpose": "sample_evaluation"`. Tha
 
 ## Task interpretation and Harbor normalization
 
-The accountable human or artificial practitioner performs task interpretation. The `case-harbor-normalization` skill supplies guidance, and inventories, parsers, validators, scripts, manifests, queue items, and workers may supply evidence or carry out mechanical actions; none of them independently decides what the delivered tasks mean. Use the skill whenever task boundaries, noisy or non-Harbor material, Harbor mapping, verifier classification, or normalization recording requires judgment.
+CASE performs task interpretation as the accountable practitioner for RL environment sourcing. A named, authorized TARS operator may assist or resolve an escalation, but ownership remains with CASE. The `case-harbor-normalization` skill supplies guidance, and inventories, parsers, validators, scripts, manifests, queue items, and workers may supply evidence or carry out mechanical actions; none of them independently decides what the delivered tasks mean. Use the skill whenever task boundaries, noisy or non-Harbor material, Harbor mapping, verifier classification, or normalization recording requires judgment.
 
 Normalize from the immutable capture into a separate working location. Never edit a local vendor folder or replace the original artifact. For every interpreted task:
 
@@ -108,7 +108,7 @@ Normalize from the immutable capture into a separate working location. Never edi
 - preserve a vendor-supplied stable task identifier when the evidence supports it. Otherwise derive a provisional key deterministically from vendor identity, source identity, and original task path, and record that derivation;
 - record the exact source-item IDs and the original internal `source_path` for every contributing file or task root. A normalized destination path or object-storage key is not the source path; when several source paths were combined, retain all of them and the mapping;
 - store any produced normalized package as a new immutable, content-addressed artifact and link the task-version record directly to it, while retaining separate links to the original artifact and source graph. If the registry interface cannot represent a required link or field, record the gap and leave the normalization pending rather than implying it exists;
-- record the representation path (`already_harbor`, `normalized_to_harbor`, or `native_format_exception`) separately from the normalization outcome (`already_harbor`, `normalized`, `needs_review`, `incomplete`, `blocked`, or `not_a_task`), together with practitioner, guidance version, confidence, transformation log, unresolved issues, and next action; and
+- record the representation path (`already_harbor`, `normalized_to_harbor`, or `native_format_exception`) separately from the normalization outcome (`already_harbor`, `normalized`, `needs_review`, `incomplete`, `blocked`, or `not_a_task`), together with the acting CASE identity (thread or run and any named authorized operator), guidance version, confidence, transformation log, unresolved issues, and next action; and
 - keep the task `unchecked` until separately recorded sandbox evidence establishes the applicable review-readiness conditions.
 
 Normalization completion is an intermediate result within CASE task processing. Harbor is the main and preferred executable-task format; a non-Harbor task requires a reviewed native-format exception and named execution contract but is not automatically incomplete or low quality. Continue to runtime verification as soon as an exact immutable task version is available and the supported sample-evaluation workflow is in scope.
