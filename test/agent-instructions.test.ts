@@ -26,8 +26,8 @@ test("installs the source-controlled guide into the persistent agent workspace",
 test("the CASE guide defines one complete registration workflow", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
 
-  assert.match(guide, /turn messy evaluation-sample deliveries into exact, runnable, evidence-backed task versions/);
-  assert.match(guide, /Registration is one end-to-end process/);
+  assert.match(guide, /CASE turns messy evaluation-sample deliveries into exact, runnable, evidence-backed task versions/);
+  assert.match(guide, /CASE owns complete sample registration as one end-to-end process/);
   assert.match(guide, /accumulating completeness steps, not separate products or organizational handoffs/);
   assert.match(guide, /Storing the original payload first is a crash-safe checkpoint/);
   assert.match(guide, /Complete registration does not require every task to pass/);
@@ -37,6 +37,9 @@ test("the CASE guide defines one complete registration workflow", async () => {
 test("the CASE guide defines architectural and decision boundaries", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
 
+  assert.match(guide, /CASE is TARS's Codex agent for RL environment sourcing/);
+  assert.match(guide, /sample registry is a CASE-owned project/);
+  assert.match(guide, /CASE performs task interpretation as the accountable practitioner/);
   assert.match(guide, /PostgreSQL registry:.*authoritative relational record/s);
   assert.match(guide, /S3-compatible object storage:.*immutable, content-addressed/s);
   assert.match(guide, /Durable work queue:.*scheduling and recovery/s);
