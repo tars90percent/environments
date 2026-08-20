@@ -9,7 +9,6 @@ export type WorkflowStatus =
   | "quarantined";
 
 export type CatalogVisibility = "featured" | "available" | "log_only" | "internal";
-export type TaskFindingKind = "observed_fact" | "vendor_claim" | "deterministic_result" | "heuristic_assessment" | "human_judgment" | "binding_term";
 export type SubmissionReviewSignal = "interested" | "needs_revision" | "not_interested" | "comment";
 export type SubmissionReviewScope = "submission" | "categories";
 
@@ -45,13 +44,10 @@ export type CatalogTask = {
   sourceItemIds: string[];
   findings?: Array<{
     id: string;
-    kind: TaskFindingKind;
-    title: string;
-    summary: string;
-    resolution: string | null;
-    actor: string;
-    occurredAt: string;
-    evidenceCheckRunIds: string[];
+    finding?: string;
+    title?: string;
+    summary?: string;
+    resolution?: string | null;
   }>;
 };
 

@@ -109,7 +109,8 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /Recorded findings/);
   assert.match(source, /记录发现/);
   assert.match(source, /findings\.length > 0/);
-  assert.match(source, /finding\.evidenceCheckRunIds\.length/);
+  assert.match(source, /finding\.finding/);
+  assert.doesNotMatch(source, /finding\.kind|observed_fact|vendor_claim|deterministic_result|heuristic_assessment|human_judgment|binding_term/);
   assert.doesNotMatch(source, /format-stack|batch\.formats\.map/);
   assert.match(source, /vendorMain\.scrollTo\(\{ top: 0 \}\)/);
   assert.match(source, /vendorMain\.scrollIntoView\(\{ block: "start" \}\)/);

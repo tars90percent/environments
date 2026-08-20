@@ -149,18 +149,6 @@ const copy = {
     },
     findings: {
       title: "记录发现",
-      resolution: "处理结果",
-      recordedBy: "记录人",
-      taskVersion: "任务版本",
-      evidence: "条核验证据",
-      kind: {
-        observed_fact: "观察事实",
-        vendor_claim: "供应商陈述",
-        deterministic_result: "确定性结果",
-        heuristic_assessment: "启发式评估",
-        human_judgment: "人工判断",
-        binding_term: "约束条款",
-      },
     },
     status: {
       unchecked: "未核验",
@@ -329,18 +317,6 @@ const copy = {
     },
     findings: {
       title: "Recorded findings",
-      resolution: "Resolution",
-      recordedBy: "Recorded by",
-      taskVersion: "Task version",
-      evidence: "check evidence records",
-      kind: {
-        observed_fact: "Observed fact",
-        vendor_claim: "Vendor claim",
-        deterministic_result: "Deterministic result",
-        heuristic_assessment: "Heuristic assessment",
-        human_judgment: "Human judgment",
-        binding_term: "Binding term",
-      },
     },
     status: {
       unchecked: "Unchecked",
@@ -941,7 +917,7 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language, showRev
       <div className="delta-block"><div className="delta-grid">{batch.delta.retained !== undefined && <span><strong>{batch.delta.retained}</strong><small>{t.delta.retained}</small></span>}<span><strong>{batch.delta.added}</strong><small>{t.delta.added}</small></span><span><strong>{batch.delta.removed}</strong><small>{t.delta.removed}</small></span>{batch.delta.changedFiles !== undefined && <span><strong>{batch.delta.changedFiles}</strong><small>{t.delta.changedFiles}</small></span>}</div><p>{batch.delta.note}</p></div>
       <DatasetAccess batch={batch} datasetHref={datasetHref} t={t} />
       <div className="batch-section-head"><h4>{t.taskCategories}</h4><span>{batch.categories.length} {batch.categories.length === 1 ? t.category : t.categories}</span></div>
-      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} language={language} task={task} t={t} taskDownloadBase={taskDownloadBase} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
+      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} task={task} t={t} taskDownloadBase={taskDownloadBase} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
       <SubmissionSources sourceEvents={batch.sourceEvents ?? []} t={t} language={language} />
       {showReview && <SubmissionReviewPanel batch={batch} t={t} language={language} />}
     </div>}
@@ -1095,7 +1071,7 @@ function SourceItem({ item, t, language }: { item: CatalogSourceItem; t: UiCopy;
   </div>;
 }
 
-function TaskRow({ task, t, language, taskDownloadBase }: { task: CatalogTask; t: UiCopy; language: Language; taskDownloadBase?: string }) {
+function TaskRow({ task, t, taskDownloadBase }: { task: CatalogTask; t: UiCopy; taskDownloadBase?: string }) {
   const checks = taskCheckCount(task);
   const findings = task.findings ?? [];
   const downloadHref = taskDownloadBase
@@ -1106,10 +1082,7 @@ function TaskRow({ task, t, language, taskDownloadBase }: { task: CatalogTask; t
     {findings.length > 0 && <details className="task-findings">
       <summary><span>{t.findings.title}</span><i>{findings.length}</i></summary>
       <div className="task-finding-list">{findings.map((finding) => <article className="task-finding" key={finding.id}>
-        <header><span className={`finding-kind finding-${finding.kind}`}>{t.findings.kind[finding.kind]}</span><strong>{finding.title}</strong><time dateTime={finding.occurredAt}>{formatDate(finding.occurredAt, language)}</time></header>
-        <p>{finding.summary}</p>
-        {finding.resolution && <div className="finding-resolution"><strong>{t.findings.resolution}</strong><p>{finding.resolution}</p></div>}
-        <footer><span>{t.findings.recordedBy} {finding.actor}</span><span>{t.findings.taskVersion} <code>{task.id}</code></span>{finding.evidenceCheckRunIds.length > 0 && <span>{finding.evidenceCheckRunIds.length} {t.findings.evidence}</span>}</footer>
+        <p>{finding.finding ?? [finding.title, finding.summary, finding.resolution].filter(Boolean).join("\n\n")}</p>
       </article>)}</div>
     </details>}
   </div>;

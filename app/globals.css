@@ -171,19 +171,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .task-findings > summary i { min-width: 21px; height: 21px; display: grid; place-items: center; border-radius: 999px; background: var(--burgundy-soft); font-size: 8px; font-style: normal; font-weight: 650; }
 .task-finding-list { display: grid; gap: 1px; border-top: 1px solid rgba(125,31,42,.09); background: var(--line); }
 .task-finding { padding: 12px; background: var(--card); }
-.task-finding header { display: flex; align-items: center; gap: 8px; }
-.task-finding header strong { min-width: 0; overflow: hidden; font-size: 10px; font-weight: 640; text-overflow: ellipsis; white-space: nowrap; }
-.task-finding time { margin-left: auto; color: var(--faint); font-size: 8px; white-space: nowrap; }
-.finding-kind { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 8px; font-weight: 640; }
-.finding-deterministic_result, .finding-observed_fact { background: #e2f7e9; color: var(--green); }
-.finding-vendor_claim { background: #f3e6cb; color: #825b18; }
-.finding-heuristic_assessment, .finding-human_judgment { background: var(--burgundy-soft); color: var(--burgundy); }
 .task-finding > p { margin: 9px 0 0; color: var(--ink); font-size: 10px; line-height: 1.58; white-space: pre-wrap; }
-.finding-resolution { margin-top: 10px; padding: 9px 10px; border-left: 2px solid var(--green); border-radius: 0 8px 8px 0; background: #edf8f0; }
-.finding-resolution strong { color: var(--green); font-size: 8px; font-weight: 680; text-transform: uppercase; }
-.finding-resolution p { margin: 4px 0 0; color: #31523a; font-size: 9px; line-height: 1.55; }
-.task-finding footer { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px 13px; color: var(--faint); font-size: 8px; line-height: 1.45; }
-.task-finding footer code { color: var(--muted); overflow-wrap: anywhere; }
 .task-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .task-actions > a { padding: 5px 8px; border-radius: 7px; background: var(--burgundy-soft); color: var(--burgundy); font-size: 8px; font-weight: 620; text-decoration: none; white-space: nowrap; }
 .task-actions > a:hover { background: #edd9dc; }
@@ -398,9 +386,6 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .category-row { grid-template-columns: 32px 1fr; padding: 10px; }
   .task-row { grid-template-columns: 1fr auto; }
   .task-checks { grid-column: 1 / -1; }
-  .task-finding header { flex-wrap: wrap; }
-  .task-finding header strong { flex: 1 1 150px; white-space: normal; }
-  .task-finding time { width: 100%; margin-left: 0; }
   .task-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .source-event-head, .source-item { grid-template-columns: 72px minmax(0, 1fr); }
   .review-comment > span { display: grid; gap: 4px; }
