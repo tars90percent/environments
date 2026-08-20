@@ -55,6 +55,11 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.doesNotMatch(source, /axios|lark-cli|open\.feishu\.cn|webhook/i);
   assert.match(source, /环境与任务样本/);
   assert.match(source, /Environment & Task Samples/);
+  assert.match(source, /stats: \{ vendors: "家供应商", submissions: "次提交", tasks: "个任务" \}/);
+  assert.match(source, /stats: \{ vendors: "vendors", submissions: "submissions", tasks: "tasks" \}/);
+  assert.match(source, /const logicalTaskCount = useMemo/);
+  assert.match(source, /task\.stableKey/);
+  assert.doesNotMatch(source, /catalog\?\.totals\.taskVersions/);
   assert.match(source, /Submission history/);
   assert.match(source, /Original sources/);
   assert.match(source, /Open live source/);

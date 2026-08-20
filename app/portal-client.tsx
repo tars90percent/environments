@@ -20,7 +20,7 @@ const copy = {
     accountLabel: "研究员账户",
     signOut: "退出登录",
     title: "环境与任务样本",
-    stats: { vendors: "家供应商", submissions: "次提交", tasks: "个任务版本" },
+    stats: { vendors: "家供应商", submissions: "次提交", tasks: "个任务" },
     vendor: "供应商",
     submission: "次提交",
     submissions: "次提交",
@@ -201,7 +201,7 @@ const copy = {
     accountLabel: "Researcher account",
     signOut: "Sign out",
     title: "Environment & Task Samples",
-    stats: { vendors: "vendors", submissions: "submissions", tasks: "task versions" },
+    stats: { vendors: "vendors", submissions: "submissions", tasks: "tasks" },
     vendor: "Vendor",
     submission: "submission",
     submissions: "submissions",
@@ -590,6 +590,11 @@ export default function PortalClient({ user, initialView = "supply", localPrevie
   const vendors = useMemo(() => catalog?.vendors ?? [], [catalog]);
   const sampledVendors = useMemo(() => vendors.filter((vendor) => vendor.batches.length > 0), [vendors]);
   const contactedVendors = useMemo(() => vendors.filter((vendor) => vendor.batches.length === 0), [vendors]);
+  const logicalTaskCount = useMemo(() => new Set(vendors.flatMap((vendor) =>
+    vendor.batches.flatMap((batch) => batch.categories.flatMap((category) =>
+      category.tasks.map((task) => `${vendor.id}\u0000${task.stableKey}`),
+    )),
+  )).size, [vendors]);
   const t = copy[language];
 
   useEffect(() => {
@@ -674,7 +679,7 @@ export default function PortalClient({ user, initialView = "supply", localPrevie
           <div className="registry-stats">
             <span><strong>{catalog ? sampledVendors.length : "—"}</strong>{t.stats.vendors}</span>
             <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.submissions}</span>
-            <span><strong>{catalog?.totals.taskVersions ?? "—"}</strong>{t.stats.tasks}</span>
+            <span><strong>{catalog ? logicalTaskCount : "—"}</strong>{t.stats.tasks}</span>
           </div>
         </section> : <DemandHero language={language} />}
 
