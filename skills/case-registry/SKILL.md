@@ -70,7 +70,19 @@ In particular:
 - `record-task-finding`, `update-task-finding`, and `delete-task-finding` for plain CASE-owned working notes attached to a task version. A finding is only `{id, taskVersionId, finding}` when created and must not be used as a substitute for a check, assessment, trajectory, or researcher response.
 - `set-status`, `archive-vendor`, and `restore-vendor` for explicit lifecycle changes.
 - `lease-work` and `complete-work` for durable queued work.
-- `remove-submission` and `delete-artifact` for the purchased-delivery cleanup boundary or an unreferenced failed upload.
+- `remove-submission` for either an erroneous registry creation (`erroneous_registration`) or the purchased-delivery cleanup boundary (`purchased_delivery_handoff`). Inspect the exact submission first and supply the explicit disposition, actor, and reason. It removes dependent task versions, checks, findings, reviews, follow-ups, and queued work; reassigns a logical task when another version remains; detaches and records any surviving revision pointer; protects shared sources and artifacts; and preserves a removal tombstone. Never use it to hide a real failed, incomplete, superseded, or low-quality delivery.
+- `delete-artifact` for an unreferenced failed upload or another artifact already proven unreferenced.
+
+An erroneous-registration removal document has this shape:
+
+```json
+{
+  "batchId": "submission-id",
+  "disposition": "erroneous_registration",
+  "reason": "CASE registered the same inbound submission twice.",
+  "actor": "CASE"
+}
+```
 
 Run `case-registry operations` for the installed command schemas rather than guessing flags or payload fields.
 

@@ -294,6 +294,7 @@ export type ArtifactRecord = ArtifactInput & {
 
 export type SubmissionRemovalInput = {
   batchId: string;
+  disposition: "erroneous_registration" | "purchased_delivery_handoff";
   reason: string;
   actor: string;
 };
@@ -301,6 +302,11 @@ export type SubmissionRemovalInput = {
 export type SubmissionRemovalResult = {
   batchId: string;
   vendorId: string;
+  disposition: SubmissionRemovalInput["disposition"];
+  detachedRevisionBatchIds: string[];
+  removedTaskVersionIds: string[];
+  removedTaskIds: string[];
+  retainedTaskIds: string[];
   removedSourceEventIds: string[];
   retainedSourceEventIds: string[];
   unreferencedArtifacts: ArtifactRecord[];

@@ -955,19 +955,71 @@ export class PostgresRegistry implements RegistryRepository {
       const vendorId = batch.rows[0]?.vendor_id;
       if (!vendorId) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
 
-      const normalized = await client.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM (
-           SELECT id FROM registry_task_versions WHERE batch_id = $1
-           UNION ALL
-           SELECT id FROM registry_tasks WHERE first_seen_batch_id = $1
-         ) normalized_entities`,
+      const detachedRevisions = await client.query<{ id: string }>(
+        `UPDATE registry_submission_batches
+         SET revises_batch_id = NULL, updated_at = now()
+         WHERE revises_batch_id = $1
+         RETURNING id`,
         [input.batchId],
       );
-      if (Number(normalized.rows[0]?.count ?? 0) > 0) {
-        throw new RegistryConflictError(
-          `Submission ${input.batchId} has normalized task records and cannot be removed by the sample-only cleanup`,
+      const detachedRevisionBatchIds = detachedRevisions.rows.map((row) => row.id).sort();
+      for (const batchId of detachedRevisionBatchIds) {
+        await this.insertStatusEvent(client, "submission_batch", batchId, "submission.revision_reference_removed", input.actor, {
+          disposition: input.disposition,
+          reason: input.reason,
+          removedSubmissionId: input.batchId,
+        });
+      }
+
+      const taskVersions = await client.query<{ id: string; task_id: string; artifact_id: string | null }>(
+        `SELECT id, task_id, artifact_id
+         FROM registry_task_versions
+         WHERE batch_id = $1
+         FOR UPDATE`,
+        [input.batchId],
+      );
+      const removedTaskVersionIds = taskVersions.rows.map((row) => row.id).sort();
+      const firstSeenTasks = await client.query<{ id: string; replacement_batch_id: string | null }>(
+        `SELECT t.id,
+                (
+                  SELECT tv.batch_id
+                  FROM registry_task_versions tv
+                  JOIN registry_submission_batches replacement ON replacement.id = tv.batch_id
+                  WHERE tv.task_id = t.id AND tv.batch_id <> $1
+                  ORDER BY replacement.submission_date, tv.created_at, tv.id
+                  LIMIT 1
+                ) AS replacement_batch_id
+         FROM registry_tasks t
+         WHERE t.first_seen_batch_id = $1
+         FOR UPDATE OF t`,
+        [input.batchId],
+      );
+      const removedTaskIds = firstSeenTasks.rows
+        .filter((row) => !row.replacement_batch_id)
+        .map((row) => row.id)
+        .sort();
+      for (const task of firstSeenTasks.rows) {
+        if (!task.replacement_batch_id) continue;
+        await client.query(
+          "UPDATE registry_tasks SET first_seen_batch_id = $2, updated_at = now() WHERE id = $1",
+          [task.id, task.replacement_batch_id],
         );
       }
+      const affectedTaskIds = [...new Set([
+        ...taskVersions.rows.map((row) => row.task_id),
+        ...firstSeenTasks.rows.map((row) => row.id),
+      ])].sort();
+      const retainedTaskIds = affectedTaskIds.filter((id) => !removedTaskIds.includes(id));
+      const trajectoryArtifacts = removedTaskVersionIds.length ? await client.query<{ id: string }>(
+        `SELECT artifact_id AS id
+         FROM registry_trajectories
+         WHERE task_version_id = ANY($1::text[]) AND artifact_id IS NOT NULL`,
+        [removedTaskVersionIds],
+      ) : { rows: [] as Array<{ id: string }> };
+      const taskArtifactIds = [
+        ...taskVersions.rows.flatMap((row) => row.artifact_id ? [row.artifact_id] : []),
+        ...trajectoryArtifacts.rows.map((row) => row.id),
+      ];
 
       const linkedEvents = await client.query<{ id: string }>(
         `SELECT source_event_id AS id FROM registry_batch_source_events WHERE batch_id = $1
@@ -975,7 +1027,7 @@ export class PostgresRegistry implements RegistryRepository {
          SELECT source_event_id AS id FROM registry_submission_batches WHERE id = $1`,
         [input.batchId],
       );
-      const linkedEventIds = linkedEvents.rows.map((row) => row.id);
+      const linkedEventIds = linkedEvents.rows.map((row) => row.id).sort();
       const removableEvents = linkedEventIds.length ? await client.query<{ id: string }>(
         `SELECT se.id
          FROM registry_source_events se
@@ -990,13 +1042,26 @@ export class PostgresRegistry implements RegistryRepository {
            )
            AND NOT EXISTS (
              SELECT 1 FROM registry_vendor_events ve WHERE ve.source_event_ids ? se.id
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM registry_source_items si
+             JOIN registry_batch_source_items bsi ON bsi.source_item_id = si.id
+             WHERE si.source_event_id = se.id AND bsi.batch_id <> $2
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM registry_source_items si
+             JOIN registry_task_source_items tsi ON tsi.source_item_id = si.id
+             JOIN registry_task_versions tv ON tv.id = tsi.task_version_id
+             WHERE si.source_event_id = se.id AND tv.batch_id <> $2
            )`,
         [linkedEventIds, input.batchId],
       ) : { rows: [] as Array<{ id: string }> };
-      const removedSourceEventIds = removableEvents.rows.map((row) => row.id);
+      const removedSourceEventIds = removableEvents.rows.map((row) => row.id).sort();
       const retainedSourceEventIds = linkedEventIds.filter((id) => !removedSourceEventIds.includes(id));
 
-      const handoffOnlyEvents = retainedSourceEventIds.length ? await client.query<{ id: string }>(
+      const retainedOnlyEvents = retainedSourceEventIds.length ? await client.query<{ id: string }>(
         `SELECT se.id
          FROM registry_source_events se
          WHERE se.id = ANY($1::text[])
@@ -1007,11 +1072,24 @@ export class PostgresRegistry implements RegistryRepository {
            AND NOT EXISTS (
              SELECT 1 FROM registry_submission_batches other
              WHERE other.source_event_id = se.id AND other.id <> $2
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM registry_source_items si
+             JOIN registry_batch_source_items bsi ON bsi.source_item_id = si.id
+             WHERE si.source_event_id = se.id AND bsi.batch_id <> $2
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM registry_source_items si
+             JOIN registry_task_source_items tsi ON tsi.source_item_id = si.id
+             JOIN registry_task_versions tv ON tv.id = tsi.task_version_id
+             WHERE si.source_event_id = se.id AND tv.batch_id <> $2
            )`,
         [retainedSourceEventIds, input.batchId],
       ) : { rows: [] as Array<{ id: string }> };
-      const handoffOnlyEventIds = handoffOnlyEvents.rows.map((row) => row.id);
-      const cancelledEventIds = [...new Set([...removedSourceEventIds, ...handoffOnlyEventIds])];
+      const retainedOnlyEventIds = retainedOnlyEvents.rows.map((row) => row.id).sort();
+      const cancelledEventIds = [...new Set([...removedSourceEventIds, ...retainedOnlyEventIds])];
 
       const sourceItems = cancelledEventIds.length ? await client.query<{ id: string }>(
         "SELECT id FROM registry_source_items WHERE source_event_id = ANY($1::text[])",
@@ -1031,34 +1109,51 @@ export class PostgresRegistry implements RegistryRepository {
          WHERE source_event_id = ANY($1::text[]) AND artifact_id IS NOT NULL`,
         [removedSourceEventIds],
       ) : { rows: [] as Array<{ id: string }> };
-      const candidateArtifactIds = candidateArtifacts.rows.map((row) => row.id);
+      const candidateArtifactIds = [...new Set([
+        ...candidateArtifacts.rows.map((row) => row.id),
+        ...taskArtifactIds,
+      ])];
 
       await client.query(
         `DELETE FROM registry_work_items
          WHERE (entity_type = 'submission_batch' AND entity_id = $1)
             OR (entity_type = 'source_event' AND entity_id = ANY($2::text[]))
-            OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))`,
-        [input.batchId, cancelledEventIds, sourceItemIds],
+            OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))
+            OR (entity_type = 'task_version' AND entity_id = ANY($4::text[]))`,
+        [input.batchId, cancelledEventIds, sourceItemIds, removedTaskVersionIds],
       );
       await client.query(
         `DELETE FROM registry_status_events
          WHERE (entity_type = 'submission_batch' AND entity_id = $1)
             OR (entity_type = 'source_event' AND entity_id = ANY($2::text[]))
-            OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))`,
-        [input.batchId, removedSourceEventIds, removedSourceItemIds],
+            OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))
+            OR (entity_type = 'task_version' AND entity_id = ANY($4::text[]))`,
+        [input.batchId, removedSourceEventIds, removedSourceItemIds, removedTaskVersionIds],
       );
-      if (handoffOnlyEventIds.length) {
-        await client.query(
-          `UPDATE registry_source_items
-           SET fetch_status = CASE WHEN fetch_status IN ('queued', 'fetching') THEN 'blocked' ELSE fetch_status END,
-               parse_status = CASE WHEN parse_status IN ('queued', 'parsing') THEN 'blocked' ELSE parse_status END,
-               metadata = metadata || $2::jsonb,
-               updated_at = now()
-           WHERE source_event_id = ANY($1::text[])`,
-          [handoffOnlyEventIds, json({ scopeBoundary: "purchased_delivery_handed_off", handoffReason: input.reason })],
-        );
-        for (const sourceEventId of handoffOnlyEventIds) {
-          await this.insertStatusEvent(client, "source_event", sourceEventId, "source.handed_off", input.actor, {
+      if (removedTaskVersionIds.length) {
+        await client.query("DELETE FROM registry_task_versions WHERE id = ANY($1::text[])", [removedTaskVersionIds]);
+      }
+      if (removedTaskIds.length) {
+        await client.query("DELETE FROM registry_tasks WHERE id = ANY($1::text[])", [removedTaskIds]);
+      }
+      if (retainedOnlyEventIds.length) {
+        const retainedSourceEventType = input.disposition === "purchased_delivery_handoff"
+          ? "source.handed_off"
+          : "source.retained_after_submission_removal";
+        if (input.disposition === "purchased_delivery_handoff") {
+          await client.query(
+            `UPDATE registry_source_items
+             SET fetch_status = CASE WHEN fetch_status IN ('queued', 'fetching') THEN 'blocked' ELSE fetch_status END,
+                 parse_status = CASE WHEN parse_status IN ('queued', 'parsing') THEN 'blocked' ELSE parse_status END,
+                 metadata = metadata || $2::jsonb,
+                 updated_at = now()
+             WHERE source_event_id = ANY($1::text[])`,
+            [retainedOnlyEventIds, json({ scopeBoundary: "purchased_delivery_handed_off", handoffReason: input.reason })],
+          );
+        }
+        for (const sourceEventId of retainedOnlyEventIds) {
+          await this.insertStatusEvent(client, "source_event", sourceEventId, retainedSourceEventType, input.actor, {
+            disposition: input.disposition,
             reason: input.reason,
             removedSubmissionId: input.batchId,
           });
@@ -1069,8 +1164,13 @@ export class PostgresRegistry implements RegistryRepository {
         await client.query("DELETE FROM registry_source_events WHERE id = ANY($1::text[])", [removedSourceEventIds]);
       }
       await this.insertStatusEvent(client, "removed_submission", input.batchId, "submission.removed", input.actor, {
+        disposition: input.disposition,
         reason: input.reason,
         vendorId,
+        detachedRevisionBatchIds,
+        removedTaskVersionIds,
+        removedTaskIds,
+        retainedTaskIds,
         removedSourceEventIds,
         retainedSourceEventIds,
       });
@@ -1090,6 +1190,11 @@ export class PostgresRegistry implements RegistryRepository {
       return {
         batchId: input.batchId,
         vendorId,
+        disposition: input.disposition,
+        detachedRevisionBatchIds,
+        removedTaskVersionIds,
+        removedTaskIds,
+        retainedTaskIds,
         removedSourceEventIds,
         retainedSourceEventIds,
         unreferencedArtifacts: unreferenced.rows.map(artifactFromRow),

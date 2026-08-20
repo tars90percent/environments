@@ -190,15 +190,23 @@ test("uses deterministic content-addressed object keys", () => {
   assert.throws(() => contentAddressedStorageKey("not-a-sha"));
 });
 
-test("requires an auditable operator and reason for removing a handed-off submission", () => {
+test("requires an explicit disposition, auditable operator, and reason for removing a submission", () => {
   const removal = {
     batchId: "vendor-one-purchased-delivery",
+    disposition: "purchased_delivery_handoff" as const,
     reason: "The purchased delivery moved to the downstream production-data pipeline.",
     actor: "TARS",
   };
   assert.deepEqual(parseSubmissionRemoval(removal), removal);
+  assert.equal(parseSubmissionRemoval({
+    ...removal,
+    disposition: "erroneous_registration",
+    reason: "CASE registered the same inbound submission twice.",
+  }).disposition, "erroneous_registration");
   assert.throws(() => parseSubmissionRemoval({ ...removal, reason: "" }), ValidationError);
   assert.throws(() => parseSubmissionRemoval({ ...removal, batchId: "unsafe/id" }), ValidationError);
+  assert.throws(() => parseSubmissionRemoval({ ...removal, disposition: "low_quality" }), ValidationError);
+  assert.throws(() => parseSubmissionRemoval({ ...removal, force: true }), ValidationError);
 });
 
 test("requires linked evidence to classify a legacy submission as an evaluation sample", () => {

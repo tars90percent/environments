@@ -326,8 +326,14 @@ export function parseArtifact(value: unknown): ArtifactInput {
 
 export function parseSubmissionRemoval(value: unknown): SubmissionRemovalInput {
   const input = object(value, "submission removal");
+  onlyKeys(input, new Set(["batchId", "disposition", "reason", "actor"]), "submission removal");
   return {
     batchId: identifier(input.batchId, "batchId"),
+    disposition: enumValue(
+      input.disposition,
+      new Set<SubmissionRemovalInput["disposition"]>(["erroneous_registration", "purchased_delivery_handoff"]),
+      "disposition",
+    ),
     reason: boundedString(input.reason, "reason", 5_000),
     actor: boundedString(input.actor, "actor", 500),
   };

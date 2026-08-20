@@ -67,6 +67,7 @@ The legacy [`数据采购` Base](https://vrfi1sk8a0.feishu.cn/base/X6nbbx8XnanJb
 - Keep source artifacts read-only. Derived task packages and extracted material are separate artifacts with explicit relations.
 - Use append-only events and explicit revision links. Never silently replace an older submission, task version, check, trajectory, assessment, or researcher response.
 - Task findings are plain CASE-owned working notes, not evidence classifications. A finding contains only words and may be updated or deleted through the validated registry operations; checks, trajectories, assessments, and researcher responses remain separate durable records.
+- A submission created in error may be hard-removed through the validated registry operation with disposition `erroneous_registration`, an identified actor, and a concrete reason. Preserve a removal tombstone, retain shared sources and artifacts, and never use this path to hide a real but failed, incomplete, superseded, or low-quality delivery.
 - If an upload succeeds but source registration fails, remove the object only when it remains unreferenced. Record failed-capture retries as new provenance-preserving attempts.
 
 ### Task interpretation and evidence

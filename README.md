@@ -97,6 +97,12 @@ registration. Each task version must cite an existing immutable `task_package`
 artifact and a source item linked to the submission. Identical requests are
 idempotent; changed task contents are new versions rather than replacements.
 
+If CASE created a submission record in error, `remove-submission` can hard-remove
+it with the explicit `erroneous_registration` disposition, an actor, and a
+reason. The operation preserves a tombstone and any shared sources, artifacts,
+task identities, or later submissions; it is not a substitute for recording a
+real delivery as failed, incomplete, superseded, or low quality.
+
 Deterministic results, heuristic assessments, vendor claims, and human research
 judgments remain distinct records within the completed registration.
 
