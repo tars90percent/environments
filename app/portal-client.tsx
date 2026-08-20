@@ -648,7 +648,7 @@ export default function PortalClient({ user, initialView = "supply", localPrevie
     setLanguage(next);
   }
 
-  return <div className="app-shell">
+  return <div className={`app-shell app-shell-${activeView}`}>
     <header className="global-header">
       <a aria-label="小环境" className="wordmark" href="#top"><Image alt="" height={40} priority src="/favicon.png" width={40} /></a>
       <nav aria-label={marketCopy[language].marketNav} className="market-switch">

@@ -113,7 +113,11 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.doesNotMatch(source, /format-stack|batch\.formats\.map/);
   assert.match(source, /vendorMain\.scrollTo\(\{ top: 0 \}\)/);
   assert.match(source, /vendorMain\.scrollIntoView\(\{ block: "start" \}\)/);
-  assert.match(styles, /\.portal-grid \{[^}]*height: calc\(100vh - 102px\)/);
+  assert.match(source, /className=\{`app-shell app-shell-\$\{activeView\}`\}/);
+  assert.match(styles, /@media \(min-width: 821px\)[\s\S]*\.app-shell-supply \{[^}]*height: 100dvh;[^}]*overflow: hidden/);
+  assert.match(styles, /\.app-shell-supply \.portal-grid \{[^}]*height: 100%;[^}]*min-height: 0/);
+  assert.match(styles, /\.sidebar-head \{[^}]*position: sticky;[^}]*top: 0/);
+  assert.doesNotMatch(styles, /height: calc\(100vh - 102px\)|min-height: 620px/);
   assert.match(styles, /\.vendor-main \{[^}]*overflow-y: auto/);
   assert.match(styles, /@media \(max-width: 820px\)[\s\S]*\.portal-grid \{[^}]*height: auto/);
   assert.match(source, /isExpanded \? "▴" : "▾"/);
