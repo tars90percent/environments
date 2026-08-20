@@ -2,6 +2,7 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { taskDatasetArchive, taskDatasetFilename, taskDatasetManifest, type DatasetPackage, type DatasetSubmission } from "../app/dataset-archive";
 
 interface Env {
   ASSETS: Fetcher;
@@ -46,6 +47,38 @@ const worker = {
       if (runtimeEnv[key]) process.env[key] = runtimeEnv[key];
     }
     const registryUrl = caseRegistryUrl(runtimeEnv);
+
+    const datasetDownloadMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/dataset-download$/);
+    if (datasetDownloadMatch?.[1]) {
+      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
+      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
+        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
+      }
+      try {
+        const submissionId = decodeURIComponent(datasetDownloadMatch[1]);
+        const upstream = await fetch(`${registryUrl}/v1/batches/${encodeURIComponent(submissionId)}`, {
+          headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
+        });
+        if (!upstream.ok) return registryErrorResponse(upstream, "dataset_unavailable");
+        const submission = await upstream.json() as DatasetSubmission;
+        const manifest = taskDatasetManifest(submission);
+        if (!manifest.tasks.length) return Response.json({ error: "dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
+        const archive = taskDatasetArchive(submission, (task) => fetchTaskPackage(task, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
+        return new Response(archive, {
+          status: 200,
+          headers: {
+            "content-type": "application/x-tar",
+            "content-disposition": `attachment; filename="${taskDatasetFilename(submission)}"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "x-case-task-count": String(manifest.tasks.length),
+          },
+        });
+      } catch {
+        return Response.json({ error: "dataset_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+      }
+    }
 
     const submissionReviewsMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/reviews$/);
     if (submissionReviewsMatch?.[1]) {
@@ -234,6 +267,18 @@ const worker = {
 };
 
 export default worker;
+
+async function fetchTaskPackage(task: DatasetPackage, registryUrl: string, catalogToken: string): Promise<Response> {
+  const signed = await fetch(`${registryUrl}/v1/artifacts/${encodeURIComponent(task.artifactId)}/download-url`, {
+    headers: { authorization: `Bearer ${catalogToken}`, accept: "application/json" },
+  });
+  if (!signed.ok) return signed;
+  const payload = await signed.json() as { url?: unknown };
+  if (typeof payload.url !== "string") throw new Error("CASE returned no task-package URL");
+  const downloadUrl = new URL(payload.url);
+  if (downloadUrl.protocol !== "https:") throw new Error("CASE returned an unsafe task-package URL");
+  return await fetch(downloadUrl, { headers: { accept: "application/octet-stream" } });
+}
 
 type SessionClaim = {
   openId?: unknown;

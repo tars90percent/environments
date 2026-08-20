@@ -50,6 +50,16 @@ const copy = {
     messageSnapshot: "下载消息快照",
     viewSource: "打开实时来源",
     downloadSnapshot: "下载留存副本",
+    dataset: {
+      title: "任务数据集",
+      note: "下载此提交中所有可用的精确任务包，包括待核验和需要修复的任务。压缩包内附任务状态、核验记录和内容哈希。",
+      packages: "个任务包",
+      withChecks: "个已有核验记录",
+      missing: "个尚无精确任务包",
+      download: "下载完整数据集",
+      empty: "当前没有可下载的标准化任务包。",
+      taskDownload: "下载任务包",
+    },
     mutable: "可变来源",
     captured: "抓取于",
     procurement: {
@@ -221,6 +231,16 @@ const copy = {
     messageSnapshot: "Download message snapshot",
     viewSource: "Open live source",
     downloadSnapshot: "Download captured copy",
+    dataset: {
+      title: "Task dataset",
+      note: "Download every exact task package available for this submission, including tasks still checking or needing fixes. Status, check records, and content hashes are included inside.",
+      packages: "task packages",
+      withChecks: "with recorded checks",
+      missing: "without an exact package",
+      download: "Download complete dataset",
+      empty: "No normalized task packages are currently available to download.",
+      taskDownload: "Download task package",
+    },
     mutable: "mutable source",
     captured: "captured",
     procurement: {
@@ -904,7 +924,7 @@ function ProcurementSummary({ summary, t, language }: { summary: CatalogProcurem
   </details>;
 }
 
-function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { batch: CatalogBatch; isExpanded: boolean; isLatest: boolean; onToggle(): void; t: UiCopy; language: Language }) {
+function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language, showReview = true, datasetHref, taskDownloadBase }: { batch: CatalogBatch; isExpanded: boolean; isLatest: boolean; onToggle(): void; t: UiCopy; language: Language; showReview?: boolean; datasetHref?: string; taskDownloadBase?: string }) {
   return <article className="batch-card">
     <button aria-expanded={isExpanded} className="batch-summary" onClick={onToggle} type="button">
       <span className="batch-date"><strong>{batch.date}</strong>{isLatest && <small>{t.latest}</small>}</span>
@@ -916,12 +936,36 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language }: { bat
 
     {isExpanded && <div className="batch-body">
       <div className="delta-block"><div className="delta-grid">{batch.delta.retained !== undefined && <span><strong>{batch.delta.retained}</strong><small>{t.delta.retained}</small></span>}<span><strong>{batch.delta.added}</strong><small>{t.delta.added}</small></span><span><strong>{batch.delta.removed}</strong><small>{t.delta.removed}</small></span>{batch.delta.changedFiles !== undefined && <span><strong>{batch.delta.changedFiles}</strong><small>{t.delta.changedFiles}</small></span>}</div><p>{batch.delta.note}</p></div>
+      <DatasetAccess batch={batch} datasetHref={datasetHref} t={t} />
       <div className="batch-section-head"><h4>{t.taskCategories}</h4><span>{batch.categories.length} {batch.categories.length === 1 ? t.category : t.categories}</span></div>
-      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} language={language} task={task} t={t} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
+      <div className="category-table">{batch.categories.map((category) => <section key={category.id} className="category-row"><span className="category-count">{category.count}</span><span className="category-copy"><strong>{category.name}</strong><small>{category.description}</small></span><div className="task-list">{category.tasks.length ? category.tasks.map((task) => <TaskRow key={task.id} language={language} task={task} t={t} taskDownloadBase={taskDownloadBase} />) : <span className="empty-task-list">{t.noTasks}</span>}</div></section>)}</div>
       <SubmissionSources sourceEvents={batch.sourceEvents ?? []} t={t} language={language} />
-      <SubmissionReviewPanel batch={batch} t={t} language={language} />
+      {showReview && <SubmissionReviewPanel batch={batch} t={t} language={language} />}
     </div>}
   </article>;
+}
+
+function DatasetAccess({ batch, t, datasetHref }: { batch: CatalogBatch; t: UiCopy; datasetHref?: string }) {
+  const tasks = batch.categories.flatMap((category) => category.tasks);
+  const packaged = tasks.filter((task) => task.artifactId);
+  const withChecks = packaged.filter((task) => taskCheckCount(task) > 0).length;
+  const missing = tasks.length - packaged.length;
+
+  return <section className="dataset-access" aria-labelledby={`dataset-${batch.id}`}>
+    <div className="dataset-copy">
+      <span>CASE DATASET</span>
+      <h4 id={`dataset-${batch.id}`}>{t.dataset.title}</h4>
+      <p>{packaged.length ? t.dataset.note : t.dataset.empty}</p>
+    </div>
+    <div className="dataset-metrics">
+      <span><strong>{packaged.length}</strong><small>{t.dataset.packages}</small></span>
+      <span><strong>{withChecks}</strong><small>{t.dataset.withChecks}</small></span>
+      {missing > 0 && <span className="dataset-missing"><strong>{missing}</strong><small>{t.dataset.missing}</small></span>}
+    </div>
+    {packaged.length
+      ? <a href={datasetHref ?? `/api/submissions/${encodeURIComponent(batch.id)}/dataset-download`}>{t.dataset.download}</a>
+      : <span className="dataset-disabled">{t.dataset.download}</span>}
+  </section>;
 }
 
 function SubmissionReviewPanel({ batch, t, language }: { batch: CatalogBatch; t: UiCopy; language: Language }) {
@@ -1031,7 +1075,7 @@ function SourceEvent({ event, t, language }: { event: CatalogSourceEvent; t: UiC
   return <section className="source-event">
     <header className="source-event-head">
       <span className="source-channel">{event.role ? t.role[event.role] : event.channel.replace("_", " ")}</span>
-      <span><strong>{event.sender ?? t.senderUnknown}</strong><small>{formatTimestamp(event.receivedAt, language)}</small>{originalUrl && <code className="source-locator" title={originalUrl}>{formatSourceLocator(originalUrl)}</code>}</span>
+      <span><strong>{event.sender ?? t.senderUnknown}</strong><small suppressHydrationWarning>{formatTimestamp(event.receivedAt, language)}</small>{originalUrl && <code className="source-locator" title={originalUrl}>{formatSourceLocator(originalUrl)}</code>}</span>
       <span className="source-actions">{originalUrl && <a href={originalUrl} rel="noreferrer" target="_blank">{t.openOriginal}</a>}{event.rawArtifactId && <a href={`/api/artifacts/${encodeURIComponent(event.rawArtifactId)}/download`}>{t.messageSnapshot}</a>}</span>
     </header>
     <div className="source-items">{event.items.length ? event.items.map((item) => <SourceItem key={item.id} item={item} t={t} language={language} />) : <div className="source-empty">{t.noLinks}</div>}</div>
@@ -1043,16 +1087,19 @@ function SourceItem({ item, t, language }: { item: CatalogSourceItem; t: UiCopy;
   const captured = item.capturedAt ? ` · ${t.captured} ${formatTimestamp(item.capturedAt, language)}` : "";
   return <div className="source-item">
     <span className="source-kind">{item.kind.replace("_", " ")}</span>
-    <span className="source-name"><strong>{item.displayName}</strong><small>{t.fetch[item.fetchStatus as SourceFetchStatus]} · {t.parse[item.parseStatus as SourceParseStatus]}{item.mutable ? ` · ${t.mutable}` : ""}{captured}</small>{originalUrl && <code className="source-locator" title={originalUrl}>{formatSourceLocator(originalUrl)}</code>}</span>
+    <span className="source-name"><strong>{item.displayName}</strong><small suppressHydrationWarning>{t.fetch[item.fetchStatus as SourceFetchStatus]} · {t.parse[item.parseStatus as SourceParseStatus]}{item.mutable ? ` · ${t.mutable}` : ""}{captured}</small>{originalUrl && <code className="source-locator" title={originalUrl}>{formatSourceLocator(originalUrl)}</code>}</span>
     <span className="source-actions">{originalUrl && <a href={originalUrl} rel="noreferrer" target="_blank">{t.viewSource}</a>}{item.artifactId && <a href={`/api/artifacts/${encodeURIComponent(item.artifactId)}/download`}>{t.downloadSnapshot}</a>}</span>
   </div>;
 }
 
-function TaskRow({ task, t, language }: { task: CatalogTask; t: UiCopy; language: Language }) {
-  const checks = task.checks.pass + task.checks.fail + task.checks.blocked + task.checks.notRun;
+function TaskRow({ task, t, language, taskDownloadBase }: { task: CatalogTask; t: UiCopy; language: Language; taskDownloadBase?: string }) {
+  const checks = taskCheckCount(task);
   const findings = task.findings ?? [];
+  const downloadHref = taskDownloadBase
+    ? `${taskDownloadBase}/${encodeURIComponent(task.stableKey)}`
+    : `/api/artifacts/${encodeURIComponent(task.artifactId ?? "")}/download`;
   return <div className="task-record">
-    <div className="task-row"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></div>
+    <div className="task-row"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><span className="task-actions">{task.artifactId && <a href={downloadHref}>{t.dataset.taskDownload}</a>}<StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></span></div>
     {findings.length > 0 && <details className="task-findings">
       <summary><span>{t.findings.title}</span><i>{findings.length}</i></summary>
       <div className="task-finding-list">{findings.map((finding) => <article className="task-finding" key={finding.id}>
@@ -1065,12 +1112,123 @@ function TaskRow({ task, t, language }: { task: CatalogTask; t: UiCopy; language
   </div>;
 }
 
+function taskCheckCount(task: CatalogTask): number {
+  return task.checks.pass + task.checks.fail + task.checks.blocked + task.checks.notRun;
+}
+
 function StatusBadge({ status, label }: { status: WorkflowStatus; label: string }) {
   return <span className={`status-badge status-${status}`}>{label}</span>;
 }
 
 function StateCard({ value }: { value: { eyebrow: string; title: string; body: string } }) {
   return <section className="state-card"><p className="eyebrow">{value.eyebrow}</p><h2>{value.title}</h2><p>{value.body}</p></section>;
+}
+
+export function LocalDownloadPreview() {
+  const previewBatch: CatalogBatch = {
+    id: "preview-submission",
+    date: "2026-08-20",
+    label: "August environment sample",
+    source: "Captured vendor delivery",
+    taskCount: 3,
+    declaredTaskCount: 3,
+    formats: ["harbor"],
+    workflowStatus: "checking",
+    catalogVisibility: "available",
+    revisesBatchId: null,
+    delta: { added: 3, removed: 0, note: "The original delivery and three normalized task packages are retained as separate immutable artifacts." },
+    sourceEvents: [{
+      id: "preview-source-event",
+      role: "primary",
+      channel: "upload",
+      externalRef: "https://example.com/vendor-delivery",
+      sender: "Vendor delivery",
+      receivedAt: "2026-08-20T09:30:00.000Z",
+      rawArtifactId: "artifact:preview:raw",
+      items: [{
+        id: "preview-source-archive",
+        kind: "archive",
+        displayName: "original-vendor-payload.zip",
+        locator: null,
+        mediaType: "application/zip",
+        artifactId: "artifact:preview:archive",
+        contentSha256: "4b3f4b4bf638bb0c23f9f5297f08f86b4c68f0afed4df137e0f7c77f2b7c842d",
+        sizeBytes: 128400000,
+        fetchStatus: "snapshotted",
+        parseStatus: "parsed",
+        mutable: false,
+        capturedAt: "2026-08-20T09:31:00.000Z",
+        metadata: {},
+      }],
+      relations: [],
+    }],
+    categories: [{
+      id: "software-repair",
+      name: "Software repair",
+      description: "Harbor-compatible repository repair tasks.",
+      count: 2,
+      examples: [],
+      tasks: [
+        {
+          id: "preview-task-version-1",
+          stableKey: "repair-cache-invalidation",
+          title: "Repair cache invalidation across workers",
+          summary: "Exact normalized task package",
+          sourcePath: "tasks/repair-cache-invalidation",
+          format: "harbor",
+          artifactId: "artifact:preview:task-1",
+          contentSha256: "92dae5373dcfb784388bdf42f6b349b8fdd37975930d17e2b76e6abe35e447fe",
+          workflowStatus: "ready_for_research",
+          catalogVisibility: "available",
+          checks: { pass: 6, fail: 0, blocked: 0, notRun: 0 },
+          sourceItemIds: ["preview-source-archive"],
+        },
+        {
+          id: "preview-task-version-2",
+          stableKey: "audit-release-manifest",
+          title: "Audit release manifest provenance",
+          summary: "Exact normalized task package",
+          sourcePath: "tasks/audit-release-manifest",
+          format: "harbor",
+          artifactId: "artifact:preview:task-2",
+          contentSha256: "1dcc45e6b4a614f6b3221b388a453d3770d170829a06a18afb5f23bb94e6d6a6",
+          workflowStatus: "needs_vendor_fix",
+          catalogVisibility: "log_only",
+          checks: { pass: 4, fail: 2, blocked: 0, notRun: 0 },
+          sourceItemIds: ["preview-source-archive"],
+        },
+      ],
+    }, {
+      id: "computer-use",
+      name: "Computer use",
+      description: "Multi-step workflows in a simulated browser environment.",
+      count: 1,
+      examples: [],
+      tasks: [{
+        id: "preview-task-version-3",
+        stableKey: "compare-quarterly-reports",
+        title: "Compare quarterly reports across sources",
+        summary: "Exact normalized task package",
+        sourcePath: "tasks/compare-quarterly-reports",
+        format: "harbor",
+        artifactId: "artifact:preview:task-3",
+        contentSha256: "52af82287d22f033058a35a3e22a06f32fbc9e885fe71b5e11ddc979acb98e79",
+        workflowStatus: "checking",
+        catalogVisibility: "available",
+        checks: { pass: 3, fail: 0, blocked: 3, notRun: 0 },
+        sourceItemIds: ["preview-source-archive"],
+      }],
+    }],
+  };
+
+  return <main className="local-preview">
+    <section>
+      <p className="eyebrow">LOCAL UI PREVIEW</p>
+      <h1>Submission downloads</h1>
+      <p>Original delivery, complete task dataset, and exact per-task packages.</p>
+      <div className="batch-list"><BatchCard batch={previewBatch} datasetHref="/local-preview/dataset-download" isExpanded isLatest language="en" onToggle={() => {}} showReview={false} t={copy.en} taskDownloadBase="/local-preview/task-package" /></div>
+    </section>
+  </main>;
 }
 
 function safeExternalUrl(value: string | null) {
@@ -1085,12 +1243,12 @@ function safeExternalUrl(value: string | null) {
 
 function formatTimestamp(value: string, language: Language) {
   const parsed = new Date(value);
-  return Number.isNaN(parsed.valueOf()) ? value : new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+  return Number.isNaN(parsed.valueOf()) ? value : new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(parsed);
 }
 
 function formatDate(value: string, language: Language) {
   const parsed = new Date(value);
-  return Number.isNaN(parsed.valueOf()) ? value : new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium" }).format(parsed);
+  return Number.isNaN(parsed.valueOf()) ? value : new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeZone: "Asia/Shanghai" }).format(parsed);
 }
 
 function formatSourceLocator(value: string) {

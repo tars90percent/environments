@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import test, { after, before } from "node:test";
 
 const authEnv = {
@@ -58,6 +59,10 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /Original sources/);
   assert.match(source, /Open live source/);
   assert.match(source, /Download captured copy/);
+  assert.match(source, /Download complete dataset/);
+  assert.match(source, /Download task package/);
+  assert.match(source, /task\.artifactId && <a href=/);
+  assert.match(source, /taskDownloadBase="\/local-preview\/task-package"/);
   assert.match(source, /Researcher response/);
   assert.match(source, /Interested in the full set/);
   assert.match(source, /Selected task categories/);
@@ -114,6 +119,9 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(worker, /CASE_REGISTRY_REVIEW_TOKEN/);
   assert.match(worker, /CASE_REGISTRY_UPLOAD_TOKEN/);
   assert.match(worker, /hasPortalSession/);
+  assert.match(worker, /taskDatasetArchive/);
+  assert.match(worker, /dataset-download/);
+  assert.match(worker, /\/api\\\/artifacts\\\/\(\[\^\/\]\+\)\\\/download/);
   assert.match(worker, /url\.pathname === ["']\/api\/uploads["']/);
   assert.match(worker, /method:\s*["']PUT["']/);
   assert.doesNotMatch(worker, /method:\s*["']PATCH|method:\s*["']DELETE/i);
@@ -122,3 +130,122 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(worker, /openId:\s*session\.openId/);
   assert.doesNotMatch(source, /upstream|recommendation|usable yield/i);
 });
+
+test("downloads a dataset containing every available task package", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("dataset-test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const submission = {
+    id: "submission-1",
+    date: "2026-08-20",
+    label: "Vendor sample",
+    source: "Captured delivery",
+    formats: ["harbor"],
+    categories: [{
+      id: "category-1",
+      name: "Example",
+      tasks: [
+        task("task-ready", "ready", "ready_for_research", "artifact:ready"),
+        task("task-checking", "checking", "checking", "artifact:checking"),
+        task("task-fix", "needs-fix", "needs_vendor_fix", "artifact:fix"),
+      ],
+    }],
+  };
+  const packageBytes = new Map([
+    ["artifact:ready", new TextEncoder().encode("ready task package")],
+    ["artifact:checking", new TextEncoder().encode("checking task package")],
+    ["artifact:fix", new TextEncoder().encode("needs-fix task package")],
+  ]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(target);
+    if (url.href === "https://case.example/v1/batches/submission-1") return Response.json(submission);
+    const signed = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);
+    if (url.origin === "https://case.example" && signed?.[1]) {
+      const artifactId = decodeURIComponent(signed[1]);
+      return Response.json({ url: `https://objects.example/package?artifact=${encodeURIComponent(artifactId)}` });
+    }
+    if (url.origin === "https://objects.example") {
+      const body = packageBytes.get(url.searchParams.get("artifact"));
+      return body ? new Response(body, { headers: { "content-length": String(body.length), "content-type": "application/gzip" } }) : new Response("Not found", { status: 404 });
+    }
+    throw new Error(`Unexpected fetch: ${url.href}`);
+  };
+
+  try {
+    const response = await worker.fetch(
+      new Request("http://localhost/api/submissions/submission-1/dataset-download", { headers: { cookie: sessionCookie() } }),
+      {
+        ...authEnv,
+        CASE_REGISTRY_URL: "https://case.example",
+        CASE_REGISTRY_CATALOG_TOKEN: "catalog-test",
+        ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+      },
+      { waitUntil() {}, passThroughOnException() {} },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/x-tar");
+    assert.match(response.headers.get("content-disposition"), /task-dataset\.tar/);
+    assert.equal(response.headers.get("x-case-task-count"), "3");
+
+    const entries = tarEntries(new Uint8Array(await response.arrayBuffer()));
+    assert.deepEqual([...entries.keys()], [
+      "README.md",
+      "manifest.json",
+      "tasks/0001-ready.tar.gz",
+      "tasks/0002-checking.tar.gz",
+      "tasks/0003-needs-fix.tar.gz",
+    ]);
+    assert.equal(new TextDecoder().decode(entries.get("tasks/0001-ready.tar.gz")), "ready task package");
+    assert.equal(new TextDecoder().decode(entries.get("tasks/0002-checking.tar.gz")), "checking task package");
+    assert.equal(new TextDecoder().decode(entries.get("tasks/0003-needs-fix.tar.gz")), "needs-fix task package");
+    const manifest = JSON.parse(new TextDecoder().decode(entries.get("manifest.json")));
+    assert.equal(manifest.selection.statusPolicy, "all_statuses_included");
+    assert.deepEqual(manifest.tasks.map((entry) => entry.workflowStatus), ["ready_for_research", "checking", "needs_vendor_fix"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function task(id, stableKey, workflowStatus, artifactId) {
+  return {
+    id,
+    stableKey,
+    title: stableKey,
+    sourcePath: `tasks/${stableKey}`,
+    format: "harbor",
+    artifactId,
+    contentSha256: "a".repeat(64),
+    workflowStatus,
+    checks: { pass: 1, fail: 0, blocked: 0, notRun: 0 },
+  };
+}
+
+function sessionCookie() {
+  const payload = Buffer.from(JSON.stringify({
+    openId: "ou_test",
+    unionId: null,
+    tenantKey: authEnv.FEISHU_ALLOWED_TENANT_KEY,
+    name: "Test Researcher",
+    expiresAt: Date.now() + 60_000,
+  })).toString("base64url");
+  const signature = createHmac("sha256", authEnv.PORTAL_SESSION_SECRET).update(payload).digest("base64url");
+  return `env_portal_session=${payload}.${signature}`;
+}
+
+function tarEntries(bytes) {
+  const entries = new Map();
+  let offset = 0;
+  while (offset + 512 <= bytes.length) {
+    const header = bytes.subarray(offset, offset + 512);
+    const name = new TextDecoder().decode(header.subarray(0, 100)).replace(/\0.*$/, "");
+    if (!name) break;
+    const sizeText = new TextDecoder().decode(header.subarray(124, 136)).replace(/\0.*$/, "").trim();
+    const size = Number.parseInt(sizeText || "0", 8);
+    const start = offset + 512;
+    entries.set(name, bytes.slice(start, start + size));
+    offset = start + Math.ceil(size / 512) * 512;
+  }
+  return entries;
+}

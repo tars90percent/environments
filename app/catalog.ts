@@ -37,6 +37,8 @@ export type CatalogTask = {
   summary: string | null;
   sourcePath: string | null;
   format: string;
+  artifactId: string | null;
+  contentSha256: string | null;
   workflowStatus: WorkflowStatus;
   catalogVisibility: CatalogVisibility;
   checks: { pass: number; fail: number; blocked: number; notRun: number };
