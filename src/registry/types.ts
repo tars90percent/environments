@@ -777,13 +777,32 @@ export type SampleCatalogTask = {
   findings: SampleCatalogFinding[];
 };
 
+export type SampleCatalogSourceItem = {
+  id: string;
+  kind: string;
+  displayName: string;
+  locator: string | null;
+  artifactId: string | null;
+  contentSha256: string | null;
+};
+
+export type SampleCatalogSourceEvent = {
+  id: string;
+  channel: string;
+  externalRef: string;
+  sender: string | null;
+  receivedAt: string;
+  rawArtifactId: string | null;
+  items: SampleCatalogSourceItem[];
+};
+
 export type SampleCatalogSubmission = {
   id: string;
   date: string;
   label: string;
   source: string;
   formats: SampleTaskFormat[];
-  sourceEvents: CatalogSourceEvent[];
+  sourceEvents: SampleCatalogSourceEvent[];
   tasks: SampleCatalogTask[];
 };
 

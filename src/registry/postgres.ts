@@ -2332,7 +2332,7 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot> {
-    const [vendorsResult, submissionsResult, tasksResult, checksResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult] = await Promise.all([
+    const [vendorsResult, submissionsResult, tasksResult, checksResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
       this.pool.query<VendorRow>(
         `SELECT id, name, short, description
          FROM registry_vendors
@@ -2396,15 +2396,6 @@ export class PostgresRegistry implements RegistryRepository {
          WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
          ORDER BY si.source_event_id, si.created_at, si.id`,
       ),
-      this.pool.query<SourceRelationRow>(
-        `SELECT DISTINCT sr.source_event_id, sr.from_item_id, sr.to_item_id, sr.relation, sr.position,
-                sr.created_at
-         FROM registry_source_relations sr
-         JOIN registry_batch_source_events bse ON bse.source_event_id = sr.source_event_id
-         JOIN registry_submission_batches b ON b.id = bse.batch_id
-         WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
-         ORDER BY sr.source_event_id, sr.position NULLS LAST, sr.created_at`,
-      ),
     ]);
 
     const checksByTask = group(checksResult.rows, (row) => row.task_id);
@@ -2446,19 +2437,23 @@ export class PostgresRegistry implements RegistryRepository {
     }
 
     const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => row.source_event_id);
-    const sourceRelationsByEvent = group(sourceRelationsResult.rows, (row) => row.source_event_id);
-    const sourceEventsBySubmission = new Map<string, CatalogSourceEvent[]>();
+    const sourceEventsBySubmission = new Map<string, SampleCatalogSubmission["sourceEvents"]>();
     for (const row of sourceEventsResult.rows) {
       append(sourceEventsBySubmission, row.batch_id, {
         id: row.id,
-        role: row.role,
         channel: row.channel,
         externalRef: row.external_ref,
         sender: row.sender,
         receivedAt: new Date(row.received_at).toISOString(),
         rawArtifactId: row.raw_artifact_id,
-        items: (sourceItemsByEvent.get(row.id) ?? []).map(sourceItemFromRow),
-        relations: (sourceRelationsByEvent.get(row.id) ?? []).map(sourceRelationFromRow),
+        items: (sourceItemsByEvent.get(row.id) ?? []).map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          displayName: item.display_name,
+          locator: item.locator,
+          artifactId: item.artifact_id,
+          contentSha256: item.content_sha256,
+        })),
       });
     }
 
