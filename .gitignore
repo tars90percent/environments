@@ -2,7 +2,7 @@
 .codex-*/
 .lark-slides/
 
-# Legacy standalone checkouts retained locally during the monorepo migration.
+# Legacy standalone checkout names must not be reintroduced into the monorepo.
 /env-portal-proto/
 /feishu-codex-agent/
 

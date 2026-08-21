@@ -17,7 +17,7 @@ The service currently has a deliberately narrow chat-transport boundary:
 
 - receives direct messages through the configured Feishu app;
 - keeps a persistent Codex conversation for each Feishu chat;
-- gives every Codex thread the source-controlled project guide in `AGENTS.md`;
+- gives every Codex thread the monorepo's source-controlled root guide in `AGENTS.md`;
 - passes each message directly to the underlying Codex thread without an
   application-written prompt;
 - replies as the app bot;
@@ -29,7 +29,7 @@ The login makes user-context APIs available to `lark-cli`. The actual Codex tool
 permissions remain controlled separately by the container and `CODEX_*`
 settings below.
 
-At startup, CASE copies the checked-in `AGENTS.md` into `AGENT_WORKSPACE`. This
+At startup, CASE copies the monorepo's root `AGENTS.md` into `AGENT_WORKSPACE`. This
 keeps the persistent Codex workspace current across new and resumed Feishu
 threads. Update the source-controlled guide and redeploy CASE to change these
 instructions; do not hand-edit the runtime copy.
@@ -45,6 +45,7 @@ instructions; do not hand-edit the runtime copy.
 ## Run locally
 
 ```sh
+cd apps/case
 npm install
 cp .env.example .env
 npm run check
@@ -143,8 +144,8 @@ flow. Authentication is ordinary agent work rather than a special harness
 command: ask the agent whether it can access a calendar, document, mailbox, or
 other Feishu resource, then follow its explanation.
 
-CASE's complete sample-processing policy lives in the source-controlled
-`AGENTS.md`. The registry CLI remains self-describing: run
+CASE's complete sample-processing policy lives in the source-controlled root
+[`AGENTS.md`](../../AGENTS.md). The registry CLI remains self-describing: run
 `case-registry operations` for current command schemas rather than relying on a
 separate CASE-specific skill package.
 

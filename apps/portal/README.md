@@ -32,6 +32,7 @@ quality, status, scoring, recommendation, or review workflow.
 ## Run locally
 
 ```bash
+cd apps/portal
 npm ci
 cp .env.example .env.local
 npm run dev

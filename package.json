@@ -1,0 +1,12 @@
+{
+  "name": "tars-environments",
+  "private": true,
+  "scripts": {
+    "build:case": "npm --prefix apps/case run build",
+    "build:portal": "npm --prefix apps/portal run build",
+    "check:case": "npm --prefix apps/case run check",
+    "lint:portal": "npm --prefix apps/portal run lint",
+    "test:case": "npm --prefix apps/case test",
+    "test:portal": "npm --prefix apps/portal test"
+  }
+}

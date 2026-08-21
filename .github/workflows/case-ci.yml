@@ -1,10 +1,20 @@
-name: CI
+name: CASE CI
 
 on:
   push:
     branches:
       - main
+    paths:
+      - AGENTS.md
+      - apps/case/**
+      - packages/**
+      - .github/workflows/case-ci.yml
   pull_request:
+    paths:
+      - AGENTS.md
+      - apps/case/**
+      - packages/**
+      - .github/workflows/case-ci.yml
 
 permissions:
   contents: read
@@ -12,7 +22,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
@@ -22,18 +32,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: apps/case/package-lock.json
 
       - name: Install dependencies
+        working-directory: apps/case
         run: npm ci
 
       - name: Type-check
+        working-directory: apps/case
         run: npm run check
 
       - name: Test
+        working-directory: apps/case
         run: npm test
 
       - name: Build
+        working-directory: apps/case
         run: npm run build
 
       - name: Build deployment image
-        run: docker build --tag feishu-codex-agent:test .
+        run: docker build --file apps/case/Dockerfile --tag case:test .

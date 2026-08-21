@@ -1,0 +1,45 @@
+name: Portal CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/portal/**
+      - packages/**
+      - .github/workflows/portal-ci.yml
+  pull_request:
+    paths:
+      - apps/portal/**
+      - packages/**
+      - .github/workflows/portal-ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/portal/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/portal
+        run: npm ci
+
+      - name: Test
+        working-directory: apps/portal
+        run: npm test
+
+      - name: Lint
+        working-directory: apps/portal
+        run: npm run lint

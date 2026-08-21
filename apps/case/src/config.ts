@@ -1,5 +1,6 @@
 import { loadEnvFile } from "node:process";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 try {
   loadEnvFile();
@@ -36,6 +37,7 @@ function choice<const T extends readonly string[]>(
 }
 
 const stateFile = resolve(process.env.AGENT_STATE ?? ".data/state.json");
+const rootAgentInstructionsFile = fileURLToPath(new URL("../../../AGENTS.md", import.meta.url));
 
 function optionalNumber(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
@@ -51,7 +53,7 @@ export const config = {
   allowAllUsers: bool("ALLOW_ALL_USERS", false),
   allowedUserIds: csv("ALLOWED_USER_IDS"),
   workspace: resolve(process.env.AGENT_WORKSPACE ?? ".data/workspace"),
-  agentInstructionsFile: resolve(process.env.AGENT_INSTRUCTIONS_FILE ?? "AGENTS.md"),
+  agentInstructionsFile: resolve(process.env.AGENT_INSTRUCTIONS_FILE ?? rootAgentInstructionsFile),
   stateFile,
   codexSandboxMode: choice(
     "CODEX_SANDBOX_MODE",

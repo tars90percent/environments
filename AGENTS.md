@@ -1,6 +1,6 @@
 # Environment and Task Sample Operations
 
-This workspace collects and stores sample RL-task deliveries from vendors. Its job is deliberately narrow: preserve each original submission and its provenance, parse clearly identifiable tasks or traces, classify the material as Harbor or non-Harbor, and run four checks on Harbor tasks.
+This workspace collects and stores sample RL-task deliveries from vendors. Its job is deliberately narrow: preserve each original submission and its arrival provenance, parse clearly identifiable tasks or traces, classify the material as Harbor or non-Harbor, and run four checks on Harbor tasks.
 
 Do not expand this workflow into sample-quality analysis, task repair, format conversion, model evaluation, procurement advice, or research recommendations.
 
@@ -100,11 +100,13 @@ Each Harbor run must occur in a disposable Modal sandbox without CASE, portal, F
 
 Before claiming Harbor checking is available, verify the live Harbor and Modal versions, required Modal credential presence, Modal authentication, and wrapper configuration without exposing secrets.
 
-## Repository boundary
+## Repository and instruction boundary
 
-The CASE source is the private repository [`tars90percent/feishu-codex-agent`](https://github.com/tars90percent/feishu-codex-agent), and the portal source is [`tars90percent/env-portal-proto`](https://github.com/tars90percent/env-portal-proto). Both Railway services deploy from `main`; a push only queues deployment, so verify the resulting service before calling it live.
+[`tars90percent/environments`](https://github.com/tars90percent/environments) is the source repository for the complete system. CASE lives in `apps/case`, and the portal lives in `apps/portal`. Their packages, tests, build commands, secrets, Railway services, and deployment checks remain independent even though they share one Git history. Never commit or publish vendor sample folders or material.
 
-The parent [`tars90percent/environments`](https://github.com/tars90percent/environments) repository intentionally tracks only this operating guide. Nested application repositories and vendor sample folders are separate and must never be added to the parent repository.
+This root `AGENTS.md` is the only source-controlled agent policy. Codex tasks opened anywhere in the monorepo inherit it from the Git root. Do not add a second application-level `AGENTS.md` that restates or modifies the operating philosophy. Production CASE packages this exact root file into its image and copies it into `AGENT_WORKSPACE/AGENTS.md` before starting or resuming a Codex thread. A source-controlled policy change is therefore a CASE production change and must trigger and pass the CASE deployment workflow.
+
+Both Railway services deploy independently from `main` using scoped paths. CASE builds from the monorepo root with `apps/case/Dockerfile` so the image can copy the root policy. The portal builds from `apps/portal`. A push only queues an affected deployment; verify the resulting service before calling it live. Deploy and verify CASE before deploying a portal revision that depends on a CASE API or schema change.
 
 ## Completion
 

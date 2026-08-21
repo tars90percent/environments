@@ -32,7 +32,7 @@ RUN mkdir -p /opt/harbor-bin /opt/modal-bin \
     && ln -sfn /opt/modal-bin/modal /usr/local/bin/modal \
     && rm -rf /tmp/uv-cache
 
-COPY package.json package-lock.json ./
+COPY apps/case/package.json apps/case/package-lock.json ./
 RUN npm ci
 
 # Feishu skills invoke lark-cli by name. Expose only that project-local binary
@@ -47,10 +47,10 @@ RUN npx --yes skills add larksuite/cli --yes --global \
     && test -f /root/.agents/skills/lark-calendar/SKILL.md \
     && test -f /root/.agents/skills/lark-im/SKILL.md
 
-COPY tsconfig.json tsconfig.build.json ./
+COPY apps/case/tsconfig.json apps/case/tsconfig.build.json ./
 COPY AGENTS.md ./AGENTS.md
-COPY src ./src
-COPY scripts ./scripts
+COPY apps/case/src ./src
+COPY apps/case/scripts ./scripts
 RUN npm run build \
     && npm prune --omit=dev \
     && chmod 0755 /app/scripts/case-task-package.py \
@@ -70,6 +70,7 @@ RUN npm run build \
     && test -x /usr/local/bin/modal
 
 ENV NODE_ENV=production \
+    AGENT_INSTRUCTIONS_FILE=/app/AGENTS.md \
     CASE_HARBOR_BIN=/opt/harbor-bin/harbor \
     CASE_HARBOR_WORKDIR=/data/evaluations \
     CASE_HARBOR_HOME=/data/harbor-home
