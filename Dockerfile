@@ -51,7 +51,6 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY AGENTS.md ./AGENTS.md
 COPY src ./src
 COPY scripts ./scripts
-COPY skills ./skills
 RUN npm run build \
     && npm prune --omit=dev \
     && chmod 0755 /app/scripts/case-task-package.py \
@@ -62,24 +61,13 @@ RUN npm run build \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/harbor \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/case-harbor \
     && ln -sfn /app/scripts/case-task-package.py /usr/local/bin/case-task-package \
-    && mkdir -p /root/.agents/skills \
-    && cp -R /app/skills/. /root/.agents/skills/ \
     && test -x /usr/local/bin/case-registry \
     && test -x /usr/local/bin/case-intake \
     && test -x /usr/local/bin/case-mail-intake \
     && test -x /usr/local/bin/harbor \
     && test -x /usr/local/bin/case-harbor \
     && test -x /usr/local/bin/case-task-package \
-    && test -x /usr/local/bin/modal \
-    && test -f /root/.agents/skills/case-registry/SKILL.md \
-    && test -f /root/.agents/skills/case-registry/agents/openai.yaml \
-    && test -f /root/.agents/skills/case-registry/references/source-envelope.md \
-    && test -f /root/.agents/skills/case-sample-registration/SKILL.md \
-    && test -f /root/.agents/skills/case-sample-registration/agents/openai.yaml \
-    && test -f /root/.agents/skills/case-sample-registration/references/registry-recording.md \
-    && test -f /root/.agents/skills/case-sample-registration/references/runtime-evidence.md \
-    && test -f /root/.agents/skills/case-sample-registration/references/harbor-contract.md \
-    && test -f /root/.agents/skills/case-sample-registration/references/interpretation.md
+    && test -x /usr/local/bin/modal
 
 ENV NODE_ENV=production \
     CASE_HARBOR_BIN=/opt/harbor-bin/harbor \

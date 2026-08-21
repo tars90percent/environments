@@ -7,8 +7,12 @@ import { deriveRuntimeVerification, type RuntimeCheckFact } from "./task-evidenc
 import type {
   ArtifactInput,
   ArtifactRecord,
+  AppendTasksInput,
+  AppendTasksResult,
   AppendNormalizedTasksInput,
   AppendNormalizedTasksResult,
+  CaptureSubmissionInput,
+  CaptureSubmissionResult,
   CatalogBatch,
   CatalogCategory,
   CatalogScope,
@@ -23,7 +27,15 @@ import type {
   CheckOutcome,
   CheckResultInput,
   FollowUpInput,
+  HarborCheckPhase,
+  HarborCheckResultInput,
+  HarborFindingInput,
   OperationsSummary,
+  SampleCatalogCheck,
+  SampleCatalogFinding,
+  SampleCatalogSnapshot,
+  SampleCatalogSubmission,
+  SampleCatalogTask,
   SourceEnvelopeInput,
   StatusUpdateInput,
   SubmissionManifest,
@@ -123,6 +135,34 @@ type RuntimeCheckRow = {
 type TaskFindingRow = {
   id: string;
   task_version_id: string;
+  finding: string;
+};
+type SampleTaskRow = {
+  submission_id: string;
+  id: string;
+  stable_key: string;
+  title: string;
+  summary: string | null;
+  task_kind: SampleCatalogTask["kind"];
+  format_kind: SampleCatalogTask["format"];
+  source_path: string | null;
+  artifact_id: string | null;
+  content_sha256: string | null;
+};
+type SampleCheckRow = {
+  task_id: string;
+  id: string;
+  phase: HarborCheckPhase;
+  outcome: SampleCatalogCheck["outcome"];
+  summary: string;
+  score: number | null;
+  completed_at: string | Date;
+};
+type SampleFindingRow = {
+  task_id: string;
+  id: string;
+  check_run_id: string;
+  check_phase: HarborCheckPhase;
   finding: string;
 };
 type SourceEventRow = {
@@ -231,119 +271,174 @@ export class PostgresRegistry implements RegistryRepository {
     await this.pool.end();
   }
 
-  async ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }> {
-    const payloadSha256 = hashSourceEnvelope(envelope);
+  async captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult> {
+    if (!input.sources.length) throw new RegistryConflictError("A captured submission must have at least one source");
+    const formats = [...new Set(input.submission.formats ?? [])].sort();
+    if (formats.some((format) => format !== "harbor" && format !== "non_harbor")) {
+      throw new RegistryConflictError("Submission formats may contain only harbor and non_harbor");
+    }
+
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.upsertVendor(client, envelope.vendor);
-      const existingEvent = await client.query<{ payload_sha256: string | null }>(
-        "SELECT payload_sha256 FROM registry_source_events WHERE id = $1",
-        [envelope.sourceEvent.id],
+      await this.upsertVendor(client, input.vendor);
+      for (const artifact of input.artifacts) await this.registerArtifactWithClient(client, artifact);
+
+      const sourceLinks: Array<{ sourceEventId: string; sourceItemIds: string[] }> = [];
+      const seenSourceEvents = new Set<string>();
+      for (const source of input.sources) {
+        if ("sourceEvent" in source) {
+          if (!source.items.length) throw new RegistryConflictError(`Source event ${source.sourceEvent.id} must contain at least one source item`);
+          if (seenSourceEvents.has(source.sourceEvent.id)) throw new RegistryConflictError(`Source event ${source.sourceEvent.id} is repeated`);
+          seenSourceEvents.add(source.sourceEvent.id);
+          for (const item of source.items) {
+            if (!item.artifactId) continue;
+            const artifact = await client.query<{ sha256: string }>(
+              "SELECT sha256 FROM registry_artifacts WHERE id = $1",
+              [item.artifactId],
+            );
+            if (!artifact.rows[0]) throw new RegistryConflictError(`Source item ${item.id} references missing artifact ${item.artifactId}`);
+            if (item.contentSha256 && artifact.rows[0].sha256 !== item.contentSha256) {
+              throw new RegistryConflictError(`Source item ${item.id} content hash does not match its artifact`);
+            }
+          }
+          await this.ingestSourceEnvelopeWithClient(client, {
+            vendor: input.vendor,
+            sourceEvent: source.sourceEvent,
+            items: source.items,
+            relations: source.relations,
+          }, input.actor);
+          sourceLinks.push({ sourceEventId: source.sourceEvent.id, sourceItemIds: source.items.map((item) => item.id) });
+          continue;
+        }
+
+        if (seenSourceEvents.has(source.sourceEventId)) throw new RegistryConflictError(`Source event ${source.sourceEventId} is repeated`);
+        seenSourceEvents.add(source.sourceEventId);
+        const event = await client.query<{ vendor_id: string }>(
+          "SELECT vendor_id FROM registry_source_events WHERE id = $1",
+          [source.sourceEventId],
+        );
+        if (!event.rows[0]) throw new RegistryNotFoundError(`Source event ${source.sourceEventId} does not exist`);
+        if (event.rows[0].vendor_id !== input.vendor.id) {
+          throw new RegistryConflictError(`Source event ${source.sourceEventId} does not belong to vendor ${input.vendor.id}`);
+        }
+        const items = await client.query<{ id: string }>(
+          `SELECT id FROM registry_source_items
+           WHERE source_event_id = $1
+             AND ($2::text[] IS NULL OR id = ANY($2::text[]))
+           ORDER BY created_at, id`,
+          [source.sourceEventId, source.sourceItemIds ?? null],
+        );
+        if (source.sourceItemIds && items.rowCount !== source.sourceItemIds.length) {
+          throw new RegistryConflictError(`One or more source items do not belong to source event ${source.sourceEventId}`);
+        }
+        sourceLinks.push({ sourceEventId: source.sourceEventId, sourceItemIds: items.rows.map((item) => item.id) });
+      }
+
+      const existing = await client.query<{
+        vendor_id: string;
+        submission_date: string | Date;
+        label: string;
+        source_label: string;
+        formats: string[];
+        revises_batch_id: string | null;
+      }>(
+        `SELECT vendor_id, submission_date, label, source_label, formats, revises_batch_id
+         FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
+        [input.submission.id],
       );
-      const created = !existingEvent.rows[0];
-      const previousSha = existingEvent.rows[0]?.payload_sha256;
-      if (previousSha && previousSha !== payloadSha256) {
-        throw new RegistryConflictError(`Source event ${envelope.sourceEvent.id} already exists with different immutable contents`);
-      }
-
-      if (created) {
-        await client.query(
-          `INSERT INTO registry_source_events(
-             id, vendor_id, channel, external_ref, sender, received_at, raw_artifact_id, metadata, payload_sha256
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
-          [envelope.sourceEvent.id, envelope.vendor.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
-            envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
-            json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
-        );
-      } else if (!previousSha) {
-        await client.query(
-          `UPDATE registry_source_events
-           SET channel = $2, external_ref = $3, sender = $4, received_at = $5,
-               raw_artifact_id = $6, metadata = $7::jsonb, payload_sha256 = $8, updated_at = now()
-           WHERE id = $1`,
-          [envelope.sourceEvent.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
-            envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
-            json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
-        );
-      }
-
-      for (const item of envelope.items) {
-        const itemSha256 = hashValue(item);
-        const existingItem = await client.query<{ payload_sha256: string }>(
-          "SELECT payload_sha256 FROM registry_source_items WHERE id = $1",
-          [item.id],
-        );
-        if (existingItem.rows[0]?.payload_sha256 && existingItem.rows[0].payload_sha256 !== itemSha256) {
-          throw new RegistryConflictError(`Source item ${item.id} already exists with different immutable contents`);
-        }
-        if (!existingItem.rows[0]) {
+      const current = existing.rows[0];
+      const created = !current;
+      if (current) {
+        const matches = current.vendor_id === input.vendor.id
+          && isoDate(current.submission_date) === input.submission.date
+          && current.label === input.submission.label
+          && current.source_label === input.submission.sourceLabel
+          && current.revises_batch_id === (input.submission.revisesSubmissionId ?? null);
+        if (!matches) throw new RegistryConflictError(`Submission ${input.submission.id} already exists with different immutable contents`);
+        const mergedFormats = [...new Set([...current.formats, ...formats])].sort();
+        if (hashValue(mergedFormats) !== hashValue(current.formats)) {
           await client.query(
-            `INSERT INTO registry_source_items(
-               id, source_event_id, kind, display_name, locator, media_type, artifact_id,
-               content_sha256, size_bytes, fetch_status, parse_status, mutable, captured_at, metadata, payload_sha256
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15)`,
-            [item.id, envelope.sourceEvent.id, item.kind, item.displayName, item.locator ?? null, item.mediaType ?? null,
-              item.artifactId ?? null, item.contentSha256 ?? null, item.sizeBytes ?? null, item.fetchStatus, item.parseStatus,
-              item.mutable, item.capturedAt ?? null, json(item.metadata ?? {}), itemSha256],
+            "UPDATE registry_submission_batches SET formats = $2::jsonb, updated_at = now() WHERE id = $1",
+            [input.submission.id, json(mergedFormats)],
           );
-          if (item.fetchStatus === "queued") {
-            await this.enqueueWork(client, "fetch_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
-          }
-          if (item.parseStatus === "queued") {
-            await this.enqueueWork(client, "parse_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
-          }
         }
-      }
-
-      for (const relation of envelope.relations ?? []) {
+      } else {
+        const primary = sourceLinks[0]!;
+        const metadata = { intakePurpose: "sample_evaluation", ...(input.submission.metadata ?? {}) };
+        const manifestSha256 = hashValue({
+          vendor: input.vendor,
+          submission: input.submission,
+          sourceEventIds: sourceLinks.map((source) => source.sourceEventId),
+        });
         await client.query(
-          `INSERT INTO registry_source_relations(
-             source_event_id, from_item_id, to_item_id, relation, position, metadata
-           ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-           ON CONFLICT(from_item_id, to_item_id, relation) DO NOTHING`,
-          [envelope.sourceEvent.id, relation.fromItemId, relation.toItemId, relation.relation,
-            relation.position ?? null, json(relation.metadata ?? {})],
+          `INSERT INTO registry_submission_batches(
+             id, vendor_id, source_event_id, submission_date, label, source_label,
+             declared_task_count, formats, workflow_status, catalog_visibility,
+             revises_batch_id, delta, metadata, manifest_sha256, intake_purpose
+           ) VALUES ($1, $2, $3, $4, $5, $6, 0, $7::jsonb, 'unchecked', 'available',
+                     $8, $9::jsonb, $10::jsonb, $11, 'sample_evaluation')`,
+          [input.submission.id, input.vendor.id, primary.sourceEventId, input.submission.date,
+            input.submission.label, input.submission.sourceLabel, json(formats), input.submission.revisesSubmissionId ?? null,
+            json({ added: 0, removed: 0, changedFiles: sourceLinks.reduce((sum, source) => sum + source.sourceItemIds.length, 0), note: "Original delivery preserved before parsing." }),
+            json(metadata), manifestSha256],
         );
       }
 
-      for (const link of envelope.batchLinks ?? []) {
+      const hasPrimary = current ? await client.query<{ exists: boolean }>(
+        "SELECT EXISTS (SELECT 1 FROM registry_batch_source_events WHERE batch_id = $1 AND role = 'primary') AS exists",
+        [input.submission.id],
+      ) : null;
+      let primaryAssigned = !created && Boolean(hasPrimary?.rows[0]?.exists);
+      for (const source of sourceLinks) {
+        const role = primaryAssigned ? "supplement" : "primary";
         await client.query(
           `INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
            VALUES ($1, $2, $3)
-           ON CONFLICT(batch_id, source_event_id) DO UPDATE SET role = EXCLUDED.role`,
-          [link.batchId, envelope.sourceEvent.id, link.role],
+           ON CONFLICT(batch_id, source_event_id) DO UPDATE SET
+             role = CASE WHEN registry_batch_source_events.role = 'primary' THEN 'primary' ELSE EXCLUDED.role END`,
+          [input.submission.id, source.sourceEventId, role],
         );
-        for (const itemId of link.sourceItemIds ?? []) {
+        for (const sourceItemId of source.sourceItemIds) {
           await client.query(
             `INSERT INTO registry_batch_source_items(batch_id, source_item_id, role)
              VALUES ($1, $2, $3)
              ON CONFLICT(batch_id, source_item_id, role) DO NOTHING`,
-            [link.batchId, itemId, link.role],
+            [input.submission.id, sourceItemId, role],
           );
         }
+        primaryAssigned = true;
       }
 
-      for (const link of envelope.taskLinks ?? []) {
-        await client.query(
-          `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
-           VALUES ($1, $2, $3)
-           ON CONFLICT(task_version_id, source_item_id, role) DO NOTHING`,
-          [link.taskVersionId, link.sourceItemId, link.role],
-        );
+      if (created) {
+        await this.insertStatusEvent(client, "submission_batch", input.submission.id, "submission.captured", input.actor, {
+          sourceEventIds: sourceLinks.map((source) => source.sourceEventId),
+          artifactIds: input.artifacts.map((artifact) => artifact.id),
+        });
+        await this.enqueueWork(client, "parse_submission", "submission_batch", input.submission.id, {
+          sourceEventIds: sourceLinks.map((source) => source.sourceEventId),
+        });
       }
+      await client.query("COMMIT");
+      return {
+        submissionId: input.submission.id,
+        created,
+        sourceEventIds: sourceLinks.map((source) => source.sourceEventId),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
-      if (created || !previousSha) {
-        await this.enqueueWork(client, "normalize_source_event", "source_event", envelope.sourceEvent.id, {
-          payloadSha256,
-          sourceItems: envelope.items.length,
-        });
-        await this.insertStatusEvent(client, "source_event", envelope.sourceEvent.id, "source.ingested", "case", {
-          payloadSha256,
-          sourceItems: envelope.items.length,
-          relations: envelope.relations?.length ?? 0,
-        });
-      }
+  async ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.upsertVendor(client, envelope.vendor);
+      const created = await this.ingestSourceEnvelopeWithClient(client, envelope, "case");
       await client.query("COMMIT");
       return { sourceEventId: envelope.sourceEvent.id, created };
     } catch (error) {
@@ -354,7 +449,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }> {
+  private async recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }> {
     const payloadSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
@@ -411,7 +506,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async listVendorEvents(vendorId: string): Promise<VendorEvent[]> {
+  private async listVendorEvents(vendorId: string): Promise<VendorEvent[]> {
     const result = await this.pool.query<VendorEventRow>(
       `SELECT id, vendor_id, kind, event_type, summary, actor, occurred_at,
               source_event_ids, batch_ids, metadata, created_at
@@ -636,15 +731,19 @@ export class PostgresRegistry implements RegistryRepository {
           `INSERT INTO registry_task_versions(
              id, task_id, batch_id, category_id, source_path, format, content_sha256,
              workflow_status, catalog_visibility, metadata, representation_kind,
-             representation_path, normalization_outcome, representation_basis
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14)`,
+             representation_path, normalization_outcome, representation_basis,
+             task_kind, format_kind, task_stable_key, task_title, task_summary
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
+                     $15, $16, $17, $18, $19)`,
           [task.id, stableTaskId(manifest.vendor.id, task.stableKey), manifest.batch.id, task.categoryId,
             task.sourcePath ?? null, task.format, task.contentSha256 ?? null,
             task.workflowStatus ?? manifest.batch.workflowStatus,
             task.catalogVisibility ?? manifest.batch.catalogVisibility,
             json(task.metadata ?? {}), task.representationKind ?? "unknown",
             task.representationPath ?? null, task.normalizationOutcome ?? null,
-            task.representationKind ? "recorded" : "unknown"],
+            task.representationKind ? "recorded" : "unknown",
+            legacyTaskKind(task.metadata), legacyFormatKind(task.format, task.representationPath, task.normalizationOutcome),
+            task.stableKey, task.title, task.summary ?? null],
         );
         for (const sourceItemId of task.sourceItemIds ?? []) {
           await client.query(
@@ -661,7 +760,7 @@ export class PostgresRegistry implements RegistryRepository {
         sourceEventId: manifest.sourceEvent.id,
         taskVersions: manifest.tasks?.length ?? 0,
       });
-      await this.enqueueWork(client, "check_submission", "submission_batch", manifest.batch.id, { manifestSha256 });
+      await this.enqueueWork(client, "parse_submission", "submission_batch", manifest.batch.id, { manifestSha256 });
       await client.query("COMMIT");
       return { batchId: manifest.batch.id, created: true };
     } catch (error) {
@@ -737,7 +836,179 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult> {
+  async appendTasks(input: AppendTasksInput): Promise<AppendTasksResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const batchResult = await client.query<{
+        vendor_id: string;
+        workflow_status: string;
+        catalog_visibility: string;
+        intake_purpose: string | null;
+        formats: string[];
+      }>(
+        `SELECT vendor_id, workflow_status, catalog_visibility, formats,
+                COALESCE(intake_purpose, metadata->>'intakePurpose') AS intake_purpose
+         FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
+        [input.submissionId],
+      );
+      const batch = batchResult.rows[0];
+      if (!batch) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (batch.intake_purpose !== "sample_evaluation") {
+        throw new RegistryConflictError(`Submission ${input.submissionId} is not a sample submission`);
+      }
+
+      const artifactIds = [...new Set(input.tasks.map((task) => task.artifactId))];
+      const artifactResult = await client.query<{ id: string; sha256: string }>(
+        "SELECT id, sha256 FROM registry_artifacts WHERE id = ANY($1::text[])",
+        [artifactIds],
+      );
+      const artifacts = new Map(artifactResult.rows.map((artifact) => [artifact.id, artifact.sha256]));
+      for (const task of input.tasks) {
+        if (artifacts.get(task.artifactId) !== task.contentSha256) {
+          throw new RegistryConflictError(`Task ${task.id} must reference its exact immutable artifact`);
+        }
+      }
+
+      const sourceItemIds = [...new Set(input.tasks.flatMap((task) => task.sourceItemIds))];
+      const sourceResult = await client.query<{ id: string }>(
+        `SELECT DISTINCT si.id
+         FROM registry_source_items si
+         WHERE si.id = ANY($1::text[])
+           AND (
+             EXISTS (
+               SELECT 1 FROM registry_batch_source_items bsi
+               WHERE bsi.batch_id = $2 AND bsi.source_item_id = si.id
+             )
+             OR EXISTS (
+               SELECT 1 FROM registry_batch_source_events bse
+               WHERE bse.batch_id = $2 AND bse.source_event_id = si.source_event_id
+             )
+           )`,
+        [sourceItemIds, input.submissionId],
+      );
+      const linkedSourceIds = new Set(sourceResult.rows.map((row) => row.id));
+      for (const sourceItemId of sourceItemIds) {
+        if (!linkedSourceIds.has(sourceItemId)) {
+          throw new RegistryConflictError(`Source item ${sourceItemId} is not linked to submission ${input.submissionId}`);
+        }
+      }
+
+      const compatibilityCategoryId = "case:tasks";
+      await client.query(
+        `INSERT INTO registry_categories(id, name, description)
+         VALUES ($1, 'Tasks', 'Compatibility row for the pre-014 schema.')
+         ON CONFLICT(id) DO NOTHING`,
+        [compatibilityCategoryId],
+      );
+      await client.query(
+        `INSERT INTO registry_batch_categories(batch_id, category_id, declared_count, examples)
+         VALUES ($1, $2, 0, '[]'::jsonb)
+         ON CONFLICT(batch_id, category_id) DO NOTHING`,
+        [input.submissionId, compatibilityCategoryId],
+      );
+
+      let tasksAdded = 0;
+      for (const task of input.tasks) {
+        const taskId = stableTaskId(batch.vendor_id, task.stableKey);
+        await client.query(
+          `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT(vendor_id, stable_key) DO NOTHING`,
+          [taskId, batch.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
+        );
+
+        const existing = await client.query<{
+          id: string;
+          batch_id: string;
+          task_stable_key: string;
+          task_title: string;
+          task_summary: string | null;
+          task_kind: string;
+          format_kind: string;
+          source_path: string | null;
+          artifact_id: string | null;
+          content_sha256: string | null;
+        }>(
+          `SELECT id, batch_id, task_stable_key, task_title, task_summary, task_kind, format_kind,
+                  source_path, artifact_id, content_sha256
+           FROM registry_task_versions
+           WHERE id = $1 OR (batch_id = $2 AND task_id = $3)
+           FOR UPDATE`,
+          [task.id, input.submissionId, taskId],
+        );
+        const current = existing.rows[0];
+        if (current) {
+          const matches = current.id === task.id
+            && current.batch_id === input.submissionId
+            && current.task_stable_key === task.stableKey
+            && current.task_title === task.title
+            && current.task_summary === (task.summary ?? null)
+            && current.task_kind === task.kind
+            && current.format_kind === task.format
+            && current.source_path === task.sourcePath
+            && current.artifact_id === task.artifactId
+            && current.content_sha256 === task.contentSha256;
+          if (!matches) throw new RegistryConflictError(`Task ${task.id} already exists with different immutable contents`);
+        } else {
+          await client.query(
+            `INSERT INTO registry_task_versions(
+               id, task_id, batch_id, category_id, source_path, format, artifact_id, content_sha256,
+               workflow_status, catalog_visibility, metadata, representation_kind, representation_path,
+               normalization_outcome, representation_basis, task_kind, format_kind,
+               task_stable_key, task_title, task_summary
+             ) VALUES (
+               $1, $2, $3, $4, $5, $6, $7, $8,
+               $9, $10, '{}'::jsonb, 'unknown', NULL, NULL, 'unknown', $11, $12, $13, $14, $15
+             )`,
+            [task.id, taskId, input.submissionId, compatibilityCategoryId, task.sourcePath, task.format,
+              task.artifactId, task.contentSha256, batch.workflow_status, batch.catalog_visibility,
+              task.kind, task.format, task.stableKey, task.title, task.summary ?? null],
+          );
+          tasksAdded += 1;
+          if (task.format === "harbor") {
+            await this.enqueueWork(client, "harbor_checks", "task", task.id, {
+              phases: ["build", "boot", "oracle", "nop"],
+            });
+          }
+        }
+        for (const sourceItemId of task.sourceItemIds) {
+          await client.query(
+            `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
+             VALUES ($1, $2, 'discovered_in')
+             ON CONFLICT(task_version_id, source_item_id, role) DO NOTHING`,
+            [task.id, sourceItemId],
+          );
+        }
+      }
+
+      if (tasksAdded) {
+        const mergedFormats = [...new Set([...batch.formats, ...input.tasks.map((task) => task.format)])].sort();
+        await client.query(
+          "UPDATE registry_submission_batches SET formats = $2::jsonb, updated_at = now() WHERE id = $1",
+          [input.submissionId, json(mergedFormats)],
+        );
+        await client.query(
+          `UPDATE registry_batch_categories
+           SET declared_count = (SELECT COUNT(*) FROM registry_task_versions WHERE batch_id = $1)
+           WHERE batch_id = $1 AND category_id = $2`,
+          [input.submissionId, compatibilityCategoryId],
+        );
+        await this.insertStatusEvent(client, "submission_batch", input.submissionId, "parsing.tasks_registered", input.actor, {
+          taskIds: input.tasks.map((task) => task.id),
+        });
+      }
+      await client.query("COMMIT");
+      return { submissionId: input.submissionId, tasksAdded, taskIds: input.tasks.map((task) => task.id) };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult> {
     const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
@@ -927,11 +1198,15 @@ export class PostgresRegistry implements RegistryRepository {
             `INSERT INTO registry_task_versions(
                id, task_id, batch_id, category_id, source_path, format, artifact_id, content_sha256,
                workflow_status, catalog_visibility, metadata, representation_kind, representation_path,
-               normalization_outcome, representation_basis
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, 'recorded')`,
+               normalization_outcome, representation_basis, task_kind, format_kind,
+               task_stable_key, task_title, task_summary
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, 'recorded',
+                       $15, $16, $17, $18, $19)`,
             [task.id, taskId, input.batchId, task.categoryId, task.sourcePath, task.format,
               task.artifactId, task.contentSha256, expected.workflow_status, expected.catalog_visibility,
-              json(task.metadata ?? {}), task.representationKind, task.representationPath, task.normalizationOutcome],
+              json(task.metadata ?? {}), task.representationKind, task.representationPath, task.normalizationOutcome,
+              legacyTaskKind(task.metadata), legacyFormatKind(task.format, task.representationPath, task.normalizationOutcome),
+              task.stableKey, task.title, task.summary ?? null],
           );
           taskVersionsAdded += 1;
         }
@@ -1215,6 +1490,7 @@ export class PostgresRegistry implements RegistryRepository {
            AND NOT EXISTS (SELECT 1 FROM registry_source_items si WHERE si.artifact_id = a.id)
            AND NOT EXISTS (SELECT 1 FROM registry_task_versions tv WHERE tv.artifact_id = a.id)
            AND NOT EXISTS (SELECT 1 FROM registry_trajectories tr WHERE tr.artifact_id = a.id)
+           AND NOT EXISTS (SELECT 1 FROM registry_check_runs cr WHERE cr.evidence_artifact_id = a.id)
          ORDER BY a.size_bytes DESC NULLS LAST, a.id`,
         [candidateArtifactIds],
       ) : { rows: [] as ArtifactRow[] };
@@ -1239,7 +1515,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async recordCheckResult(input: CheckResultInput): Promise<void> {
+  private async recordCheckResult(input: CheckResultInput): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1287,7 +1563,177 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async recordTaskFinding(input: TaskFindingInput): Promise<{ findingId: string; created: boolean }> {
+  async recordHarborCheck(input: HarborCheckResultInput): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const task = await client.query<{ format_kind: string }>(
+        "SELECT format_kind FROM registry_task_versions WHERE id = $1 FOR UPDATE",
+        [input.taskId],
+      );
+      if (!task.rowCount) throw new RegistryNotFoundError(`Task ${input.taskId} does not exist`);
+      if (task.rows[0]?.format_kind !== "harbor") {
+        throw new RegistryConflictError(`Checks are not recorded for non-Harbor task ${input.taskId}`);
+      }
+      const evidence = await client.query<{ kind: string }>(
+        "SELECT kind FROM registry_artifacts WHERE id = $1",
+        [input.evidenceArtifactId],
+      );
+      if (evidence.rows[0]?.kind !== "check_evidence") {
+        throw new RegistryConflictError(`Harbor check ${input.id} must reference an immutable check_evidence artifact`);
+      }
+
+      const phaseOrder: HarborCheckPhase[] = ["build", "boot", "oracle", "nop"];
+      const phaseIndex = phaseOrder.indexOf(input.phase);
+      if (phaseIndex > 0) {
+        const prior = await client.query<{ phase: HarborCheckPhase; outcome: "pass" | "fail" }>(
+          `SELECT DISTINCT ON (check_phase) check_phase AS phase, outcome
+           FROM registry_check_runs
+           WHERE task_version_id = $1
+             AND check_phase = ANY($2::text[])
+             AND outcome IN ('pass', 'fail')
+           ORDER BY check_phase, completed_at DESC, created_at DESC`,
+          [input.taskId, phaseOrder.slice(0, phaseIndex)],
+        );
+        const priorByPhase = new Map(prior.rows.map((row) => [row.phase, row.outcome]));
+        for (const requiredPhase of phaseOrder.slice(0, phaseIndex)) {
+          if (!priorByPhase.has(requiredPhase)) {
+            throw new RegistryConflictError(`${input.phase} cannot be recorded before ${requiredPhase}`);
+          }
+        }
+        if (input.phase !== "boot" && (priorByPhase.get("build") !== "pass" || priorByPhase.get("boot") !== "pass")) {
+          throw new RegistryConflictError(`${input.phase} requires Build and Boot to pass`);
+        }
+        if (input.phase === "boot" && priorByPhase.get("build") !== "pass") {
+          throw new RegistryConflictError("Boot requires Build to pass");
+        }
+      }
+
+      const existing = await client.query<{
+        task_version_id: string;
+        check_phase: HarborCheckPhase;
+        outcome: "pass" | "fail";
+        summary: string;
+        evidence_artifact_id: string;
+        harbor_version: string;
+        modal_version: string;
+        command: string;
+        sandbox_ref: string | null;
+        score: number | null;
+        started_at: string | Date;
+        completed_at: string | Date;
+      }>(
+        `SELECT task_version_id, check_phase, outcome, summary, evidence_artifact_id,
+                harbor_version, modal_version, command, sandbox_ref, score, started_at, completed_at
+         FROM registry_check_runs WHERE id = $1`,
+        [input.id],
+      );
+      if (existing.rows[0]) {
+        const row = existing.rows[0];
+        const matches = row.task_version_id === input.taskId
+          && row.check_phase === input.phase
+          && row.outcome === input.outcome
+          && row.summary === input.summary
+          && row.evidence_artifact_id === input.evidenceArtifactId
+          && row.harbor_version === input.harborVersion
+          && row.modal_version === input.modalVersion
+          && row.command === input.command
+          && row.sandbox_ref === (input.sandboxRef ?? null)
+          && row.score === (input.score ?? null)
+          && new Date(row.started_at).toISOString() === input.startedAt
+          && new Date(row.completed_at).toISOString() === input.completedAt;
+        if (!matches) throw new RegistryConflictError(`Harbor check ${input.id} already exists with different immutable contents`);
+        await client.query("COMMIT");
+        return;
+      }
+
+      const definitionId = `case.harbor.${input.phase}`;
+      const evidenceRole = input.phase === "oracle" ? "positive_control"
+        : input.phase === "nop" ? "negative_control"
+          : input.phase;
+      await client.query(
+        `INSERT INTO registry_check_definitions(id, version, kind, name, description, required, evidence_role)
+         VALUES ($1, 1, 'deterministic', $2, $3, true, $4)
+         ON CONFLICT(id, version) DO NOTHING`,
+        [definitionId, input.phase, `Harbor ${input.phase} pass/fail`, evidenceRole],
+      );
+      await client.query(
+        `INSERT INTO registry_check_runs(
+           id, task_version_id, definition_id, definition_version, outcome, summary,
+           runner, evidence, started_at, completed_at, execution_scope, check_phase,
+           evidence_artifact_id, harbor_version, modal_version, command, sandbox_ref, score
+         ) VALUES (
+           $1, $2, $3, 1, $4, $5, '{}'::jsonb, '{}'::jsonb, $6, $7, 'remote_sandbox', $8,
+           $9, $10, $11, $12, $13, $14
+         )`,
+        [input.id, input.taskId, definitionId, input.outcome, input.summary, input.startedAt, input.completedAt,
+          input.phase, input.evidenceArtifactId, input.harborVersion, input.modalVersion, input.command,
+          input.sandboxRef ?? null, input.score ?? null],
+      );
+      await this.insertStatusEvent(client, "task", input.taskId, "harbor_check.completed", "CASE", {
+        checkRunId: input.id,
+        phase: input.phase,
+        outcome: input.outcome,
+      });
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async recordHarborFinding(input: HarborFindingInput): Promise<{ findingId: string; created: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const check = await client.query<{ check_phase: HarborCheckPhase; outcome: string; task_version_id: string }>(
+        `SELECT check_phase, outcome, task_version_id
+         FROM registry_check_runs
+         WHERE id = $1 AND check_phase IS NOT NULL`,
+        [input.checkRunId],
+      );
+      const row = check.rows[0];
+      if (!row) throw new RegistryNotFoundError(`Harbor check ${input.checkRunId} does not exist`);
+      if (row.task_version_id !== input.taskId) throw new RegistryConflictError("Finding and check must name the same task");
+      if (row.outcome !== "fail") throw new RegistryConflictError("Findings can only be attached to a failed Harbor check");
+
+      const existing = await client.query<{ task_version_id: string; check_run_id: string; finding: string }>(
+        "SELECT task_version_id, check_run_id, finding FROM registry_task_findings WHERE id = $1",
+        [input.id],
+      );
+      if (existing.rows[0]) {
+        const current = existing.rows[0];
+        if (current.task_version_id !== input.taskId || current.check_run_id !== input.checkRunId || current.finding !== input.finding) {
+          throw new RegistryConflictError(`Harbor finding ${input.id} already exists with different immutable contents`);
+        }
+        await client.query("COMMIT");
+        return { findingId: input.id, created: false };
+      }
+
+      await client.query(
+        `INSERT INTO registry_task_findings(
+           id, task_version_id, finding, visibility, check_run_id, check_phase
+         ) VALUES ($1, $2, $3, 'portal', $4, $5)`,
+        [input.id, input.taskId, input.finding, input.checkRunId, row.check_phase],
+      );
+      await this.insertStatusEvent(client, "task", input.taskId, "harbor_finding.recorded", "CASE", {
+        findingId: input.id,
+        checkRunId: input.checkRunId,
+        phase: row.check_phase,
+      });
+      await client.query("COMMIT");
+      return { findingId: input.id, created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async recordTaskFinding(input: TaskFindingInput): Promise<{ findingId: string; created: boolean }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1327,7 +1773,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async updateTaskFinding(input: TaskFindingUpdateInput): Promise<{ findingId: string; updated: boolean }> {
+  private async updateTaskFinding(input: TaskFindingUpdateInput): Promise<{ findingId: string; updated: boolean }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1358,7 +1804,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async deleteTaskFinding(id: string): Promise<{ findingId: string; deleted: boolean }> {
+  private async deleteTaskFinding(id: string): Promise<{ findingId: string; deleted: boolean }> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1382,7 +1828,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async recordFollowUp(input: FollowUpInput): Promise<void> {
+  private async recordFollowUp(input: FollowUpInput): Promise<void> {
     await this.pool.query(
       `INSERT INTO registry_follow_ups(
          id, batch_id, channel, recipient, status, reason, evidence_check_run_ids, sent_at, external_ref
@@ -1397,7 +1843,7 @@ export class PostgresRegistry implements RegistryRepository {
     );
   }
 
-  async recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview> {
+  private async recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1445,7 +1891,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async listSubmissionReviews(batchId: string): Promise<SubmissionReview[]> {
+  private async listSubmissionReviews(batchId: string): Promise<SubmissionReview[]> {
     const batch = await this.pool.query<{ id: string }>(
       "SELECT id FROM registry_submission_batches WHERE id = $1",
       [batchId],
@@ -1511,6 +1957,7 @@ export class PostgresRegistry implements RegistryRepository {
            UNION ALL SELECT 1 FROM registry_source_items WHERE artifact_id = $1
            UNION ALL SELECT 1 FROM registry_task_versions WHERE artifact_id = $1
            UNION ALL SELECT 1 FROM registry_trajectories WHERE artifact_id = $1
+           UNION ALL SELECT 1 FROM registry_check_runs WHERE evidence_artifact_id = $1
          ) AS referenced`,
         [id],
       );
@@ -1528,7 +1975,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async updateStatus(input: StatusUpdateInput): Promise<void> {
+  private async updateStatus(input: StatusUpdateInput): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1554,7 +2001,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async linkTaskSources(input: TaskSourceLinksInput): Promise<{ linked: number }> {
+  private async linkTaskSources(input: TaskSourceLinksInput): Promise<{ linked: number }> {
     const client = await this.pool.connect();
     let linked = 0;
     try {
@@ -1654,7 +2101,7 @@ export class PostgresRegistry implements RegistryRepository {
     if (!result.rowCount) throw new RegistryConflictError(`Work item ${input.id} is not leased by ${input.workerId}`);
   }
 
-  async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
+  private async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
     const visibility = catalogVisibility(scope);
     const [demandsResult, vendorsResult, batchesResult, categoriesResult, tasksResult, runtimeChecksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, taskFindingsResult, procurementEventsResult] = await Promise.all([
       this.pool.query<ResearchDemandRow>(
@@ -1884,15 +2331,194 @@ export class PostgresRegistry implements RegistryRepository {
     };
   }
 
-  async getVendor(id: string, scope: CatalogScope): Promise<CatalogVendor | null> {
+  async sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot> {
+    const [vendorsResult, submissionsResult, tasksResult, checksResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult] = await Promise.all([
+      this.pool.query<VendorRow>(
+        `SELECT id, name, short, description
+         FROM registry_vendors
+         WHERE archived_at IS NULL
+         ORDER BY name, id`,
+      ),
+      this.pool.query<BatchRow>(
+        `SELECT id, vendor_id, submission_date, label, source_label, declared_task_count,
+                formats, workflow_status, catalog_visibility, revises_batch_id, delta
+         FROM registry_submission_batches
+         WHERE catalog_visibility IN ('featured', 'available', 'log_only')
+         ORDER BY submission_date DESC, created_at DESC, id`,
+      ),
+      this.pool.query<SampleTaskRow>(
+        `SELECT st.submission_id, st.id, st.stable_key, st.title, st.summary,
+                st.task_kind, st.format_kind, st.source_path, st.artifact_id, st.content_sha256
+         FROM registry_sample_tasks st
+         JOIN registry_task_versions tv ON tv.id = st.id
+         JOIN registry_submission_batches b ON b.id = st.submission_id
+         WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
+           AND tv.catalog_visibility IN ('featured', 'available', 'log_only')
+         ORDER BY st.created_at, st.id`,
+      ),
+      this.pool.query<SampleCheckRow>(
+        `SELECT DISTINCT ON (task_id, phase)
+                task_id, id, phase, outcome, summary, score, completed_at
+         FROM registry_harbor_check_results
+         ORDER BY task_id, phase, completed_at DESC, id DESC`,
+      ),
+      this.pool.query<SampleFindingRow>(
+        `SELECT tf.task_version_id AS task_id, tf.id, tf.check_run_id, tf.check_phase, tf.finding
+         FROM registry_task_findings tf
+         JOIN registry_check_runs cr ON cr.id = tf.check_run_id
+         WHERE tf.check_run_id IS NOT NULL
+           AND tf.check_phase IS NOT NULL
+           AND cr.outcome = 'fail'
+         ORDER BY tf.created_at, tf.id`,
+      ),
+      this.pool.query<{ task_version_id: string; source_item_id: string }>(
+        `SELECT task_version_id, source_item_id
+         FROM registry_task_source_items
+         ORDER BY created_at, source_item_id`,
+      ),
+      this.pool.query<SourceEventRow>(
+        `SELECT bse.batch_id, bse.role, se.id, se.channel, se.external_ref, se.sender,
+                se.received_at, se.raw_artifact_id
+         FROM registry_batch_source_events bse
+         JOIN registry_source_events se ON se.id = bse.source_event_id
+         JOIN registry_submission_batches b ON b.id = bse.batch_id
+         WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
+         ORDER BY se.received_at, se.created_at, se.id`,
+      ),
+      this.pool.query<SourceItemRow>(
+        `SELECT DISTINCT si.source_event_id, si.id, si.kind, si.display_name, si.locator,
+                si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
+                si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata
+         FROM registry_source_items si
+         JOIN registry_batch_source_events bse ON bse.source_event_id = si.source_event_id
+         JOIN registry_submission_batches b ON b.id = bse.batch_id
+         WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
+         ORDER BY si.source_event_id, si.created_at, si.id`,
+      ),
+      this.pool.query<SourceRelationRow>(
+        `SELECT DISTINCT sr.source_event_id, sr.from_item_id, sr.to_item_id, sr.relation, sr.position
+         FROM registry_source_relations sr
+         JOIN registry_batch_source_events bse ON bse.source_event_id = sr.source_event_id
+         JOIN registry_submission_batches b ON b.id = bse.batch_id
+         WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
+         ORDER BY sr.source_event_id, sr.position NULLS LAST, sr.created_at`,
+      ),
+    ]);
+
+    const checksByTask = group(checksResult.rows, (row) => row.task_id);
+    const findingsByTask = group(findingsResult.rows, (row) => row.task_id);
+    const sourcesByTask = group(taskSourcesResult.rows, (row) => row.task_version_id);
+    const tasksBySubmission = new Map<string, SampleCatalogTask[]>();
+    for (const row of tasksResult.rows) {
+      const checks: Partial<Record<HarborCheckPhase, SampleCatalogCheck>> = {};
+      for (const check of checksByTask.get(row.id) ?? []) {
+        checks[check.phase] = {
+          id: check.id,
+          phase: check.phase,
+          outcome: check.outcome,
+          summary: check.summary,
+          score: check.score,
+          completedAt: new Date(check.completed_at).toISOString(),
+        };
+      }
+      const findings: SampleCatalogFinding[] = (findingsByTask.get(row.id) ?? []).map((finding) => ({
+        id: finding.id,
+        phase: finding.check_phase,
+        checkRunId: finding.check_run_id,
+        finding: finding.finding,
+      }));
+      append(tasksBySubmission, row.submission_id, {
+        id: row.id,
+        stableKey: row.stable_key,
+        title: row.title,
+        summary: row.summary,
+        kind: row.task_kind,
+        format: row.format_kind,
+        sourcePath: row.source_path,
+        artifactId: row.artifact_id,
+        contentSha256: row.content_sha256,
+        sourceItemIds: (sourcesByTask.get(row.id) ?? []).map((source) => source.source_item_id),
+        checks,
+        findings,
+      });
+    }
+
+    const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => row.source_event_id);
+    const sourceRelationsByEvent = group(sourceRelationsResult.rows, (row) => row.source_event_id);
+    const sourceEventsBySubmission = new Map<string, CatalogSourceEvent[]>();
+    for (const row of sourceEventsResult.rows) {
+      append(sourceEventsBySubmission, row.batch_id, {
+        id: row.id,
+        role: row.role,
+        channel: row.channel,
+        externalRef: row.external_ref,
+        sender: row.sender,
+        receivedAt: new Date(row.received_at).toISOString(),
+        rawArtifactId: row.raw_artifact_id,
+        items: (sourceItemsByEvent.get(row.id) ?? []).map(sourceItemFromRow),
+        relations: (sourceRelationsByEvent.get(row.id) ?? []).map(sourceRelationFromRow),
+      });
+    }
+
+    const submissionsByVendor = new Map<string, SampleCatalogSubmission[]>();
+    for (const row of submissionsResult.rows) {
+      const tasks = tasksBySubmission.get(row.id) ?? [];
+      const recordedFormats = row.formats.filter((format): format is "harbor" | "non_harbor" =>
+        format === "harbor" || format === "non_harbor");
+      const formats = [...new Set([...recordedFormats, ...tasks.map((task) => task.format)])];
+      append(submissionsByVendor, row.vendor_id, {
+        id: row.id,
+        date: isoDate(row.submission_date),
+        label: row.label,
+        source: row.source_label,
+        formats,
+        sourceEvents: sourceEventsBySubmission.get(row.id) ?? [],
+        tasks,
+      });
+    }
+
+    const vendors = vendorsResult.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      short: row.short,
+      submissions: submissionsByVendor.get(row.id) ?? [],
+    }));
+    const submissions = vendors.flatMap((vendor) => vendor.submissions);
+    const tasks = submissions.flatMap((submission) => submission.tasks);
+    return {
+      generatedAt: new Date().toISOString(),
+      vendors,
+      totals: {
+        vendors: vendors.length,
+        submissions: submissions.length,
+        tasks: tasks.length,
+        harborTasks: tasks.filter((task) => task.format === "harbor").length,
+      },
+    };
+  }
+
+  async getSampleSubmission(id: string): Promise<SampleCatalogSubmission | null> {
+    return (await this.sampleCatalogSnapshot()).vendors
+      .flatMap((vendor) => vendor.submissions)
+      .find((submission) => submission.id === id) ?? null;
+  }
+
+  async getSampleTask(id: string): Promise<SampleCatalogTask | null> {
+    return (await this.sampleCatalogSnapshot()).vendors
+      .flatMap((vendor) => vendor.submissions)
+      .flatMap((submission) => submission.tasks)
+      .find((task) => task.id === id) ?? null;
+  }
+
+  private async getVendor(id: string, scope: CatalogScope): Promise<CatalogVendor | null> {
     return (await this.catalogSnapshot(scope)).vendors.find((vendor) => vendor.id === id) ?? null;
   }
 
-  async getBatch(id: string, scope: CatalogScope): Promise<CatalogBatch | null> {
+  private async getBatch(id: string, scope: CatalogScope): Promise<CatalogBatch | null> {
     return (await this.catalogSnapshot(scope)).vendors.flatMap((vendor) => vendor.batches).find((batch) => batch.id === id) ?? null;
   }
 
-  async getTask(id: string, scope: CatalogScope): Promise<CatalogTask | null> {
+  private async getTask(id: string, scope: CatalogScope): Promise<CatalogTask | null> {
     return (await this.catalogSnapshot(scope)).vendors
       .flatMap((vendor) => vendor.batches)
       .flatMap((batch) => batch.categories)
@@ -1935,42 +2561,182 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async operationsSummary(): Promise<OperationsSummary> {
-    const [vendorCount, sourceEventCount, vendorEventCount, submissions, checks, workItems, followUps, fetchStatuses, parseStatuses, artifacts] = await Promise.all([
+    const [vendorCount, sourceEventCount, submissions, tasks, checks, workItems, artifacts] = await Promise.all([
       this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_vendors"),
       this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_source_events"),
-      this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_vendor_events"),
-      this.pool.query<{ workflow_status: string; count: string }>(
-        "SELECT workflow_status, COUNT(*)::text AS count FROM registry_submission_batches GROUP BY workflow_status",
+      this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_submission_batches"),
+      this.pool.query<{ task_kind: string; format_kind: string; count: string }>(
+        `SELECT task_kind, format_kind, COUNT(*)::text AS count
+         FROM registry_sample_tasks
+         GROUP BY task_kind, format_kind`,
       ),
-      this.pool.query<{ outcome: string; count: string }>(
-        "SELECT outcome, COUNT(*)::text AS count FROM registry_check_runs GROUP BY outcome",
+      this.pool.query<{ phase: string; outcome: "pass" | "fail"; count: string }>(
+        `SELECT phase, outcome, COUNT(*)::text AS count
+         FROM registry_harbor_check_results
+         GROUP BY phase, outcome`,
       ),
       this.pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM registry_work_items WHERE status IN ('queued', 'leased')",
       ),
-      this.pool.query<{ count: string }>(
-        "SELECT COUNT(*)::text AS count FROM registry_follow_ups WHERE status <> 'closed'",
-      ),
-      this.pool.query<{ fetch_status: string; count: string }>(
-        "SELECT fetch_status, COUNT(*)::text AS count FROM registry_source_items GROUP BY fetch_status",
-      ),
-      this.pool.query<{ parse_status: string; count: string }>(
-        "SELECT parse_status, COUNT(*)::text AS count FROM registry_source_items GROUP BY parse_status",
-      ),
       this.pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM registry_artifacts"),
     ]);
+    const countTasks = (field: "task_kind" | "format_kind", value: string) => tasks.rows
+      .filter((row) => row[field] === value)
+      .reduce((sum, row) => sum + Number(row.count), 0);
+    const harborChecks: Record<string, { pass: number; fail: number }> = Object.fromEntries(
+      (["build", "boot", "oracle", "nop"] as const).map((phase) => [phase, { pass: 0, fail: 0 }]),
+    );
+    for (const row of checks.rows) harborChecks[row.phase]![row.outcome] = Number(row.count);
     return {
       vendors: Number(vendorCount.rows[0]?.count ?? 0),
       sourceEvents: Number(sourceEventCount.rows[0]?.count ?? 0),
-      vendorEvents: Number(vendorEventCount.rows[0]?.count ?? 0),
-      submissionsByStatus: Object.fromEntries(submissions.rows.map((row) => [row.workflow_status, Number(row.count)])),
-      checksByOutcome: Object.fromEntries(checks.rows.map((row) => [row.outcome, Number(row.count)])),
+      submissions: Number(submissions.rows[0]?.count ?? 0),
+      tasks: {
+        tasks: countTasks("task_kind", "task"),
+        traces: countTasks("task_kind", "trace"),
+        harbor: countTasks("format_kind", "harbor"),
+        nonHarbor: countTasks("format_kind", "non_harbor"),
+      },
+      harborChecks,
       pendingWorkItems: Number(workItems.rows[0]?.count ?? 0),
-      openFollowUps: Number(followUps.rows[0]?.count ?? 0),
-      sourceItemsByFetchStatus: Object.fromEntries(fetchStatuses.rows.map((row) => [row.fetch_status, Number(row.count)])),
-      sourceItemsByParseStatus: Object.fromEntries(parseStatuses.rows.map((row) => [row.parse_status, Number(row.count)])),
       artifacts: Number(artifacts.rows[0]?.count ?? 0),
     };
+  }
+
+  private async ingestSourceEnvelopeWithClient(
+    client: PoolClient,
+    envelope: SourceEnvelopeInput,
+    actor: string,
+  ): Promise<boolean> {
+    const payloadSha256 = hashSourceEnvelope(envelope);
+    const existingEvent = await client.query<{ payload_sha256: string | null }>(
+      "SELECT payload_sha256 FROM registry_source_events WHERE id = $1",
+      [envelope.sourceEvent.id],
+    );
+    const created = !existingEvent.rows[0];
+    const previousSha = existingEvent.rows[0]?.payload_sha256;
+    if (previousSha && previousSha !== payloadSha256) {
+      throw new RegistryConflictError(`Source event ${envelope.sourceEvent.id} already exists with different immutable contents`);
+    }
+
+    if (created) {
+      await client.query(
+        `INSERT INTO registry_source_events(
+           id, vendor_id, channel, external_ref, sender, received_at, raw_artifact_id, metadata, payload_sha256
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
+        [envelope.sourceEvent.id, envelope.vendor.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
+          envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
+          json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
+      );
+    } else if (!previousSha) {
+      await client.query(
+        `UPDATE registry_source_events
+         SET channel = $2, external_ref = $3, sender = $4, received_at = $5,
+             raw_artifact_id = $6, metadata = $7::jsonb, payload_sha256 = $8, updated_at = now()
+         WHERE id = $1`,
+        [envelope.sourceEvent.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
+          envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
+          json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
+      );
+    }
+
+    for (const item of envelope.items) {
+      const itemSha256 = hashValue(item);
+      const existingItem = await client.query<{ payload_sha256: string }>(
+        "SELECT payload_sha256 FROM registry_source_items WHERE id = $1",
+        [item.id],
+      );
+      if (existingItem.rows[0]?.payload_sha256 && existingItem.rows[0].payload_sha256 !== itemSha256) {
+        throw new RegistryConflictError(`Source item ${item.id} already exists with different immutable contents`);
+      }
+      if (!existingItem.rows[0]) {
+        await client.query(
+          `INSERT INTO registry_source_items(
+             id, source_event_id, kind, display_name, locator, media_type, artifact_id,
+             content_sha256, size_bytes, fetch_status, parse_status, mutable, captured_at, metadata, payload_sha256
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15)`,
+          [item.id, envelope.sourceEvent.id, item.kind, item.displayName, item.locator ?? null, item.mediaType ?? null,
+            item.artifactId ?? null, item.contentSha256 ?? null, item.sizeBytes ?? null, item.fetchStatus, item.parseStatus,
+            item.mutable, item.capturedAt ?? null, json(item.metadata ?? {}), itemSha256],
+        );
+        if (item.fetchStatus === "queued") {
+          await this.enqueueWork(client, "fetch_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
+        }
+        if (item.parseStatus === "queued") {
+          await this.enqueueWork(client, "parse_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
+        }
+      }
+    }
+
+    for (const relation of envelope.relations ?? []) {
+      await client.query(
+        `INSERT INTO registry_source_relations(
+           source_event_id, from_item_id, to_item_id, relation, position, metadata
+         ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+         ON CONFLICT(from_item_id, to_item_id, relation) DO NOTHING`,
+        [envelope.sourceEvent.id, relation.fromItemId, relation.toItemId, relation.relation,
+          relation.position ?? null, json(relation.metadata ?? {})],
+      );
+    }
+
+    for (const link of envelope.batchLinks ?? []) {
+      await client.query(
+        `INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
+         VALUES ($1, $2, $3)
+         ON CONFLICT(batch_id, source_event_id) DO UPDATE SET
+           role = CASE WHEN registry_batch_source_events.role = 'primary' THEN 'primary' ELSE EXCLUDED.role END`,
+        [link.batchId, envelope.sourceEvent.id, link.role],
+      );
+      for (const itemId of link.sourceItemIds ?? []) {
+        await client.query(
+          `INSERT INTO registry_batch_source_items(batch_id, source_item_id, role)
+           VALUES ($1, $2, $3)
+           ON CONFLICT(batch_id, source_item_id, role) DO NOTHING`,
+          [link.batchId, itemId, link.role],
+        );
+      }
+    }
+
+    for (const link of envelope.taskLinks ?? []) {
+      await client.query(
+        `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
+         VALUES ($1, $2, $3)
+         ON CONFLICT(task_version_id, source_item_id, role) DO NOTHING`,
+        [link.taskVersionId, link.sourceItemId, link.role],
+      );
+    }
+
+    if (created || !previousSha) {
+      await this.enqueueWork(client, "parse_source_event", "source_event", envelope.sourceEvent.id, {
+        payloadSha256,
+        sourceItems: envelope.items.length,
+      });
+      await this.insertStatusEvent(client, "source_event", envelope.sourceEvent.id, "source.ingested", actor, {
+        payloadSha256,
+        sourceItems: envelope.items.length,
+        relations: envelope.relations?.length ?? 0,
+      });
+    }
+    return created;
+  }
+
+  private async registerArtifactWithClient(client: PoolClient, input: ArtifactInput): Promise<void> {
+    const existing = await client.query<{ storage_key: string; sha256: string }>(
+      "SELECT storage_key, sha256 FROM registry_artifacts WHERE id = $1",
+      [input.id],
+    );
+    if (existing.rows[0]) {
+      if (existing.rows[0].storage_key !== input.storageKey || existing.rows[0].sha256 !== input.sha256) {
+        throw new RegistryConflictError(`Artifact ${input.id} already exists with different immutable contents`);
+      }
+      return;
+    }
+    await client.query(
+      `INSERT INTO registry_artifacts(id, kind, storage_key, sha256, size_bytes, content_type, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [input.id, input.kind, input.storageKey, input.sha256, input.sizeBytes ?? null,
+        input.contentType ?? null, json(input.metadata ?? {})],
+    );
   }
 
   private async upsertVendor(client: PoolClient, vendor: SubmissionManifest["vendor"]): Promise<void> {
@@ -2033,6 +2799,23 @@ export class RegistryNotFoundError extends Error {
 
 function stableTaskId(vendorId: string, stableKey: string): string {
   return `${vendorId}:task:${createHash("sha256").update(stableKey).digest("hex").slice(0, 24)}`;
+}
+
+function legacyTaskKind(metadata: Record<string, unknown> | undefined): "task" | "trace" {
+  const value = metadata?.taskKind ?? metadata?.task_kind;
+  return value === "trace" || value === "trajectory" ? "trace" : "task";
+}
+
+function legacyFormatKind(
+  format: string,
+  representationPath: string | undefined,
+  normalizationOutcome: string | undefined,
+): "harbor" | "non_harbor" {
+  return representationPath === "already_harbor"
+    || normalizationOutcome === "already_harbor"
+    || format.trim().toLowerCase() === "harbor"
+    ? "harbor"
+    : "non_harbor";
 }
 
 type StoredTaskVersion = {

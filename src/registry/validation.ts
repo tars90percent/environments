@@ -1,10 +1,13 @@
 import type {
   ArtifactInput,
+  AppendTasksInput,
   AppendNormalizedTasksInput,
   CheckEvidenceRole,
   CheckExecutionScope,
   CheckResultInput,
   FollowUpInput,
+  HarborCheckResultInput,
+  HarborFindingInput,
   ResearcherUploadInput,
   SourceEnvelopeInput,
   StatusUpdateInput,
@@ -49,6 +52,10 @@ const REPRESENTATION_PATHS = new Set<TaskRepresentationPath>(["already_harbor", 
 const NORMALIZATION_OUTCOMES = new Set<TaskNormalizationOutcome>(["already_harbor", "normalized", "needs_review", "incomplete", "blocked", "not_a_task"]);
 const CHECK_EVIDENCE_ROLES = new Set<CheckEvidenceRole>(["contract", "build", "boot", "positive_control", "negative_control", "hermeticity", "evidence_completeness", "other"]);
 const CHECK_EXECUTION_SCOPES = new Set<CheckExecutionScope>(["static", "remote_sandbox", "unknown"]);
+const TASK_KINDS = new Set(["task", "trace"] as const);
+const TASK_FORMATS = new Set(["harbor", "non_harbor"] as const);
+const HARBOR_PHASES = new Set(["build", "boot", "oracle", "nop"] as const);
+const HARBOR_OUTCOMES = new Set(["pass", "fail"] as const);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
@@ -105,6 +112,13 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
       metadata: optionalObject(task.metadata, `tasks[${index}].metadata`),
     };
   });
+  if (categories.length || (tasks?.length ?? 0) > 0) {
+    throw new ValidationError("submission capture cannot include tasks; use /v1/intake/tasks after preserving the submission");
+  }
+  const formats = stringArray(batch.formats, "batch.formats");
+  if (formats.some((format) => !TASK_FORMATS.has(format as "harbor" | "non_harbor"))) {
+    throw new ValidationError("batch.formats may contain only harbor and non_harbor");
+  }
 
   return {
     vendor: {
@@ -129,7 +143,7 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
       label: string(batch.label, "batch.label"),
       sourceLabel: string(batch.sourceLabel, "batch.sourceLabel"),
       taskCount: nonNegativeInteger(batch.taskCount, "batch.taskCount"),
-      formats: stringArray(batch.formats, "batch.formats"),
+      formats,
       workflowStatus: enumValue(batch.workflowStatus, WORKFLOW_STATUSES, "batch.workflowStatus"),
       catalogVisibility: enumValue(batch.catalogVisibility, VISIBILITIES, "batch.catalogVisibility"),
       revisesBatchId: optionalString(batch.revisesBatchId, "batch.revisesBatchId"),
@@ -222,6 +236,97 @@ export function parseAppendNormalizedTasks(value: unknown): AppendNormalizedTask
     reason: boundedString(input.reason, "reason", 5_000),
     actor: boundedString(input.actor, "actor", 500),
   } as AppendNormalizedTasksInput;
+}
+
+export function parseAppendTasks(value: unknown): AppendTasksInput {
+  const input = object(value, "task registration");
+  onlyKeys(input, new Set(["submissionId", "tasks", "actor"]), "task registration");
+  const tasks = array(input.tasks, "tasks").map((value, index) => {
+    const task = object(value, `tasks[${index}]`);
+    onlyKeys(task, new Set([
+      "id", "stableKey", "title", "summary", "kind", "format", "sourcePath",
+      "artifactId", "contentSha256", "sourceItemIds",
+    ]), `tasks[${index}]`);
+    const artifactId = identifier(task.artifactId, `tasks[${index}].artifactId`);
+    const contentSha256 = sha256(task.contentSha256, `tasks[${index}].contentSha256`);
+    if (artifactId !== `artifact:sha256:${contentSha256}`) {
+      throw new ValidationError(`tasks[${index}].artifactId must identify contentSha256`);
+    }
+    const sourceItemIds = uniqueIdentifiers(task.sourceItemIds, `tasks[${index}].sourceItemIds`);
+    if (!sourceItemIds.length) throw new ValidationError(`tasks[${index}].sourceItemIds must not be empty`);
+    return {
+      id: identifier(task.id, `tasks[${index}].id`),
+      stableKey: boundedString(task.stableKey, `tasks[${index}].stableKey`, 1_000),
+      title: boundedString(task.title, `tasks[${index}].title`, 500),
+      summary: optionalString(task.summary, `tasks[${index}].summary`),
+      kind: enumValue(task.kind, TASK_KINDS, `tasks[${index}].kind`),
+      format: enumValue(task.format, TASK_FORMATS, `tasks[${index}].format`),
+      sourcePath: boundedString(task.sourcePath, `tasks[${index}].sourcePath`, 2_000),
+      artifactId,
+      contentSha256,
+      sourceItemIds,
+    };
+  });
+  if (!tasks.length) throw new ValidationError("tasks must contain at least one clearly parsed task or trace");
+  if (new Set(tasks.map((task) => task.id)).size !== tasks.length) throw new ValidationError("tasks must use unique ids");
+  if (new Set(tasks.map((task) => task.stableKey)).size !== tasks.length) {
+    throw new ValidationError("tasks must use unique stable keys within one registration");
+  }
+  return {
+    submissionId: identifier(input.submissionId, "submissionId"),
+    tasks,
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseHarborCheckResult(value: unknown): HarborCheckResultInput {
+  const input = object(value, "Harbor check result");
+  onlyKeys(input, new Set([
+    "id", "taskId", "phase", "outcome", "summary", "evidenceArtifactId",
+    "harborVersion", "modalVersion", "command", "sandboxRef", "score", "startedAt", "completedAt",
+  ]), "Harbor check result");
+  const phase = enumValue(input.phase, HARBOR_PHASES, "phase");
+  const outcome = enumValue(input.outcome, HARBOR_OUTCOMES, "outcome");
+  const score = input.score === undefined ? undefined : finiteNumber(input.score, "score");
+  if ((phase === "oracle" || phase === "nop") && score === undefined) {
+    throw new ValidationError(`${phase} checks must record the observed score`);
+  }
+  if ((phase === "build" || phase === "boot") && score !== undefined) {
+    throw new ValidationError(`${phase} checks cannot record a score`);
+  }
+  const expectedScore = phase === "oracle" ? 1 : phase === "nop" ? 0 : undefined;
+  if (expectedScore !== undefined && (score === expectedScore) !== (outcome === "pass")) {
+    throw new ValidationError(`${phase} outcome must match the observed score`);
+  }
+  const startedAt = timestamp(input.startedAt, "startedAt");
+  const completedAt = timestamp(input.completedAt, "completedAt");
+  if (Date.parse(completedAt) < Date.parse(startedAt)) throw new ValidationError("completedAt must not precede startedAt");
+  return {
+    id: identifier(input.id, "id"),
+    taskId: identifier(input.taskId, "taskId"),
+    phase,
+    outcome,
+    summary: boundedString(input.summary, "summary", 10_000),
+    evidenceArtifactId: identifier(input.evidenceArtifactId, "evidenceArtifactId"),
+    harborVersion: boundedString(input.harborVersion, "harborVersion", 300),
+    modalVersion: boundedString(input.modalVersion, "modalVersion", 300),
+    command: boundedString(input.command, "command", 10_000),
+    sandboxRef: optionalString(input.sandboxRef, "sandboxRef"),
+    ...(score === undefined ? {} : { score }),
+    startedAt,
+    completedAt,
+  };
+}
+
+export function parseHarborFinding(value: unknown): HarborFindingInput {
+  const input = object(value, "Harbor finding");
+  onlyKeys(input, new Set(["id", "taskId", "checkRunId", "finding"]), "Harbor finding");
+  return {
+    id: identifier(input.id, "id"),
+    taskId: identifier(input.taskId, "taskId"),
+    checkRunId: identifier(input.checkRunId, "checkRunId"),
+    finding: boundedString(input.finding, "finding", 20_000),
+  };
 }
 
 export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {
@@ -553,13 +658,11 @@ export function parseResearcherUpload(value: unknown): ResearcherUploadInput {
   const input = object(value, "researcher upload");
   const artifact = object(input.artifact, "artifact");
   const researcher = object(input.researcher, "researcher");
-  const category = boundedString(input.category, "category", 200);
   const note = input.note === undefined ? undefined : boundedString(input.note, "note", 5_000);
   return {
     id: identifier(input.id, "id"),
     vendorId: identifier(input.vendorId, "vendorId"),
     label: boundedString(input.label, "label", 300),
-    category,
     ...(note ? { note } : {}),
     uploadedAt: timestamp(input.uploadedAt, "uploadedAt"),
     artifact: {
@@ -645,6 +748,13 @@ function nonNegativeInteger(value: unknown, name: string): number {
 function positiveInteger(value: unknown, name: string): number {
   if (!Number.isInteger(value) || (value as number) < 1) throw new ValidationError(`${name} must be a positive integer`);
   return value as number;
+}
+
+function finiteNumber(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new ValidationError(`${name} must be a finite number`);
+  }
+  return value;
 }
 
 function optionalNonNegativeInteger(value: unknown, name: string): number | undefined {

@@ -909,30 +909,202 @@ const migrations: Migration[] = [
         );
     `,
   },
+  {
+    id: "014_narrow_sample_registry",
+    sql: `
+      -- The active CASE contract has two task kinds, two formats, and four
+      -- Harbor check phases. Older normalization/check columns remain only so
+      -- historical rows can be retained while callers move to this contract.
+      ALTER TABLE registry_task_versions
+        ADD COLUMN IF NOT EXISTS task_kind text,
+        ADD COLUMN IF NOT EXISTS format_kind text,
+        ADD COLUMN IF NOT EXISTS task_stable_key text,
+        ADD COLUMN IF NOT EXISTS task_title text,
+        ADD COLUMN IF NOT EXISTS task_summary text;
+
+      UPDATE registry_task_versions tv
+      SET task_stable_key = t.stable_key,
+          task_title = t.title,
+          task_summary = t.summary
+      FROM registry_tasks t
+      WHERE t.id = tv.task_id
+        AND (tv.task_stable_key IS NULL OR tv.task_title IS NULL);
+
+      UPDATE registry_task_versions
+      SET task_kind = CASE
+            WHEN lower(COALESCE(metadata->>'taskKind', metadata->>'task_kind', '')) IN ('trace', 'trajectory')
+              THEN 'trace'
+            WHEN lower(btrim(format)) IN (
+              'native jsonl instruction and chat-trajectory record',
+              'metadata-only agentic trajectory session boundary',
+              'native trajectory record with embedded coding prompt'
+            )
+              THEN 'trace'
+            ELSE 'task'
+          END
+      WHERE task_kind IS NULL;
+
+      UPDATE registry_task_versions
+      SET format_kind = CASE
+            -- A task converted into Harbor was not delivered in Harbor format.
+            WHEN representation_path = 'normalized_to_harbor'
+              OR normalization_outcome = 'normalized'
+              THEN 'non_harbor'
+            WHEN representation_path = 'already_harbor'
+              OR normalization_outcome = 'already_harbor'
+              OR lower(btrim(format)) ~ '^harbor($|[ _-])'
+              OR lower(btrim(format)) = 'deepswe material package (incomplete harbor)'
+              THEN 'harbor'
+            ELSE 'non_harbor'
+          END
+      WHERE format_kind IS NULL;
+
+      ALTER TABLE registry_task_versions
+        ALTER COLUMN task_kind SET DEFAULT 'task',
+        ALTER COLUMN task_kind SET NOT NULL,
+        ALTER COLUMN format_kind SET DEFAULT 'non_harbor',
+        ALTER COLUMN format_kind SET NOT NULL,
+        ALTER COLUMN task_stable_key SET NOT NULL,
+        ALTER COLUMN task_title SET NOT NULL,
+        ADD CONSTRAINT registry_task_versions_task_kind_check
+          CHECK (task_kind IN ('task', 'trace')),
+        ADD CONSTRAINT registry_task_versions_format_kind_check
+          CHECK (format_kind IN ('harbor', 'non_harbor'));
+
+      ALTER TABLE registry_check_runs
+        ADD COLUMN IF NOT EXISTS check_phase text,
+        ADD COLUMN IF NOT EXISTS evidence_artifact_id text REFERENCES registry_artifacts(id),
+        ADD COLUMN IF NOT EXISTS harbor_version text,
+        ADD COLUMN IF NOT EXISTS modal_version text,
+        ADD COLUMN IF NOT EXISTS command text,
+        ADD COLUMN IF NOT EXISTS sandbox_ref text,
+        ADD COLUMN IF NOT EXISTS score double precision;
+
+      UPDATE registry_check_runs cr
+      SET check_phase = CASE cd.evidence_role
+            WHEN 'build' THEN 'build'
+            WHEN 'boot' THEN 'boot'
+            WHEN 'positive_control' THEN 'oracle'
+            WHEN 'negative_control' THEN 'nop'
+          END
+      FROM registry_check_definitions cd
+      WHERE cd.id = cr.definition_id
+        AND cd.version = cr.definition_version
+        AND cr.check_phase IS NULL
+        AND cr.execution_scope = 'remote_sandbox'
+        AND cr.outcome IN ('pass', 'fail')
+        AND cd.evidence_role IN ('build', 'boot', 'positive_control', 'negative_control');
+
+      ALTER TABLE registry_check_runs
+        ADD CONSTRAINT registry_check_runs_check_phase_check
+          CHECK (check_phase IS NULL OR check_phase IN ('build', 'boot', 'oracle', 'nop'));
+
+      ALTER TABLE registry_task_findings
+        ADD COLUMN IF NOT EXISTS check_run_id text REFERENCES registry_check_runs(id),
+        ADD COLUMN IF NOT EXISTS check_phase text;
+
+      ALTER TABLE registry_task_findings
+        ADD CONSTRAINT registry_task_findings_check_phase_check
+          CHECK (check_phase IS NULL OR check_phase IN ('build', 'boot', 'oracle', 'nop'));
+
+      CREATE INDEX IF NOT EXISTS registry_task_versions_active_format_idx
+        ON registry_task_versions(batch_id, format_kind, task_kind);
+      CREATE INDEX IF NOT EXISTS registry_check_runs_active_phase_idx
+        ON registry_check_runs(task_version_id, check_phase, completed_at DESC)
+        WHERE check_phase IS NOT NULL AND outcome IN ('pass', 'fail');
+
+      CREATE OR REPLACE VIEW registry_sample_tasks AS
+      SELECT tv.id,
+             tv.batch_id AS submission_id,
+             t.vendor_id,
+             tv.task_stable_key AS stable_key,
+             tv.task_title AS title,
+             tv.task_summary AS summary,
+             tv.task_kind,
+             tv.format_kind,
+             tv.source_path,
+             tv.artifact_id,
+             tv.content_sha256,
+             tv.created_at
+      FROM registry_task_versions tv
+      JOIN registry_tasks t ON t.id = tv.task_id;
+
+      CREATE OR REPLACE VIEW registry_harbor_check_results AS
+      SELECT id,
+             task_version_id AS task_id,
+             check_phase AS phase,
+             outcome,
+             summary,
+             evidence_artifact_id,
+             harbor_version,
+             modal_version,
+             command,
+             sandbox_ref,
+             score,
+             started_at,
+             completed_at
+      FROM registry_check_runs
+      WHERE check_phase IS NOT NULL
+        AND outcome IN ('pass', 'fail');
+
+      COMMENT ON VIEW registry_sample_tasks IS
+        'Active CASE task record: one clearly identified task or trace from one submission.';
+      COMMENT ON VIEW registry_harbor_check_results IS
+        'Active CASE check abstraction: Build, Boot, Oracle, or Nop pass/fail only.';
+
+      -- Remove only records belonging exclusively to workflows that CASE no
+      -- longer performs. Original payloads, sources, submissions, tasks, task
+      -- links, artifacts, and content-addressed objects are deliberately not
+      -- touched by this cleanup.
+      DELETE FROM registry_task_findings
+      WHERE check_run_id IS NULL OR check_phase IS NULL;
+
+      DELETE FROM registry_check_runs
+      WHERE check_phase IS NULL OR outcome NOT IN ('pass', 'fail');
+
+      DELETE FROM registry_check_definitions cd
+      WHERE NOT EXISTS (
+        SELECT 1 FROM registry_check_runs cr
+        WHERE cr.definition_id = cd.id AND cr.definition_version = cd.version
+      );
+
+      DELETE FROM registry_work_items
+      WHERE kind IN ('normalize_source_event', 'check_submission');
+
+      DELETE FROM registry_submission_reviews;
+      DELETE FROM registry_follow_ups;
+      DELETE FROM registry_research_demands;
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS registry_migrations (
-      id text PRIMARY KEY,
-      applied_at timestamptz NOT NULL DEFAULT now()
-    )
-  `);
+  await client.query("SELECT pg_advisory_lock(hashtext('case_registry_migrations'))");
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS registry_migrations (
+        id text PRIMARY KEY,
+        applied_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
 
-  for (const migration of migrations) {
-    const result = await client.query<{ id: string }>(
-      "SELECT id FROM registry_migrations WHERE id = $1",
-      [migration.id],
-    );
-    if (result.rowCount) continue;
-    await client.query("BEGIN");
-    try {
-      await client.query(migration.sql);
-      await client.query("INSERT INTO registry_migrations(id) VALUES ($1)", [migration.id]);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
+    for (const migration of migrations) {
+      const result = await client.query<{ id: string }>(
+        "SELECT id FROM registry_migrations WHERE id = $1",
+        [migration.id],
+      );
+      if (result.rowCount) continue;
+      await client.query("BEGIN");
+      try {
+        await client.query(migration.sql);
+        await client.query("INSERT INTO registry_migrations(id) VALUES ($1)", [migration.id]);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      }
     }
+  } finally {
+    await client.query("SELECT pg_advisory_unlock(hashtext('case_registry_migrations'))");
   }
 }

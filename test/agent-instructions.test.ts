@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -23,88 +23,56 @@ test("installs the source-controlled guide into the persistent agent workspace",
   }
 });
 
-test("the CASE guide defines one complete registration workflow", async () => {
+test("the CASE guide defines the narrow submission-processing workflow", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
 
-  assert.match(guide, /CASE turns messy evaluation-sample deliveries into exact, runnable, evidence-backed task versions/);
-  assert.match(guide, /CASE owns complete sample registration as one end-to-end process/);
-  assert.match(guide, /accumulating completeness steps, not separate products or organizational handoffs/);
-  assert.match(guide, /Storing the original payload first is a crash-safe checkpoint/);
-  assert.match(guide, /Complete registration does not require every task to pass/);
-  assert.doesNotMatch(guide, /case-harbor-normalization/);
+  assert.match(guide, /preserve each original submission and its arrival provenance/);
+  assert.match(guide, /exactly one of `harbor` or `non_harbor`/);
+  assert.match(guide, /For `non_harbor`, record the task and stop\. Do not check it/);
+  assert.match(guide, /exactly four results: Build, Boot, Oracle, and Nop/);
+  assert.match(guide, /This is the complete CASE sample-processing workflow/);
 });
 
-test("the CASE guide defines architectural and decision boundaries", async () => {
+test("the CASE guide permits only the four Modal-backed Harbor checks", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
 
-  assert.match(guide, /CASE is TARS's Codex agent for RL environment sourcing/);
-  assert.match(guide, /sample registry is a CASE-owned project/);
-  assert.match(guide, /CASE performs task interpretation as the accountable practitioner/);
-  assert.match(guide, /PostgreSQL registry:.*authoritative relational record/s);
-  assert.match(guide, /S3-compatible object storage:.*immutable, content-addressed/s);
-  assert.match(guide, /Durable work queue:.*scheduling and recovery/s);
-  assert.match(guide, /Final upstreaming and purchasing authority:.*designated post-training researchers/);
-  assert.match(guide, /fresh disposable remote sandbox/);
-  assert.match(guide, /zero exit code or sandbox completion is not by itself a passing task result/);
+  assert.match(guide, /\*\*Build pass\/fail:\*\*.*Dockerfile.*build an image/);
+  assert.match(guide, /\*\*Boot pass\/fail:\*\*.*container.*start/);
+  assert.match(guide, /\*\*Oracle pass\/fail:\*\*.*score `1`/);
+  assert.match(guide, /\*\*Nop pass\/fail:\*\*.*score `0`/);
+  assert.match(guide, /Modal as the sandbox provider/);
+  assert.match(guide, /Do not add package-quality gates/);
+  assert.match(guide, /target-model trials/);
+  assert.match(guide, /DeepSeek diagnostics/);
 });
 
-test("the CASE guide resolves live requirements from governing evidence", async () => {
+test("the CASE guide limits findings to demonstrated check issues", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
 
-  assert.match(guide, /latest dated requirement or decision from the designated post-training researcher/);
-  assert.match(guide, /数据采购.*Wiki/);
-  assert.match(guide, /legacy.*Base.*read-only historical reference/s);
-  assert.match(guide, /package format, repeat counts, models, harnesses, trajectory counts, pass-rate bands/);
+  assert.match(guide, /A finding is a short factual note/);
+  assert.match(guide, /Findings are limited to/);
+  assert.match(guide, /Do not put infrastructure failures/);
+  assert.match(guide, /recommended next actions in findings/);
+  assert.match(guide, /Do not philosophize about the sample/);
 });
 
-test("the default clean-runnable policy uses one Oracle and one Nop control", async () => {
-  const runtimeEvidence = await readFile(
-    new URL("../skills/case-sample-registration/references/runtime-evidence.md", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(runtimeEvidence, /baseline is one successful Oracle\/gold trial/);
-  assert.match(runtimeEvidence, /baseline is one expected-negative Nop\/untouched trial/);
-  assert.doesNotMatch(runtimeEvidence, /minimum is two (successful|expected-negative) trials/);
-});
-
-test("ships the complete-registration and registry skills referenced by the guide", async () => {
+test("the CASE guide keeps registry mechanics self-describing", async () => {
   const guide = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
-  const registrationSkill = await readFile(
-    new URL("../skills/case-sample-registration/SKILL.md", import.meta.url),
-    "utf8",
-  );
-  const registrySkill = await readFile(
-    new URL("../skills/case-registry/SKILL.md", import.meta.url),
-    "utf8",
-  );
+
+  assert.match(guide, /Use the `case-registry` CLI instead of raw database writes/);
+  assert.match(guide, /HTTP API is only the portal-facing catalog and researcher-upload adapter/);
+  assert.match(guide, /Inspect the existing record first/);
+  assert.match(guide, /run `case-registry operations` for the current command schemas/);
+});
+
+test("the image does not package CASE-specific skills", async () => {
   const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
-  const references = [
-    "registry-recording.md",
-    "runtime-evidence.md",
-    "harbor-contract.md",
-    "interpretation.md",
-  ];
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
 
-  assert.match(guide, /Use the `case-sample-registration` skill.*`case-registry`/);
-  assert.match(registrationSkill, /Registration is one workflow with resumable checkpoints/);
-  assert.match(registrySkill, /It does not define a separate capture or processing lifecycle/);
+  assert.doesNotMatch(dockerfile, /COPY skills \.\/skills/);
+  assert.doesNotMatch(dockerfile, /\/root\/\.agents\/skills\/case-/);
+  assert.match(readme, /complete sample-processing policy lives in the source-controlled/);
+  assert.match(readme, /case-registry operations/);
 
-  for (const reference of references) {
-    assert.match(registrationSkill, new RegExp(`references/${reference.replace(".", "\\.")}`));
-    assert.match(
-      await readFile(
-        new URL(`../skills/case-sample-registration/references/${reference}`, import.meta.url),
-        "utf8",
-      ),
-      /\S/,
-    );
-  }
-
-  assert.match(dockerfile, /cp -R \/app\/skills\/\. \/root\/\.agents\/skills\//);
-  assert.match(
-    dockerfile,
-    /test -f \/root\/\.agents\/skills\/case-sample-registration\/SKILL\.md/,
-  );
-  assert.match(dockerfile, /test -f \/root\/\.agents\/skills\/case-registry\/SKILL\.md/);
+  await assert.rejects(() => stat(new URL("../skills", import.meta.url)), /ENOENT/);
 });

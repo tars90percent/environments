@@ -3,347 +3,138 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseAppendNormalizedTasks, parseCheckResult, parseResearcherUpload, parseSourceEnvelope, parseSubmissionIntakeClassification, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskFindingUpdate, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import {
+  parseAppendTasks,
+  parseHarborCheckResult,
+  parseHarborFinding,
+  parseResearcherUpload,
+  parseSourceEnvelope,
+  parseSubmissionIntakeClassification,
+  parseSubmissionManifest,
+  parseSubmissionRemoval,
+  ValidationError,
+} from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
-  sourceEvent: {
-    id: "source-one",
-    channel: "workspace",
-    externalRef: "workspace://sample-one",
-    receivedAt: "2026-08-13T00:00:00.000Z",
-  },
+  sourceEvent: { id: "source-one", channel: "workspace", externalRef: "workspace://sample-one", sender: "Vendor One", receivedAt: "2026-08-13T00:00:00.000Z" },
   batch: {
     id: "vendor-one-2026-08-13",
     date: "2026-08-13",
     label: "First sample",
     sourceLabel: "sample-one",
-    taskCount: 1,
-    formats: ["Harbor"],
-    workflowStatus: "ready_for_research",
+    taskCount: 0,
+    formats: [],
+    workflowStatus: "unchecked",
     catalogVisibility: "available",
-    delta: { added: 1, removed: 0, note: "First observed submission." },
+    delta: { added: 0, removed: 0, note: "Original delivery preserved before parsing." },
     metadata: { intakePurpose: "sample_evaluation" },
   },
-  categories: [{ id: "vendor-one:systems", name: "Systems", description: "Systems tasks.", count: 1 }],
-  tasks: [{
-    id: "vendor-one-2026-08-13:task-one",
-    stableKey: "task-one",
-    title: "Task one",
-    categoryId: "vendor-one:systems",
-    format: "Harbor",
-  }],
+  categories: [],
+  tasks: [],
 };
 
-test("validates a complete immutable submission manifest", () => {
+test("captures a submission before parsing tasks", () => {
   const parsed = parseSubmissionManifest(manifest);
   assert.equal(parsed.batch.id, manifest.batch.id);
-  assert.equal(parsed.tasks?.[0]?.categoryId, manifest.categories[0]?.id);
-  assert.equal(parsed.sourceEvent.receivedAt, "2026-08-13T00:00:00.000Z");
-  assert.throws(
-    () => parseSubmissionManifest({ ...manifest, tasks: [{ ...manifest.tasks?.[0], categoryId: "missing" }] }),
-    ValidationError,
-  );
+  assert.equal(parsed.sourceEvent.sender, "Vendor One");
+  assert.throws(() => parseSubmissionManifest({ ...manifest, categories: [{ id: "cat", name: "Category", description: "Extra layer", count: 0 }] }), /cannot include tasks/);
+  assert.throws(() => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, formats: ["native"] } }), /only harbor and non_harbor/);
+  assert.throws(() => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, metadata: { intakePurpose: "purchased_delivery" } } }), ValidationError);
 });
 
-test("protects catalog reads separately from CASE writes", () => {
-  const catalogToken = "catalog-token-with-at-least-32-characters";
-  const reviewToken = "review-token-with-at-least-32-characters!";
-  const uploadToken = "upload-token-with-at-least-32-characters!!";
-  const adminToken = "admin-token-with-at-least-32-characters!!";
-  assert.equal(registryRole(undefined, catalogToken, reviewToken, uploadToken, adminToken), null);
-  assert.equal(registryRole("Bearer wrong", catalogToken, reviewToken, uploadToken, adminToken), null);
-  assert.equal(registryRole(`Bearer ${catalogToken}`, catalogToken, reviewToken, uploadToken, adminToken), "catalog");
-  assert.equal(registryRole(`Bearer ${reviewToken}`, catalogToken, reviewToken, uploadToken, adminToken), "review");
-  assert.equal(registryRole(`Bearer ${uploadToken}`, catalogToken, reviewToken, uploadToken, adminToken), "upload");
-  assert.equal(registryRole(`Bearer ${adminToken}`, catalogToken, reviewToken, uploadToken, adminToken), "admin");
+test("protects the portal catalog and upload scopes separately", () => {
+  const catalog = "catalog-token-with-at-least-32-characters";
+  const upload = "upload-token-with-at-least-32-characters!!";
+  assert.equal(registryRole(undefined, catalog, upload), null);
+  assert.equal(registryRole(`Bearer ${catalog}`, catalog, upload), "catalog");
+  assert.equal(registryRole(`Bearer ${upload}`, catalog, upload), "upload");
+  assert.equal(registryRole("Bearer unknown", catalog, upload), null);
 });
 
-test("validates bounded researcher uploads with verified identity and artifact metadata", () => {
+test("validates researcher uploads without category or review fields", () => {
   const upload = {
     id: "97f6d26d-9a3a-4a86-a6aa-39289650616c",
     vendorId: "vendor-one",
     label: "Researcher sample",
-    category: "Coding environments",
-    note: "Please inspect the grader behavior.",
+    note: "Received in a vendor call.",
     uploadedAt: "2026-08-17T08:00:00.000Z",
-    artifact: {
-      sha256: "a".repeat(64),
-      sizeBytes: 1024,
-      contentType: "application/zip",
-      originalName: "sample.zip",
-    },
-    researcher: {
-      openId: "ou_researcher",
-      tenantKey: "tenant_one",
-      name: "Researcher One",
-    },
+    artifact: { sha256: "a".repeat(64), sizeBytes: 1024, contentType: "application/zip", originalName: "sample.zip" },
+    researcher: { openId: "ou_researcher", tenantKey: "tenant_one", name: "Researcher One" },
   };
   assert.equal(parseResearcherUpload(upload).artifact.originalName, "sample.zip");
   assert.throws(() => parseResearcherUpload({ ...upload, artifact: { ...upload.artifact, sha256: "bad" } }), ValidationError);
-  assert.throws(() => parseResearcherUpload({ ...upload, vendorId: "vendor/one" }), ValidationError);
 });
 
-test("validates append-only submission reviews and category scope", () => {
-  const review = {
-    id: "review-one",
-    batchId: manifest.batch.id,
-    signal: "not_interested",
-    scope: "categories",
-    categoryIds: [manifest.categories[0]?.id],
-    reviewer: { openId: "ou_researcher", tenantKey: "tenant_one", name: "Researcher One" },
-    comment: "The systems tasks are too shallow for the target use case.",
-  };
-  assert.equal(parseSubmissionReview(review).signal, "not_interested");
-  assert.throws(() => parseSubmissionReview({ ...review, categoryIds: [] }), ValidationError);
-  assert.throws(() => parseSubmissionReview({ ...review, signal: "needs_revision", comment: "" }), ValidationError);
-  assert.throws(() => parseSubmissionReview({ ...review, scope: "submission", categoryIds: [manifest.categories[0]?.id] }), ValidationError);
-});
-
-test("validates recursive source envelopes and their derivation links", () => {
+test("validates recursive source provenance", () => {
   const envelope: SourceEnvelopeInput = {
     vendor: manifest.vendor,
-    sourceEvent: {
-      id: "feishu-message-one",
-      channel: "feishu",
-      externalRef: "feishu://message/one",
-      receivedAt: "2026-08-13T00:00:00.000Z",
-    },
+    sourceEvent: { id: "message-one", channel: "feishu", externalRef: "feishu://message/one", sender: "Vendor One", receivedAt: "2026-08-13T00:00:00.000Z" },
     items: [
-      {
-        id: "source-message-one",
-        kind: "message",
-        displayName: "Inbound vendor message",
-        locator: "feishu://message/one",
-        fetchStatus: "snapshotted",
-        parseStatus: "parsed",
-        mutable: false,
-      },
-      {
-        id: "source-sheet-one",
-        kind: "spreadsheet",
-        displayName: "Task index",
-        locator: "https://docs.google.com/spreadsheets/d/example/edit",
-        fetchStatus: "queued",
-        parseStatus: "not_requested",
-        mutable: true,
-      },
+      { id: "source-message", kind: "message", displayName: "Inbound message", locator: "feishu://message/one", fetchStatus: "snapshotted", parseStatus: "parsed", mutable: false },
+      { id: "source-archive", kind: "archive", displayName: "sample.zip", artifactId: `artifact:sha256:${"a".repeat(64)}`, contentSha256: "a".repeat(64), fetchStatus: "snapshotted", parseStatus: "queued", mutable: false },
     ],
-    relations: [{ fromItemId: "source-message-one", toItemId: "source-sheet-one", relation: "links_to", position: 0 }],
+    relations: [{ fromItemId: "source-message", toItemId: "source-archive", relation: "contains", position: 0 }],
   };
-  assert.equal(parseSourceEnvelope(envelope).relations?.[0]?.relation, "links_to");
-  assert.throws(
-    () => parseSourceEnvelope({ ...envelope, relations: [{ fromItemId: "source-message-one", toItemId: "missing", relation: "links_to" }] }),
-    ValidationError,
-  );
+  assert.equal(parseSourceEnvelope(envelope).sourceEvent.sender, "Vendor One");
+  assert.throws(() => parseSourceEnvelope({ ...envelope, relations: [{ fromItemId: "source-message", toItemId: "missing", relation: "contains" }] }), ValidationError);
 });
 
-test("validates append-only vendor and procurement events", () => {
-  const event = {
-    id: "vendor-one:purchase-authorized:2026-08-13",
-    vendorId: "vendor-one",
-    kind: "commercial",
-    eventType: "purchase_authorized",
-    summary: "Researcher authorized a ten-task starter order.",
-    actor: "Researcher One",
-    occurredAt: "2026-08-13T00:00:00.000Z",
-    sourceEventIds: ["feishu-message-one"],
-    batchIds: [],
-    metadata: { quantity: 10, currency: "USD" },
-  };
-  assert.equal(parseVendorEvent(event).eventType, "purchase_authorized");
-  assert.throws(() => parseVendorEvent({ ...event, sourceEventIds: ["same", "same"] }), ValidationError);
-  assert.throws(() => parseVendorEvent({ ...event, kind: "quality_score" }), ValidationError);
-});
-
-test("accepts unchecked submissions for visible, unreviewed samples", () => {
-  const parsed = parseSubmissionManifest({
-    ...manifest,
-    batch: {
-      ...manifest.batch,
-      id: "vendor-one-2026-08-14-unchecked",
-      workflowStatus: "unchecked",
-      catalogVisibility: "available",
-      taskCount: 0,
-    },
-    categories: [],
-    tasks: [],
-  });
-  assert.equal(parsed.batch.workflowStatus, "unchecked");
-  assert.equal(parsed.batch.taskCount, 0);
-});
-
-test("rejects purchased or unscoped deliveries from the sample registry", () => {
-  assert.throws(
-    () => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, metadata: { intakePurpose: "purchased_delivery" } } }),
-    ValidationError,
-  );
-  assert.throws(
-    () => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, metadata: undefined } }),
-    ValidationError,
-  );
-});
-
-test("uses deterministic content-addressed object keys", () => {
-  const sha256 = "a".repeat(64);
-  assert.equal(contentAddressedStorageKey(sha256), `objects/sha256/aa/${sha256}`);
-  assert.throws(() => contentAddressedStorageKey("not-a-sha"));
-});
-
-test("requires an explicit disposition, auditable operator, and reason for removing a submission", () => {
-  const removal = {
-    batchId: "vendor-one-purchased-delivery",
-    disposition: "purchased_delivery_handoff" as const,
-    reason: "The purchased delivery moved to the downstream production-data pipeline.",
-    actor: "TARS",
-  };
-  assert.deepEqual(parseSubmissionRemoval(removal), removal);
-  assert.equal(parseSubmissionRemoval({
-    ...removal,
-    disposition: "erroneous_registration",
-    reason: "CASE registered the same inbound submission twice.",
-  }).disposition, "erroneous_registration");
-  assert.throws(() => parseSubmissionRemoval({ ...removal, reason: "" }), ValidationError);
-  assert.throws(() => parseSubmissionRemoval({ ...removal, batchId: "unsafe/id" }), ValidationError);
-  assert.throws(() => parseSubmissionRemoval({ ...removal, disposition: "low_quality" }), ValidationError);
-  assert.throws(() => parseSubmissionRemoval({ ...removal, force: true }), ValidationError);
-});
-
-test("requires linked evidence to classify a legacy submission as an evaluation sample", () => {
-  const classification = {
-    batchId: "vendor-one-legacy-sample",
-    purpose: "sample_evaluation",
-    sourceEventIds: ["source-vendor-email"],
-    reason: "The dated vendor email identifies this delivery as an evaluation sample, not purchased production data.",
-    actor: "TARS/Codex",
-  };
-  assert.deepEqual(parseSubmissionIntakeClassification(classification), classification);
-  assert.throws(
-    () => parseSubmissionIntakeClassification({ ...classification, purpose: "purchased_delivery" }),
-    ValidationError,
-  );
-  assert.throws(
-    () => parseSubmissionIntakeClassification({ ...classification, sourceEventIds: [] }),
-    ValidationError,
-  );
-});
-
-test("validates append-only task-to-source repairs", () => {
+test("registers only clearly identified tasks or traces with two formats", () => {
+  const sha = "a".repeat(64);
   const input = {
-    links: [{ taskVersionId: "task-version-one", sourceItemId: "source-package-one", role: "normalized_from" }],
-    reason: "Attach an immutable package captured after the original normalization pass.",
-    actor: "case",
+    submissionId: manifest.batch.id,
+    actor: "CASE",
+    tasks: [
+      { id: "task-harbor", stableKey: "task-one", title: "Task one", kind: "task", format: "harbor", sourcePath: "tasks/task-one", artifactId: `artifact:sha256:${sha}`, contentSha256: sha, sourceItemIds: ["source-archive"] },
+      { id: "task-trace", stableKey: "trace-one", title: "Trace one", kind: "trace", format: "non_harbor", sourcePath: "traces/one.jsonl", artifactId: `artifact:sha256:${sha}`, contentSha256: sha, sourceItemIds: ["source-archive"] },
+    ],
   };
-  assert.equal(parseTaskSourceLinks(input).links.length, 1);
-  assert.throws(() => parseTaskSourceLinks({ ...input, links: [] }), ValidationError);
-  assert.throws(() => parseTaskSourceLinks({ ...input, links: [...input.links, ...input.links] }), ValidationError);
+  const parsed = parseAppendTasks(input);
+  assert.deepEqual(parsed.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
+  assert.throws(() => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[0], format: "native" }] }), ValidationError);
+  assert.throws(() => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[0], sourceItemIds: [] }] }), ValidationError);
 });
 
-test("validates provenance-complete task registration for an existing submission", () => {
-  const sha256 = "a".repeat(64);
-  const input = {
-    batchId: manifest.batch.id,
-    categories: [{
-      id: "vendor-one:normalized:systems",
-      name: "Normalized systems",
-      description: "Interpreted systems tasks.",
-      count: 1,
-      examples: ["task-one"],
-    }],
-    tasks: [{
-      id: "vendor-one-2026-08-13:task-one:normalized",
-      stableKey: "task-one",
-      title: "Task one",
-      summary: "A normalized systems task.",
-      categoryId: "vendor-one:normalized:systems",
-      sourcePath: "delivery/tasks/task-one",
-      format: "Harbor",
-      representationKind: "harbor",
-      representationPath: "already_harbor",
-      normalizationOutcome: "already_harbor",
-      artifactId: `artifact:sha256:${sha256}`,
-      contentSha256: sha256,
-      sourceItemIds: ["source-task-package-one", "source-archive-one"],
-      workflowStatus: "unchecked",
-      catalogVisibility: "log_only",
-      metadata: { guidanceVersion: "case-harbor-normalization" },
-    }],
-    reason: "Register the interpreted task after attachment-first capture.",
-    actor: "TARS/CASE",
-  };
-  const parsed = parseAppendNormalizedTasks(input);
-  assert.equal(parsed.tasks[0]?.artifactId, `artifact:sha256:${sha256}`);
-  assert.equal(parsed.tasks[0]?.sourcePath, "delivery/tasks/task-one");
-  assert.throws(
-    () => parseAppendNormalizedTasks({
-      ...input,
-      tasks: [{ ...input.tasks[0], artifactId: `artifact:sha256:${"b".repeat(64)}` }],
-    }),
-    ValidationError,
-  );
-  assert.throws(
-    () => parseAppendNormalizedTasks({ ...input, tasks: [{ ...input.tasks[0], sourceItemIds: [] }] }),
-    ValidationError,
-  );
-  assert.throws(
-    () => parseAppendNormalizedTasks({ ...input, categories: [{ ...input.categories[0], count: 2 }] }),
-    ValidationError,
-  );
-  assert.throws(
-    () => parseAppendNormalizedTasks({
-      ...input,
-      tasks: [{ ...input.tasks[0], representationKind: "native" }],
-    }),
-    ValidationError,
-  );
-});
-
-test("requires runtime checks to declare their evidence role and sandbox scope", () => {
-  const check = {
-    id: "check:task-one:oracle",
-    taskVersionId: "vendor-one-2026-08-13:task-one:normalized",
-    definitionId: "oracle-control",
-    definitionVersion: 1,
-    kind: "deterministic",
-    evidenceRole: "positive_control",
-    executionScope: "remote_sandbox",
-    name: "Oracle control",
-    description: "Runs the gold solution and verifier in a disposable sandbox.",
-    required: true,
+test("validates exactly four Harbor pass/fail phases and explicit control scores", () => {
+  const base = {
+    id: "check:oracle",
+    taskId: "task-harbor",
+    phase: "oracle",
     outcome: "pass",
-    summary: "Oracle returned reward 1.",
-    runner: { provider: "modal", version: "1" },
-    evidence: { artifactId: "artifact:oracle" },
+    summary: "Oracle received score 1.",
+    evidenceArtifactId: "artifact:oracle-evidence",
+    harborVersion: "0.1.0",
+    modalVersion: "1.0.0",
+    command: "case-harbor run --agent oracle --provider modal",
+    sandboxRef: "modal:sb-123",
+    score: 1,
     startedAt: "2026-08-21T00:00:00.000Z",
     completedAt: "2026-08-21T00:01:00.000Z",
   };
-  assert.equal(parseCheckResult(check).evidenceRole, "positive_control");
-  assert.throws(() => parseCheckResult({ ...check, executionScope: "static" }), ValidationError);
-  assert.throws(() => parseCheckResult({ ...check, executionScope: "unknown" }), ValidationError);
-  assert.equal(
-    parseCheckResult({ ...check, outcome: "blocked", executionScope: "unknown" }).executionScope,
-    "unknown",
-  );
-  assert.equal(
-    parseCheckResult({ ...check, outcome: "not_run", executionScope: "unknown" }).executionScope,
-    "unknown",
-  );
-  assert.throws(() => parseCheckResult({ ...check, evidenceRole: undefined }), ValidationError);
+  assert.equal(parseHarborCheckResult(base).phase, "oracle");
+  assert.throws(() => parseHarborCheckResult({ ...base, outcome: "fail" }), /must match the observed score/);
+  assert.throws(() => parseHarborCheckResult({ ...base, phase: "hermeticity" }), ValidationError);
+  assert.throws(() => parseHarborCheckResult({ ...base, phase: "build", score: 1 }), /cannot record a score/);
+  assert.throws(() => parseHarborCheckResult({ ...base, phase: "nop", outcome: "pass", score: 1 }), /must match the observed score/);
 });
 
-test("validates plain task findings and updates without classification fields", () => {
-  const finding = {
-    id: "finding:vendor-one:task-one:verifier-isolation",
-    taskVersionId: "vendor-one-2026-08-13:task-one",
-    finding: "The verifier tested a pristine environment rather than the Oracle-modified filesystem.",
-  };
-  assert.deepEqual(parseTaskFinding(finding), finding);
-  assert.deepEqual(
-    parseTaskFindingUpdate({ id: finding.id, finding: "The verifier now checks the modified filesystem." }, finding.id),
-    { id: finding.id, finding: "The verifier now checks the modified filesystem." },
-  );
-  assert.throws(() => parseTaskFinding({ ...finding, kind: "deterministic_result" }), ValidationError);
-  assert.throws(() => parseTaskFinding({ ...finding, title: "Verifier isolation defect" }), ValidationError);
-  assert.throws(() => parseTaskFindingUpdate({ id: "finding:other", finding: "Changed." }, finding.id), ValidationError);
-  assert.throws(() => parseTaskFindingUpdate({ finding: "" }, finding.id), ValidationError);
+test("findings cite one failed Harbor check and have no classification fields", () => {
+  const finding = { id: "finding:nop", taskId: "task-harbor", checkRunId: "check:nop", finding: "Nop received score 1." };
+  assert.deepEqual(parseHarborFinding(finding), finding);
+  assert.throws(() => parseHarborFinding({ ...finding, recommendation: "Change the grader." }), /unsupported fields/);
+});
+
+test("keeps content-addressed objects and explicit submission removal", () => {
+  const sha = "a".repeat(64);
+  assert.equal(contentAddressedStorageKey(sha), `objects/sha256/aa/${sha}`);
+  const removal = { batchId: "vendor-one-2026-08-13", disposition: "erroneous_registration" as const, reason: "Duplicate registration.", actor: "CASE" };
+  assert.deepEqual(parseSubmissionRemoval(removal), removal);
+  assert.throws(() => parseSubmissionRemoval({ ...removal, disposition: "low_quality" }), ValidationError);
+});
+
+test("classifies a legacy submission only from linked sample evidence", () => {
+  const classification = { batchId: "legacy-sample", purpose: "sample_evaluation", sourceEventIds: ["source-event"], reason: "The dated message identifies a sample.", actor: "CASE" };
+  assert.deepEqual(parseSubmissionIntakeClassification(classification), classification);
+  assert.throws(() => parseSubmissionIntakeClassification({ ...classification, sourceEventIds: [] }), ValidationError);
 });

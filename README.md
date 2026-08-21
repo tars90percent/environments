@@ -3,18 +3,15 @@
 TARS's always-on Feishu colleague for environment and task sample operations,
 powered by Codex.
 
-CASE also owns the canonical RL-environment sample registry used by its own
-tools and by narrow human surfaces such as 小环境. PostgreSQL holds vendor,
-submission, task-version, check, trajectory, status, follow-up, and durable
-work-queue records. S3-compatible object storage holds immutable packages and
-evidence. The portal is a catalog and authenticated intake client; it can append
-researcher responses and new researcher-upload submissions, but it does not own
-or edit canonical procurement state.
+CASE owns the canonical sample registry used by its own tools and 小环境.
+PostgreSQL holds vendors, original source graphs, dated submissions, parsed
+tasks or traces, four Harbor check phases, findings, and operational work.
+S3-compatible object storage holds immutable payloads, task artifacts,
+and check evidence.
 
-CASE treats delivery preservation, task discovery and representation, remote
-checking, and evidence recording as one complete sample-registration workflow.
-An early `unchecked` submission is a durable checkpoint in that workflow, not a
-separate finished capture product.
+The workflow is deliberately narrow: preserve a submission, identify clear tasks
+or traces, label each task `harbor` or `non_harbor`, and run Build, Boot, Oracle,
+and Nop only for Harbor tasks.
 
 The service currently has a deliberately narrow chat-transport boundary:
 
@@ -59,61 +56,49 @@ The vendor-archival repository/API integration test creates and drops an isolate
 Then send the bot a direct message in Feishu. Stop the service with Ctrl-C.
 
 When the registry variables in `.env.example` are configured, the same process
-also serves the CASE registry API on `PORT`. It runs built-in migrations at
-startup. CASE and trusted operators use `CASE_REGISTRY_ADMIN_TOKEN`; read-only
-catalog clients use `CASE_REGISTRY_CATALOG_TOKEN`; authenticated human surfaces
-write append-only researcher reviews with `CASE_REGISTRY_REVIEW_TOKEN` and create
-new researcher-upload submissions with the separate `CASE_REGISTRY_UPLOAD_TOKEN`.
+also serves the portal-facing catalog and researcher-upload API on `PORT`. It
+runs built-in migrations at startup. Trusted local CASE commands use the
+registry library directly with `DATABASE_URL` and the CASE object-store
+credentials; there is no internal write API or admin token.
 
 The installed `case-registry` command gives CASE and Codex the same operations:
 
 ```sh
 case-registry operations
+case-registry summary
 case-registry catalog
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
-case-registry append-normalized-tasks /absolute/path/normalized-tasks.json
-case-registry record-vendor-event /absolute/path/vendor-event.json
+case-registry append-tasks /absolute/path/tasks.json
 case-registry archive-vendor /absolute/path/vendor-archive.json
 case-registry restore-vendor /absolute/path/vendor-restore.json
 case-registry lease-work case-checker
-case-registry record-check /absolute/path/check-result.json
-case-registry submission-reviews <submission-id>
-case-registry record-submission-review /absolute/path/review.json
+case-registry record-harbor-check /absolute/path/harbor-check.json
+case-registry record-harbor-finding /absolute/path/harbor-finding.json
 case-registry remove-submission /absolute/path/submission-removal.json
 case-registry delete-artifact <unreferenced-artifact-id>
-case-registry set-status /absolute/path/status.json
-case-registry link-task-sources /absolute/path/task-source-links.json
 case-intake capture-feishu-plan /absolute/path/plan.json
 case-mail-intake capture-mail-plan /absolute/path/plan.json
 ```
 
-Registration preserves an immutable submission checkpoint and can queue its
-next work. A corrected vendor package is always a new submission linked through
-`revisesBatchId`. As task boundaries become clear,
-`append-normalized-tasks`—a compatibility name in the current API—atomically
-adds provenance-linked categories and exact task versions to that same
-registration. Each task version must cite an existing immutable `task_package`
-artifact and a source item linked to the submission. Identical requests are
-idempotent; changed task contents are new versions rather than replacements.
-Normalized task registrations also record `representationKind`,
-`representationPath`, and `normalizationOutcome` as structured fields. The raw
-`format` string remains preserved as observed source data, but catalog clients
-must not use it to decide whether a task is Harbor.
+Registration preserves an immutable submission checkpoint and queues parsing.
+`append-tasks` adds only clearly bounded tasks or traces, each with an exact
+artifact, source path, source-item links, task kind, and one of the two format
+labels. Non-Harbor tasks stop there.
 
-Every check result declares an `evidenceRole` and `executionScope`. Build, boot,
-positive-control, and negative-control results are accepted as runtime evidence
-only when `executionScope` is `remote_sandbox`. The catalog derives
-`runtimeVerification.hasBeenChecked` when at least one phase has a remote-sandbox
-pass, fail, or blocked result; `runtimeSuiteCompleted` only after all four phases
-have terminal pass/fail records; and `runtimeVerified` only when all four pass.
-Because a passed Oracle or Nop control necessarily ran inside a built and started
-task environment, the catalog uses that control as supporting evidence for a
-missing or `not_run` build or boot phase. This implication is one-way: build and
-boot do not imply either control, and separately recorded failures or blocks are
-not overwritten.
-Unclassified legacy checks remain visible as unclassified rather than being
-treated as completed runtime verification.
+`case-registry`, `case-intake`, and `case-mail-intake` do not call the registry
+HTTP API. The capture commands
+place exact payload bytes in CASE's content-addressed object store, then use one
+database transaction to register artifact records, source events and items, the
+dated submission, and every source link. A capture plan contains the vendor,
+submission ID/date/label, attachments, and an optional explicit `harbor` or
+`non_harbor` classification. File extensions are never treated as formats, and
+categories are not part of capture.
+
+`record-harbor-check` accepts only Build, Boot, Oracle, or Nop pass/fail evidence
+for Harbor tasks. Oracle and Nop must include the observed score, which must
+agree with the outcome. No phase is inferred from another. A Harbor finding is
+immutable and must cite a failed check for the same task.
 
 If CASE created a submission record in error, `remove-submission` can hard-remove
 it with the explicit `erroneous_registration` disposition, an actor, and a
@@ -121,8 +106,6 @@ reason. The operation preserves a tombstone and any shared sources, artifacts,
 task identities, or later submissions; it is not a substitute for recording a
 real delivery as failed, incomplete, superseded, or low quality.
 
-Deterministic results, heuristic assessments, vendor claims, and human research
-judgments remain distinct records within the completed registration.
 
 The intake commands accept only plans that explicitly declare
 `"purpose": "sample_evaluation"`. They capture exact Feishu message resources or Feishu Mail
@@ -135,16 +118,11 @@ in CASE. Catalog task totals count only registered task versions;
 vendor-declared quantities and raw file counts remain separate.
 
 小环境 uses a separate upload-only registry role to request a content-addressed
-object URL and register an authenticated researcher's file as a visible
-`unchecked` submission for an existing vendor. That operation preserves the
+object URL and register an authenticated researcher's file as a submission for
+an existing vendor. That operation preserves the
 original filename, hash, size, upload event, and verified researcher identity;
 it establishes the first durable registration checkpoint and does not by itself
 imply that task discovery or runtime evidence is complete.
-
-The vendor directory also retains contacted organizations before they have a
-submission. Append-only vendor events preserve contact, evaluation, commercial,
-delivery, acceptance, payment, and relationship history with links to the
-source events and submissions that support each fact.
 
 Send `/new` as a message, or select the app's native `/new` slash command, to
 disconnect that Feishu chat from its current Codex thread. The next ordinary
@@ -165,11 +143,10 @@ flow. Authentication is ordinary agent work rather than a special harness
 command: ask the agent whether it can access a calendar, document, mailbox, or
 other Feishu resource, then follow its explanation.
 
-The image also installs every source-controlled CASE skill under `skills/` as a
-complete directory, including its references and agent metadata. This currently
-ships `case-sample-registration` for the end-to-end workflow and `case-registry`
-for canonical reads and writes, keeping the operational guide and its companion
-procedures on the same deployed revision.
+CASE's complete sample-processing policy lives in the source-controlled
+`AGENTS.md`. The registry CLI remains self-describing: run
+`case-registry operations` for current command schemas rather than relying on a
+separate CASE-specific skill package.
 
 The resulting renewable user login is stored by `lark-cli` under its configured
 directory. On Railway, `LARKSUITE_CLI_CONFIG_DIR` points to `/data/lark-cli`, so

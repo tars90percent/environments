@@ -3,151 +3,151 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { readFile, stat, unlink } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { basename } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { contentAddressedStorageKey } from "./registry/artifacts.js";
+import { contentTypeFor, storeSourcePayload } from "./capture-runtime.js";
+import type { ArtifactStore } from "./registry/artifacts.js";
+import { localArtifactStore, openLocalRepository } from "./registry/local.js";
+import type { RegistryRepository } from "./registry/repository.js";
+import {
+  parseAppendTasks,
+  parseArtifact,
+  parseHarborCheckResult,
+  parseHarborFinding,
+  parseSourceEnvelope,
+  parseSubmissionIntakeClassification,
+  parseSubmissionManifest,
+  parseSubmissionRemoval,
+  parseVendorArchive,
+  parseWorkCompletion,
+} from "./registry/validation.js";
 
 const [command, ...arguments_] = process.argv.slice(2);
 const argument = arguments_[0];
-const baseUrl = (process.env.CASE_REGISTRY_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3000"}`).replace(/\/$/, "");
-const token = process.env.CASE_REGISTRY_ADMIN_TOKEN;
 
-if (!token) fail("CASE_REGISTRY_ADMIN_TOKEN is required");
-
-switch (command) {
-  case "catalog":
-    output(await request("GET", "/v1/catalog?scope=all"));
-    break;
-  case "vendors":
-    if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: case-registry vendors [--all]");
-    output((await request("GET", `/v1/vendor-directory${argument === "--all" ? "?include_archived=true" : ""}`) as { vendors: unknown[] }).vendors);
-    break;
-  case "vendor":
-    output(await request("GET", `/v1/vendor-records/${encode(argument, "vendor id")}`));
-    break;
-  case "batch":
-    output(await request("GET", `/v1/batches/${encode(argument, "batch id")}?scope=all`));
-    break;
-  case "task":
-    output(await request("GET", `/v1/tasks/${encode(argument, "task version id")}?scope=all`));
-    break;
-  case "source-event":
-    output(await request("GET", `/v1/source-events/${encode(argument, "source event id")}`));
-    break;
-  case "operations":
-    output(await request("GET", "/v1/operations/summary"));
-    break;
-  case "import":
-    output(await request("POST", "/v1/intake/submissions", await jsonFile(argument)));
-    break;
-  case "import-source":
-    output(await request("POST", "/v1/intake/source-events", await jsonFile(argument)));
-    break;
-  case "append-normalized-tasks":
-    output(await request("POST", "/v1/intake/normalized-tasks", await jsonFile(argument)));
-    break;
-  case "classify-submission":
-    output(await request("POST", "/v1/intake/classify-submission", await jsonFile(argument)));
-    break;
-  case "record-vendor-event":
-    output(await request("POST", "/v1/vendor-events", await jsonFile(argument)));
-    break;
-  case "archive-vendor":
-    output(await request("POST", "/v1/vendors/archive", await jsonFile(argument)));
-    break;
-  case "restore-vendor":
-    output(await request("POST", "/v1/vendors/restore", await jsonFile(argument)));
-    break;
-  case "store-file":
-    output(await storeFile(required(argument, "artifact kind"), required(arguments_[1], "file path")));
-    break;
-  case "download-artifact":
-    output(await downloadArtifact(required(argument, "artifact id"), required(arguments_[1], "output path")));
-    break;
-  case "record-check":
-    output(await request("POST", "/v1/check-results", await jsonFile(argument)));
-    break;
-  case "record-task-finding":
-    output(await request("POST", "/v1/task-findings", await jsonFile(argument)));
-    break;
-  case "update-task-finding": {
-    const update = await jsonFile(argument);
-    output(await request("PATCH", `/v1/task-findings/${encode(jsonId(update), "finding id")}`, update));
-    break;
+if (command === "operations") {
+  output(operationSchemas());
+} else {
+  const repository = await openLocalRepository();
+  try {
+    switch (command) {
+      case "summary":
+        output(await repository.operationsSummary());
+        break;
+      case "catalog":
+        output(await repository.sampleCatalogSnapshot());
+        break;
+      case "vendors":
+        if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: case-registry vendors [--all]");
+        output(await repository.vendorDirectory(argument === "--all"));
+        break;
+      case "vendor": {
+        const vendorId = required(argument, "vendor id");
+        const vendor = (await repository.sampleCatalogSnapshot()).vendors.find((candidate) => candidate.id === vendorId);
+        if (!vendor) fail(`Vendor not found: ${vendorId}`);
+        output(vendor);
+        break;
+      }
+      case "batch": {
+        const batchId = required(argument, "submission id");
+        const submission = await repository.getSampleSubmission(batchId);
+        if (!submission) fail(`Submission not found: ${batchId}`);
+        output(submission);
+        break;
+      }
+      case "task": {
+        const taskId = required(argument, "task id");
+        const task = await repository.getSampleTask(taskId);
+        if (!task) fail(`Task not found: ${taskId}`);
+        output(task);
+        break;
+      }
+      case "source-event": {
+        const sourceEventId = required(argument, "source event id");
+        const sourceEvent = await repository.getSourceEvent(sourceEventId);
+        if (!sourceEvent) fail(`Source event not found: ${sourceEventId}`);
+        output(sourceEvent);
+        break;
+      }
+      case "import":
+        output(await repository.ingestSubmission(parseSubmissionManifest(await jsonFile(argument))));
+        break;
+      case "import-source":
+        output(await repository.ingestSourceEnvelope(parseSourceEnvelope(await jsonFile(argument))));
+        break;
+      case "append-tasks":
+        output(await repository.appendTasks(parseAppendTasks(await jsonFile(argument))));
+        break;
+      case "classify-submission":
+        output(await repository.classifySubmissionIntake(parseSubmissionIntakeClassification(await jsonFile(argument))));
+        break;
+      case "archive-vendor":
+        output(await repository.archiveVendor(parseVendorArchive(await jsonFile(argument))));
+        break;
+      case "restore-vendor":
+        output(await repository.restoreVendor(parseVendorArchive(await jsonFile(argument))));
+        break;
+      case "store-file":
+        output(await storeFile(repository, required(argument, "artifact kind"), required(arguments_[1], "file path")));
+        break;
+      case "download-artifact":
+        output(await downloadArtifact(repository, required(argument, "artifact id"), required(arguments_[1], "output path")));
+        break;
+      case "record-harbor-check":
+        await repository.recordHarborCheck(parseHarborCheckResult(await jsonFile(argument)));
+        output({ recorded: true });
+        break;
+      case "record-harbor-finding":
+        output(await repository.recordHarborFinding(parseHarborFinding(await jsonFile(argument))));
+        break;
+      case "register-artifact": {
+        const artifact = parseArtifact(await jsonFile(argument));
+        const store = localArtifactStore();
+        await store.verifyObject({ key: artifact.storageKey, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes });
+        await repository.registerArtifact(artifact);
+        output({ recorded: true });
+        break;
+      }
+      case "remove-submission":
+        output(await removeSubmission(repository, parseSubmissionRemoval(await jsonFile(argument))));
+        break;
+      case "delete-artifact":
+        output(await purgeArtifact(repository, localArtifactStore(), required(argument, "artifact id")));
+        break;
+      case "lease-work":
+        output({ item: await repository.leaseWorkItem(required(argument, "worker id"), 900) });
+        break;
+      case "complete-work":
+        await repository.completeWorkItem(parseWorkCompletion(await jsonFile(argument)));
+        output({ updated: true });
+        break;
+      default:
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|import|import-source|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+    }
+  } finally {
+    await repository.close();
   }
-  case "delete-task-finding":
-    output(await request("DELETE", `/v1/task-findings/${encode(argument, "finding id")}`));
-    break;
-  case "record-follow-up":
-    output(await request("POST", "/v1/follow-ups", await jsonFile(argument)));
-    break;
-  case "submission-reviews":
-    output(await request("GET", `/v1/submissions/${encode(argument, "submission id")}/reviews`));
-    break;
-  case "record-submission-review": {
-    const review = await jsonFile(argument) as { batchId?: unknown };
-    if (typeof review.batchId !== "string" || !review.batchId) fail("review batchId is required");
-    output(await request("POST", `/v1/submissions/${encodeURIComponent(review.batchId)}/reviews`, review));
-    break;
-  }
-  case "register-artifact":
-    output(await request("POST", "/v1/artifacts", await jsonFile(argument)));
-    break;
-  case "remove-submission":
-    output(await request("POST", "/v1/intake/remove-submission", await jsonFile(argument)));
-    break;
-  case "delete-artifact":
-    output(await request("DELETE", `/v1/artifacts/${encode(argument, "artifact id")}`));
-    break;
-  case "set-status":
-    output(await request("POST", "/v1/status", await jsonFile(argument)));
-    break;
-  case "link-task-sources":
-    output(await request("POST", "/v1/task-source-links", await jsonFile(argument)));
-    break;
-  case "lease-work":
-    output(await request("POST", "/v1/work/lease", { workerId: required(argument, "worker id"), leaseSeconds: 900 }));
-    break;
-  case "complete-work":
-    output(await request("POST", "/v1/work/complete", await jsonFile(argument)));
-    break;
-  default:
-    fail("Usage: case-registry <catalog|vendors|vendor|batch|task|source-event|submission-reviews|operations|import|import-source|append-normalized-tasks|classify-submission|record-vendor-event|archive-vendor|restore-vendor|store-file|download-artifact|record-check|record-task-finding|update-task-finding|delete-task-finding|record-follow-up|record-submission-review|register-artifact|remove-submission|delete-artifact|set-status|link-task-sources|lease-work|complete-work> [arguments]");
 }
 
-async function storeFile(kind: string, path: string): Promise<unknown> {
-  const fileStat = await stat(path);
-  if (!fileStat.isFile()) fail("file path must name a regular file");
-  const sha256 = await sha256File(path);
-  const storageKey = contentAddressedStorageKey(sha256);
-  const contentType = contentTypeFor(path);
-  const upload = await request("POST", "/v1/artifacts/upload-url", { key: storageKey, contentType, sha256 }) as { url: string };
-  const response = await fetch(upload.url, {
-    method: "PUT",
-    headers: { "content-type": contentType, "x-amz-meta-sha256": sha256, "content-length": String(fileStat.size) },
-    body: createReadStream(path) as never,
-    duplex: "half",
-  } as RequestInit & { duplex: "half" });
-  if (!response.ok) throw new Error(`Artifact upload failed with ${response.status}`);
-  const artifact = {
-    id: `artifact:sha256:${sha256}`,
-    kind,
-    storageKey,
-    sha256,
-    sizeBytes: fileStat.size,
-    contentType,
-    metadata: { originalName: basename(path) },
-  };
-  await request("POST", "/v1/artifacts/confirm", artifact);
+async function storeFile(repository: RegistryRepository, kind: string, path: string): Promise<unknown> {
+  const sourceArtifact = await storeSourcePayload(localArtifactStore(), path, {
+    filename: basename(path),
+    contentType: contentTypeFor(path),
+    metadata: { source: "case_registry_cli" },
+  });
+  const artifact = parseArtifact({ ...sourceArtifact, kind });
+  await repository.registerArtifact(artifact);
   return artifact;
 }
 
-async function downloadArtifact(artifactId: string, path: string): Promise<unknown> {
+async function downloadArtifact(repository: RegistryRepository, artifactId: string, path: string): Promise<unknown> {
   const expectedSha256 = artifactId.startsWith("artifact:sha256:") ? artifactId.slice("artifact:sha256:".length) : "";
   if (!/^[a-f0-9]{64}$/.test(expectedSha256)) fail("artifact id must be content-addressed with SHA-256");
-  const download = await request("GET", `/v1/artifacts/${encodeURIComponent(artifactId)}/download-url`) as { url?: unknown };
-  if (typeof download.url !== "string" || !download.url) throw new Error("Registry returned no artifact download URL");
+  const artifact = await repository.getArtifact(artifactId);
+  if (!artifact) fail(`Artifact not found: ${artifactId}`);
+  const originalName = typeof artifact.metadata?.originalName === "string" ? artifact.metadata.originalName : undefined;
+  const download = await localArtifactStore().createDownloadUrl(artifact.storageKey, originalName);
   try {
     const response = await fetch(download.url);
     if (!response.ok || !response.body) throw new Error(`Artifact download failed with ${response.status}`);
@@ -158,6 +158,28 @@ async function downloadArtifact(artifactId: string, path: string): Promise<unkno
     return { artifactId, path, sha256, sizeBytes: fileStat.size };
   } catch (error) {
     await unlink(path).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function removeSubmission(repository: RegistryRepository, input: ReturnType<typeof parseSubmissionRemoval>): Promise<unknown> {
+  const store = localArtifactStore();
+  const removed = await repository.removeSubmission(input);
+  const artifacts = [];
+  for (const candidate of removed.unreferencedArtifacts) {
+    artifacts.push(await purgeArtifact(repository, store, candidate.id));
+  }
+  return { ...removed, unreferencedArtifacts: undefined, artifacts };
+}
+
+async function purgeArtifact(repository: RegistryRepository, store: ArtifactStore, id: string): Promise<unknown> {
+  const artifact = await repository.unregisterArtifactIfUnreferenced(id);
+  if (!artifact) return { artifactId: id, deleted: false, reason: "not_found_or_referenced" };
+  try {
+    await store.deleteObject(artifact.storageKey);
+    return { artifactId: id, deleted: true, sizeBytes: artifact.sizeBytes ?? null };
+  } catch (error) {
+    await repository.registerArtifact(artifact);
     throw error;
   }
 }
@@ -173,50 +195,9 @@ async function sha256File(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
-function contentTypeFor(path: string): string {
-  switch (extname(path).toLowerCase()) {
-    case ".json": return "application/json";
-    case ".jsonl": return "application/x-ndjson";
-    case ".pdf": return "application/pdf";
-    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case ".xls": return "application/vnd.ms-excel";
-    case ".zip": return "application/zip";
-    case ".gz": return "application/gzip";
-    case ".zst": return "application/zstd";
-    case ".csv": return "text/csv";
-    case ".txt": case ".md": return "text/plain";
-    default: return "application/octet-stream";
-  }
-}
-
-async function request(method: string, path: string, body?: unknown): Promise<unknown> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const value = await response.json() as Record<string, unknown>;
-  if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(value)}`);
-  return value;
-}
-
 async function jsonFile(path: string | undefined): Promise<unknown> {
   if (!path) fail("A JSON file path is required");
   return JSON.parse(await readFile(path, "utf8"));
-}
-
-function encode(value: string | undefined, name: string): string {
-  if (!value) fail(`${name} is required`);
-  return encodeURIComponent(value);
-}
-
-function jsonId(value: unknown): string | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const id = (value as Record<string, unknown>).id;
-  return typeof id === "string" ? id : undefined;
 }
 
 function required(value: string | undefined, name: string): string {
@@ -230,4 +211,39 @@ function output(value: unknown): void {
 
 function fail(message: string): never {
   throw new Error(message);
+}
+
+function operationSchemas() {
+  return {
+  connection: {
+    database: "DATABASE_URL",
+    objectStore: ["AWS_ENDPOINT_URL", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_S3_BUCKET_NAME"],
+    note: "Trusted CASE commands call the registry library directly; no registry URL or admin token is used.",
+  },
+  commands: {
+    operations: { arguments: [], result: "this command reference" },
+    summary: { arguments: [], result: "registry counts" },
+    catalog: { arguments: [], result: "researcher-facing sample catalog" },
+    vendors: { arguments: ["[--all]"], result: "vendor directory" },
+    vendor: { arguments: ["<vendor-id>"] },
+    batch: { arguments: ["<submission-id>"] },
+    task: { arguments: ["<task-id>"] },
+    "source-event": { arguments: ["<source-event-id>"] },
+    import: { arguments: ["<submission-manifest.json>"], compatibility: "Prefer case-intake or case-mail-intake for Feishu capture." },
+    "import-source": { arguments: ["<source-envelope.json>"], compatibility: "Registers standalone provenance evidence." },
+    "append-tasks": { arguments: ["<tasks.json>"], fields: ["submissionId", "tasks", "actor"] },
+    "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
+    "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },
+    "restore-vendor": { arguments: ["<restore.json>"], fields: ["vendorId", "reason", "actor"] },
+    "store-file": { arguments: ["<artifact-kind>", "<absolute-file-path>"] },
+    "download-artifact": { arguments: ["<artifact-id>", "<output-path>"] },
+    "record-harbor-check": { arguments: ["<check.json>"], phases: ["build", "boot", "oracle", "nop"] },
+    "record-harbor-finding": { arguments: ["<finding.json>"], fields: ["id", "taskId", "checkRunId", "finding"] },
+    "register-artifact": { arguments: ["<artifact.json>"], note: "The object is verified before its record is registered." },
+    "remove-submission": { arguments: ["<removal.json>"], fields: ["batchId", "disposition", "reason", "actor"] },
+    "delete-artifact": { arguments: ["<unreferenced-artifact-id>"] },
+    "lease-work": { arguments: ["<worker-id>"], leaseSeconds: 900 },
+    "complete-work": { arguments: ["<completion.json>"], fields: ["id", "workerId", "outcome", "error?"] },
+  },
+  } as const;
 }

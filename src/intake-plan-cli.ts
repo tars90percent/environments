@@ -1,99 +1,89 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { createReadStream } from "node:fs";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
-import { contentAddressedStorageKey } from "./registry/artifacts.js";
+import { join } from "node:path";
+import { parseFeishuCapturePlan, type FeishuAttachmentPlan } from "./capture-plan.js";
+import {
+  capturedSourceLink,
+  safeCaptureName,
+  shortHash,
+  sourceKindFor,
+  sourceWasCaptured,
+  storeSourcePayload,
+} from "./capture-runtime.js";
 import { prepareLarkRuntimeEnv } from "./lark-runtime.js";
-
-type Vendor = { id: string; name: string; short: string; description: string; aliases?: string[] };
-type AttachmentPlan = {
-  messageId: string;
-  fileKey: string;
-  filename: string;
-  messageLink: string;
-  sender?: string;
-  receivedAt: string;
-  categoryId: string;
-};
-type SubmissionPlan = {
-  vendor: Vendor;
-  batch: {
-    id: string;
-    date: string;
-    label: string;
-    existing?: boolean;
-    categories: Array<{ id: string; name: string; description: string }>;
-    attachments: AttachmentPlan[];
-  };
-};
-type CapturePlan = { purpose: "sample_evaluation"; submissions: SubmissionPlan[] };
+import { openLocalRegistry, type LocalRegistry } from "./registry/local.js";
+import type { ArtifactInput, CapturedSubmissionSourceInput, RegistryVendorInput } from "./registry/types.js";
 
 const [command, planPath] = process.argv.slice(2);
 if (command !== "capture-feishu-plan" || !planPath) {
   throw new Error("Usage: case-intake capture-feishu-plan /absolute/path/plan.json");
 }
 
-const plan = parsePlan(JSON.parse(await readFile(planPath, "utf8")));
+const plan = parseFeishuCapturePlan(JSON.parse(await readFile(planPath, "utf8")));
 const larkEnv = await prepareLarkRuntimeEnv(process.env);
-const ledger: Array<{ batchId: string; files: number; captured: number; failed: number }> = [];
+const local = await openLocalRegistry();
 
-for (const submission of plan.submissions) {
-  const summary = { batchId: submission.batch.id, files: submission.batch.attachments.length, captured: 0, failed: 0 };
-  const alreadyExists = submission.batch.existing || await batchExists(submission.batch.id);
-  let primaryCreated = alreadyExists;
-  for (const [index, attachment] of submission.batch.attachments.entries()) {
-    const existingEvent = await getSourceEvent(eventIdFor(attachment));
-    const retryOfSourceEventId = existingEvent && sourceEventNeedsRetry(existingEvent) ? String(existingEvent.id) : undefined;
-    if (existingEvent && !retryOfSourceEventId) {
-      process.stdout.write(`${JSON.stringify({ type: "capture_skipped", reason: "source_event_exists", batchId: submission.batch.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
-      if (!primaryCreated) {
-        await createSubmission(submission, existingEvent);
-        primaryCreated = true;
-      }
-      continue;
-    }
-    process.stdout.write(`${JSON.stringify({ type: "capture_started", batchId: submission.batch.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
-    const item = await captureAttachment(submission.vendor, attachment, retryOfSourceEventId);
-    summary[item.captured ? "captured" : "failed"] += 1;
-    process.stdout.write(`${JSON.stringify({ type: "capture_finished", batchId: submission.batch.id, position: index + 1, captured: item.captured, filename: attachment.filename })}\n`);
+try {
+  const ledger: Array<{ submissionId: string; files: number; captured: number; failed: number; skipped: number }> = [];
+  for (const planned of plan.submissions) {
+    const summary = { submissionId: planned.submission.id, files: planned.submission.attachments.length, captured: 0, failed: 0, skipped: 0 };
+    const artifacts: ArtifactInput[] = [];
+    const sources: CapturedSubmissionSourceInput[] = [];
 
-    if (retryOfSourceEventId && !item.captured) {
-      if (!primaryCreated) {
-        await createSubmission(submission, existingEvent!);
-        primaryCreated = true;
-      }
-      continue;
+    for (const [index, attachment] of planned.submission.attachments.entries()) {
+      process.stdout.write(`${JSON.stringify({ type: "capture_started", submissionId: planned.submission.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
+      const result = await captureAttachment(local, attachment);
+      artifacts.push(...result.artifacts);
+      sources.push(...result.sources);
+      summary[result.status] += 1;
+      process.stdout.write(`${JSON.stringify({ type: "capture_finished", submissionId: planned.submission.id, position: index + 1, status: result.status, filename: attachment.filename })}\n`);
     }
 
-    if (primaryCreated) {
-      item.envelope.batchLinks = [{
-        batchId: submission.batch.id,
-        role: "supplement",
-        sourceItemIds: item.envelope.items.map((sourceItem: { id: string }) => sourceItem.id),
-      }];
-      await importEnvelopeWithCleanup(item);
-      continue;
-    }
-
-    await importEnvelopeWithCleanup(item);
-    await createSubmission(submission, item.envelope.sourceEvent);
-    primaryCreated = true;
+    const uniqueArtifacts = [...new Map(artifacts.map((artifact) => [artifact.id, artifact])).values()];
+    await local.repository.captureSubmission({
+      vendor: planned.vendor,
+      submission: {
+        id: planned.submission.id,
+        date: planned.submission.date,
+        label: planned.submission.label,
+        sourceLabel: "Feishu sample attachments",
+        formats: planned.submission.format ? [planned.submission.format] : [],
+        metadata: {
+          intakeMethod: "feishu_resource_capture",
+          sampleFileCount: planned.submission.attachments.length,
+        },
+      },
+      artifacts: uniqueArtifacts,
+      sources,
+      actor: "CASE",
+    });
+    ledger.push(summary);
   }
-  ledger.push(summary);
+  process.stdout.write(`${JSON.stringify({ submissions: ledger.length, ledger }, null, 2)}\n`);
+} finally {
+  await local.close();
 }
 
-process.stdout.write(`${JSON.stringify({ submissions: ledger.length, ledger }, null, 2)}\n`);
+async function captureAttachment(
+  local: LocalRegistry,
+  attachment: FeishuAttachmentPlan,
+): Promise<{ status: "captured" | "failed" | "skipped"; artifacts: ArtifactInput[]; sources: CapturedSubmissionSourceInput[] }> {
+  const baseEventId = eventIdFor(attachment);
+  const existing = await local.repository.getSourceEvent(baseEventId);
+  if (existing && sourceWasCaptured(existing)) {
+    return { status: "skipped", artifacts: [], sources: [capturedSourceLink(existing)] };
+  }
 
-async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan, retryOfSourceEventId?: string) {
   const directory = await mkdtemp(join(tmpdir(), "case-feishu-intake-"));
-  const outputName = `${attachment.messageId}-${safeName(attachment.filename)}`;
+  const outputName = `${attachment.messageId}-${safeCaptureName(attachment.filename)}`;
   const outputPath = join(directory, outputName);
-  let artifact: Record<string, unknown> | undefined;
+  let artifact: ArtifactInput | undefined;
   let errorMessage: string | undefined;
+  const capturedAt = new Date().toISOString();
   try {
     await runLark([
       "im", "+messages-resources-download", "--as", "user",
@@ -103,147 +93,70 @@ async function captureAttachment(vendor: Vendor, attachment: AttachmentPlan, ret
       "--output", outputName,
       "--format", "json",
     ], directory);
-    artifact = await storeFile(outputPath, attachment);
+    artifact = await storeSourcePayload(local.artifactStore, outputPath, {
+      filename: attachment.filename,
+      metadata: { messageId: attachment.messageId, fileKey: attachment.fileKey, source: "feishu" },
+    });
   } catch (error) {
     errorMessage = error instanceof Error ? error.message.slice(0, 1_000) : "Unknown resource-capture error";
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 
-  const retrySuffix = retryOfSourceEventId && artifact ? `:retry:${String(artifact.sha256).slice(0, 20)}` : "";
-  const eventId = `${eventIdFor(attachment)}${retrySuffix}`;
-  const itemId = `source-item:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}${retrySuffix}`;
-  return {
-    captured: Boolean(artifact),
-    artifactId: typeof artifact?.id === "string" ? artifact.id : undefined,
-    envelope: {
-      vendor,
-      sourceEvent: {
-        id: eventId,
-        channel: "other",
-        externalRef: `case-capture://feishu/${attachment.messageId}/${shortHash(attachment.fileKey)}${retrySuffix.replaceAll(":", "/")}`,
-        sender: attachment.sender,
-        receivedAt: attachment.receivedAt,
-        rawArtifactId: artifact?.id,
-        metadata: {
-          originalChannel: "feishu",
-          originalExternalRef: attachment.messageLink,
-          messageId: attachment.messageId,
-          fileKey: attachment.fileKey,
-          captureMethod: "lark-cli-resource-download",
-          ...(retryOfSourceEventId ? { retryOfSourceEventId } : {}),
-          ...(errorMessage ? { captureError: errorMessage } : {}),
-        },
-      },
-      items: [{
-        id: itemId,
-        kind: sourceKindFor(attachment.filename),
-        displayName: attachment.filename,
-        locator: attachment.messageLink,
-        mediaType: artifact?.contentType,
-        artifactId: artifact?.id,
-        contentSha256: artifact?.sha256,
-        sizeBytes: artifact?.sizeBytes,
-        fetchStatus: artifact ? "snapshotted" : "failed",
-        parseStatus: "not_requested",
-        mutable: false,
-        ...(artifact ? { capturedAt: new Date().toISOString() } : {}),
-        metadata: {
-          messageId: attachment.messageId,
-          fileKey: attachment.fileKey,
-          originalFilename: attachment.filename,
-          categoryId: attachment.categoryId,
-          ...(retryOfSourceEventId ? { retryOfSourceEventId } : {}),
-          ...(errorMessage ? { captureError: errorMessage } : {}),
-        },
-      }],
-      relations: [],
-      batchLinks: undefined as Array<{
-        batchId: string;
-        role: "supplement";
-        sourceItemIds: string[];
-      }> | undefined,
-    },
-  };
-}
-
-async function createSubmission(submission: SubmissionPlan, sourceEvent: Record<string, unknown>) {
-  const examplesByCategory = new Map<string, string[]>();
-  for (const planned of submission.batch.attachments) {
-    const values = examplesByCategory.get(planned.categoryId) ?? [];
-    values.push(planned.filename);
-    examplesByCategory.set(planned.categoryId, values);
+  const retryToken = artifact ? artifact.sha256.slice(0, 20) : randomUUID().replaceAll("-", "").slice(0, 20);
+  const eventId = existing ? `${baseEventId}:retry:${retryToken}` : baseEventId;
+  if (existing && artifact) {
+    const recordedRetry = await local.repository.getSourceEvent(eventId);
+    if (recordedRetry && sourceWasCaptured(recordedRetry)) {
+      return { status: "skipped", artifacts: [], sources: [capturedSourceLink(existing), capturedSourceLink(recordedRetry)] };
+    }
   }
-  await request("POST", "/v1/intake/submissions", {
-    vendor: submission.vendor,
-    sourceEvent: {
-      id: sourceEvent.id,
-      channel: sourceEvent.channel,
-      externalRef: sourceEvent.externalRef,
-      sender: sourceEvent.sender ?? undefined,
-      receivedAt: sourceEvent.receivedAt,
-      rawArtifactId: sourceEvent.rawArtifactId ?? undefined,
-    },
-    batch: {
-      id: submission.batch.id,
-      date: submission.batch.date,
-      label: submission.batch.label,
-      sourceLabel: "Feishu sample attachments",
-      taskCount: 0,
-      formats: [...new Set(submission.batch.attachments.map((planned) => formatFor(planned.filename)))],
-      workflowStatus: "unchecked",
-      catalogVisibility: "available",
-      delta: {
-        added: 0,
-        removed: 0,
-        changedFiles: submission.batch.attachments.length,
-        note: `${submission.batch.attachments.length} sample files captured; task records and deterministic checks are pending.`,
-      },
-      metadata: {
-        countUnit: "sample_files",
-        sampleFileCount: submission.batch.attachments.length,
-        intakeMethod: "feishu_resource_capture",
-        intakePurpose: "sample_evaluation",
-      },
-    },
-    categories: submission.batch.categories.map((category) => ({
-      ...category,
-      count: 0,
-      examples: examplesByCategory.get(category.id) ?? [],
-    })),
-    tasks: [],
-  });
-}
 
-async function storeFile(path: string, attachment: AttachmentPlan) {
-  const fileStat = await stat(path);
-  const sha256 = await sha256File(path);
-  const storageKey = contentAddressedStorageKey(sha256);
-  const contentType = contentTypeFor(path);
-  const upload = await request("POST", "/v1/artifacts/upload-url", { key: storageKey, contentType, sha256 }) as { url: string };
-  const response = await fetch(upload.url, {
-    method: "PUT",
-    headers: { "content-type": contentType, "x-amz-meta-sha256": sha256, "content-length": String(fileStat.size) },
-    body: createReadStream(path) as never,
-    duplex: "half",
-  } as RequestInit & { duplex: "half" });
-  if (!response.ok) throw new Error(`Artifact upload failed with ${response.status}`);
-  const artifact = {
-    id: `artifact:sha256:${sha256}`,
-    kind: "task_package",
-    storageKey,
-    sha256,
-    sizeBytes: fileStat.size,
-    contentType,
-    metadata: {
-      originalName: attachment.filename,
-      messageId: attachment.messageId,
-      fileKey: attachment.fileKey,
-      source: "feishu",
+  const itemId = `source-item:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}${existing ? `:retry:${retryToken}` : ""}`;
+  const source: CapturedSubmissionSourceInput = {
+    sourceEvent: {
+      id: eventId,
+      channel: "feishu",
+      externalRef: `${attachment.messageLink}${attachment.messageLink.includes("#") ? "&" : "#"}case-file=${shortHash(attachment.fileKey)}${existing ? `&case-retry=${retryToken}` : ""}`,
+      sender: attachment.sender,
+      receivedAt: attachment.receivedAt,
+      rawArtifactId: artifact?.id,
+      metadata: {
+        messageId: attachment.messageId,
+        fileKey: attachment.fileKey,
+        captureMethod: "lark-cli-resource-download",
+        ...(existing ? { retryOfSourceEventId: existing.id } : {}),
+        ...(errorMessage ? { captureError: errorMessage } : {}),
+      },
     },
+    items: [{
+      id: itemId,
+      kind: sourceKindFor(attachment.filename),
+      displayName: attachment.filename,
+      locator: attachment.messageLink,
+      mediaType: artifact?.contentType,
+      artifactId: artifact?.id,
+      contentSha256: artifact?.sha256,
+      sizeBytes: artifact?.sizeBytes,
+      fetchStatus: artifact ? "snapshotted" : "failed",
+      parseStatus: "not_requested",
+      mutable: false,
+      ...(artifact ? { capturedAt } : {}),
+      metadata: {
+        messageId: attachment.messageId,
+        fileKey: attachment.fileKey,
+        originalFilename: attachment.filename,
+        ...(existing ? { retryOfSourceEventId: existing.id } : {}),
+        ...(errorMessage ? { captureError: errorMessage } : {}),
+      },
+    }],
+    relations: [],
   };
-  await request("POST", "/v1/artifacts/confirm", artifact);
-  return artifact;
+  return {
+    status: artifact ? "captured" : "failed",
+    artifacts: artifact ? [artifact] : [],
+    sources: [...(existing ? [capturedSourceLink(existing)] : []), source],
+  };
 }
 
 async function runLark(arguments_: string[], cwd: string): Promise<void> {
@@ -261,162 +174,14 @@ async function runLark(arguments_: string[], cwd: string): Promise<void> {
     });
     let stdout = "";
     let stderr = "";
-    let forceTimeout: NodeJS.Timeout | undefined;
-    const timeout = setTimeout(() => {
-      terminateChildTree(child.pid, "SIGTERM", child);
-      forceTimeout = setTimeout(() => terminateChildTree(child.pid, "SIGKILL", child), 10_000);
-      forceTimeout.unref();
-    }, 5 * 60_000);
     child.stdout.on("data", (chunk) => { stdout += String(chunk); });
     child.stderr.on("data", (chunk) => { stderr += String(chunk); });
     child.once("error", reject);
-    child.once("close", (code) => {
-      clearTimeout(timeout);
-      if (forceTimeout) clearTimeout(forceTimeout);
-      resolve({ code, stdout, stderr });
-    });
+    child.once("close", (code) => resolve({ code, stdout, stderr }));
   });
-  if (result.code !== 0) throw new Error(`Feishu resource download failed: ${result.stderr || result.stdout}`);
-  const value = JSON.parse(result.stdout) as { ok?: unknown };
-  if (value.ok !== true) throw new Error("Feishu resource download did not report success");
+  if (result.code !== 0) throw new Error(`Feishu resource command failed: ${result.stderr || result.stdout}`);
 }
 
-function terminateChildTree(pid: number | undefined, signal: NodeJS.Signals, child: ReturnType<typeof spawn>): void {
-  if (!pid || process.platform === "win32") {
-    child.kill(signal);
-    return;
-  }
-  try {
-    process.kill(-pid, signal);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-  }
-}
-
-async function batchExists(batchId: string): Promise<boolean> {
-  const baseUrl = (process.env.CASE_REGISTRY_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3000"}`).replace(/\/$/, "");
-  const token = process.env.CASE_REGISTRY_ADMIN_TOKEN;
-  if (!token) throw new Error("CASE_REGISTRY_ADMIN_TOKEN is required");
-  const response = await fetch(`${baseUrl}/v1/batches/${encodeURIComponent(batchId)}?scope=all`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`Batch lookup failed with ${response.status}`);
-  return true;
-}
-
-async function getSourceEvent(eventId: string): Promise<Record<string, unknown> | null> {
-  const baseUrl = (process.env.CASE_REGISTRY_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3000"}`).replace(/\/$/, "");
-  const token = process.env.CASE_REGISTRY_ADMIN_TOKEN;
-  if (!token) throw new Error("CASE_REGISTRY_ADMIN_TOKEN is required");
-  const response = await fetch(`${baseUrl}/v1/source-events/${encodeURIComponent(eventId)}`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (response.status === 404) return null;
-  const value = await response.json() as Record<string, unknown>;
-  if (!response.ok) throw new Error(`Source-event lookup failed with ${response.status}`);
-  return value;
-}
-
-async function request(method: string, path: string, body?: unknown): Promise<unknown> {
-  const baseUrl = (process.env.CASE_REGISTRY_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3000"}`).replace(/\/$/, "");
-  const token = process.env.CASE_REGISTRY_ADMIN_TOKEN;
-  if (!token) throw new Error("CASE_REGISTRY_ADMIN_TOKEN is required");
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const value = await response.json() as Record<string, unknown>;
-  if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(value)}`);
-  return value;
-}
-
-async function importEnvelopeWithCleanup(item: { artifactId?: string; envelope: Record<string, unknown> }): Promise<void> {
-  try {
-    await request("POST", "/v1/intake/source-events", item.envelope);
-  } catch (error) {
-    if (item.artifactId) {
-      try {
-        await request("DELETE", `/v1/artifacts/${encodeURIComponent(item.artifactId)}`);
-      } catch {
-        // A concurrent or completed source import may already reference it; the API refuses unsafe deletion.
-      }
-    }
-    throw error;
-  }
-}
-
-function parsePlan(value: unknown): CapturePlan {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capture plan must be an object");
-  if ((value as { purpose?: unknown }).purpose !== "sample_evaluation") {
-    throw new Error("Capture plan purpose must be sample_evaluation; purchased deliveries belong in the downstream pipeline");
-  }
-  const submissions = (value as { submissions?: unknown }).submissions;
-  if (!Array.isArray(submissions)) throw new Error("Capture plan submissions must be an array");
-  for (const [index, entry] of submissions.entries()) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`submissions[${index}] must be an object`);
-    const submission = entry as SubmissionPlan;
-    if (!submission.vendor?.id || !submission.vendor.name || !submission.batch?.id || !submission.batch.date || !submission.batch.label) {
-      throw new Error(`submissions[${index}] is missing vendor or batch fields`);
-    }
-    if (!Array.isArray(submission.batch.categories) || !Array.isArray(submission.batch.attachments) || !submission.batch.attachments.length) {
-      throw new Error(`submissions[${index}] must contain categories and at least one attachment`);
-    }
-    const categoryIds = new Set(submission.batch.categories.map((category) => category.id));
-    for (const attachment of submission.batch.attachments) {
-      if (!attachment.messageId?.startsWith("om_") || !attachment.fileKey?.startsWith("file_") || !attachment.filename || !attachment.messageLink) {
-        throw new Error(`submissions[${index}] contains an invalid attachment`);
-      }
-      if (!categoryIds.has(attachment.categoryId)) throw new Error(`submissions[${index}] attachment names an unknown category`);
-      if (Number.isNaN(Date.parse(attachment.receivedAt))) throw new Error(`submissions[${index}] attachment has an invalid receivedAt`);
-    }
-  }
-  return { purpose: "sample_evaluation", submissions: submissions as SubmissionPlan[] };
-}
-
-function sourceEventNeedsRetry(value: Record<string, unknown>): boolean {
-  const items = value.items;
-  return Array.isArray(items) && items.some((item) => item && typeof item === "object" && (item as { fetchStatus?: unknown }).fetchStatus === "failed");
-}
-
-async function sha256File(path: string): Promise<string> {
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(path);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("error", reject);
-    stream.on("end", resolve);
-  });
-  return hash.digest("hex");
-}
-
-function safeName(value: string): string {
-  const name = basename(value).replace(/[\r\n\\/:*?"<>|]/g, "_").slice(0, 180);
-  return name || "attachment";
-}
-function shortHash(value: string): string { return createHash("sha256").update(value).digest("hex").slice(0, 20); }
-function eventIdFor(attachment: AttachmentPlan): string { return `capture:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}`; }
-function formatFor(value: string): string { return extname(value).replace(/^\./, "").toUpperCase() || "file"; }
-function sourceKindFor(value: string) {
-  const lower = value.toLowerCase();
-  if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) return "archive";
-  if (lower.endsWith(".pdf")) return "pdf";
-  if (lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".csv")) return "spreadsheet";
-  return "attachment";
-}
-function contentTypeFor(value: string): string {
-  const lower = value.toLowerCase();
-  if (lower.endsWith(".json") || lower.endsWith(".jsonl")) return "application/json";
-  if (lower.endsWith(".pdf")) return "application/pdf";
-  if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
-  if (lower.endsWith(".zip")) return "application/zip";
-  if (lower.endsWith(".gz")) return "application/gzip";
-  if (lower.endsWith(".csv")) return "text/csv";
-  if (lower.endsWith(".md") || lower.endsWith(".txt")) return "text/plain";
-  return "application/octet-stream";
+function eventIdFor(attachment: FeishuAttachmentPlan): string {
+  return `capture:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}`;
 }

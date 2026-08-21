@@ -1,4 +1,0 @@
-interface:
-  display_name: "CASE Registry"
-  short_description: "Query and update canonical CASE records"
-  default_prompt: "Use $case-registry to inspect or update the canonical CASE sample record with validated, provenance-preserving operations."

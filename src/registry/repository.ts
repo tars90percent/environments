@@ -1,34 +1,26 @@
 import type {
   ArtifactInput,
   ArtifactRecord,
-  AppendNormalizedTasksInput,
-  AppendNormalizedTasksResult,
-  CatalogBatch,
-  CatalogScope,
+  AppendTasksInput,
+  AppendTasksResult,
+  CaptureSubmissionInput,
+  CaptureSubmissionResult,
   CatalogSourceEvent,
-  CatalogSnapshot,
-  CatalogTask,
-  CatalogVendor,
-  CheckResultInput,
-  FollowUpInput,
+  HarborCheckResultInput,
+  HarborFindingInput,
   OperationsSummary,
+  SampleCatalogSnapshot,
+  SampleCatalogSubmission,
+  SampleCatalogTask,
   SourceEnvelopeInput,
-  StatusUpdateInput,
   SubmissionManifest,
   SubmissionIntakeClassificationInput,
   SubmissionIntakeClassificationResult,
   SubmissionRemovalInput,
   SubmissionRemovalResult,
-  SubmissionReview,
-  SubmissionReviewInput,
-  TaskFindingInput,
-  TaskFindingUpdateInput,
-  TaskSourceLinksInput,
   VendorArchiveInput,
   VendorArchiveResult,
   VendorDirectoryEntry,
-  VendorEvent,
-  VendorEventInput,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -36,32 +28,23 @@ import type {
 export interface RegistryRepository {
   initialize(): Promise<void>;
   close(): Promise<void>;
+  captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
-  appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult>;
+  appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;
   classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
-  recordVendorEvent(input: VendorEventInput): Promise<{ eventId: string; created: boolean }>;
-  listVendorEvents(vendorId: string): Promise<VendorEvent[]>;
   vendorDirectory(includeArchived?: boolean): Promise<VendorDirectoryEntry[]>;
   archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
-  recordCheckResult(input: CheckResultInput): Promise<void>;
-  recordTaskFinding(input: TaskFindingInput): Promise<{ findingId: string; created: boolean }>;
-  updateTaskFinding(input: TaskFindingUpdateInput): Promise<{ findingId: string; updated: boolean }>;
-  deleteTaskFinding(id: string): Promise<{ findingId: string; deleted: boolean }>;
-  recordFollowUp(input: FollowUpInput): Promise<void>;
-  recordSubmissionReview(input: SubmissionReviewInput): Promise<SubmissionReview>;
-  listSubmissionReviews(batchId: string): Promise<SubmissionReview[]>;
+  recordHarborCheck(input: HarborCheckResultInput): Promise<void>;
+  recordHarborFinding(input: HarborFindingInput): Promise<{ findingId: string; created: boolean }>;
   registerArtifact(input: ArtifactInput): Promise<void>;
-  updateStatus(input: StatusUpdateInput): Promise<void>;
-  linkTaskSources(input: TaskSourceLinksInput): Promise<{ linked: number }>;
   leaseWorkItem(workerId: string, leaseSeconds: number): Promise<WorkItem | null>;
   completeWorkItem(input: WorkCompletionInput): Promise<void>;
-  catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot>;
-  getVendor(id: string, scope: CatalogScope): Promise<CatalogVendor | null>;
-  getBatch(id: string, scope: CatalogScope): Promise<CatalogBatch | null>;
-  getTask(id: string, scope: CatalogScope): Promise<CatalogTask | null>;
+  sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot>;
+  getSampleSubmission(id: string): Promise<SampleCatalogSubmission | null>;
+  getSampleTask(id: string): Promise<SampleCatalogTask | null>;
   getSourceEvent(id: string): Promise<CatalogSourceEvent | null>;
   getArtifact(id: string): Promise<ArtifactRecord | null>;
   unregisterArtifactIfUnreferenced(id: string): Promise<ArtifactRecord | null>;

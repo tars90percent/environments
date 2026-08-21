@@ -2,18 +2,16 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { Pool } from "pg";
-import { startRegistryServer, type RegistryServer } from "../src/registry/api.js";
 import { PostgresRegistry } from "../src/registry/postgres.js";
 import type { SubmissionManifest } from "../src/registry/types.js";
 
 const testDatabaseUrl = process.env.CASE_REGISTRY_TEST_DATABASE_URL;
 
-test("archives and restores vendors through the admin API", { skip: !testDatabaseUrl }, async () => {
+test("archives and restores vendors through the trusted repository", { skip: !testDatabaseUrl }, async () => {
   if (!testDatabaseUrl) throw new Error("CASE_REGISTRY_TEST_DATABASE_URL is required");
   const schema = `case_vendor_archive_${randomUUID().replaceAll("-", "_")}`;
   const administrator = new Pool({ connectionString: testDatabaseUrl });
   let repository: PostgresRegistry | undefined;
-  let server: RegistryServer | undefined;
   try {
     await administrator.query(`CREATE SCHEMA "${schema}"`);
     repository = new PostgresRegistry(databaseUrlWithSearchPath(testDatabaseUrl, schema));
@@ -27,109 +25,54 @@ test("archives and restores vendors through the admin API", { skip: !testDatabas
     await repository.ingestSubmission(manifest("internal-vendor", "internal-batch", "internal"));
     await repository.ingestSubmission(manifest("visible-vendor", "visible-batch", "available"));
 
-    const adminToken = "admin-token-with-at-least-32-characters";
-    const catalogToken = "catalog-token-with-at-least-32-characters";
-    server = await startRegistryServer({
-      repository,
-      adminToken,
-      catalogToken,
-      reviewToken: "review-token-with-at-least-32-characters",
-      uploadToken: "upload-token-with-at-least-32-characters",
-      host: "127.0.0.1",
-      port: 0,
-    });
-
-    await repository.recordVendorEvent({
-      id: "visible-vendor:quote-under-negotiation:2026-08-14",
-      vendorId: "visible-vendor",
-      kind: "commercial",
-      eventType: "quote_under_negotiation",
-      summary: "A roughly USD 100,000 quote is under negotiation; no purchase decision is recorded.",
-      actor: "TARS",
-      occurredAt: "2026-08-14T01:00:00.000Z",
-      sourceEventIds: ["visible-batch-source"],
-      batchIds: ["visible-batch"],
-      metadata: { currency: "USD", quotedAmountApprox: 100_000, purchaseStatus: "negotiating", retrospective: true },
-    });
-
     const request = {
       vendorId: "internal-vendor",
       reason: "The duplicate vendor identity was reconciled.",
       actor: "TARS",
     };
-    const forbidden = await api(server.url, catalogToken, "POST", "/v1/vendors/archive", request);
-    assert.equal(forbidden.status, 403);
+    const archived = await repository.archiveVendor(request);
+    assert.equal(archived.changed, true);
+    assert.equal(archived.archived, true);
 
-    const archived = await api(server.url, adminToken, "POST", "/v1/vendors/archive", request);
-    assert.equal(archived.status, 200);
-    assert.equal(archived.body.changed, true);
-    assert.equal(archived.body.archived, true);
+    const repeated = await repository.archiveVendor(request);
+    assert.equal(repeated.changed, false);
 
-    const repeated = await api(server.url, adminToken, "POST", "/v1/vendors/archive", request);
-    assert.equal(repeated.status, 200);
-    assert.equal(repeated.body.changed, false);
-
-    const activeDirectory = await api(server.url, adminToken, "GET", "/v1/vendor-directory");
-    assert.deepEqual(ids(activeDirectory.body.vendors), ["visible-vendor"]);
-    const fullDirectory = await api(server.url, adminToken, "GET", "/v1/vendor-directory?include_archived=true");
-    assert.deepEqual(ids(fullDirectory.body.vendors), ["internal-vendor", "visible-vendor"]);
-    const archivedEntry = entries(fullDirectory.body.vendors).find((entry) => entry.id === "internal-vendor");
+    const activeDirectory = await repository.vendorDirectory();
+    assert.deepEqual(ids(activeDirectory), ["visible-vendor"]);
+    const fullDirectory = await repository.vendorDirectory(true);
+    assert.deepEqual(ids(fullDirectory), ["internal-vendor", "visible-vendor"]);
+    const archivedEntry = entries(fullDirectory).find((entry) => entry.id === "internal-vendor");
     assert.equal(archivedEntry?.archivedBy, "TARS");
     assert.equal(archivedEntry?.archiveReason, request.reason);
 
-    const researchCatalog = await api(server.url, adminToken, "GET", "/v1/catalog?scope=research");
-    assert.equal(ids(researchCatalog.body.vendors).includes("internal-vendor"), false);
-    const portalCatalog = await api(server.url, catalogToken, "GET", "/v1/catalog?scope=all");
-    assert.equal(ids(portalCatalog.body.vendors).includes("internal-vendor"), false);
-    const demands = entries(portalCatalog.body.demands);
-    assert.equal(demands.length, 14);
-    assert.equal(demands.some((demand) => demand.id === "long-horizon-greenfield-coding"), true);
-    assert.equal(demands.some((demand) => demand.id === "quantitative-modeling"), false);
-    assert.equal(demands.every((demand) => String(demand.sourceUrl).startsWith("https://")), true);
-    const visibleCatalogVendor = entries(portalCatalog.body.vendors).find((entry) => entry.id === "visible-vendor");
-    assert.deepEqual(visibleCatalogVendor?.procurementSummary, {
-      stage: "negotiating",
-      summary: "A roughly USD 100,000 quote is under negotiation; no purchase decision is recorded.",
-      amountApprox: { currency: "USD", value: 100_000 },
-      commitment: "none",
-      occurredAt: "2026-08-14T01:00:00.000Z",
-      actor: "TARS",
-      evidenceEventId: "visible-vendor:quote-under-negotiation:2026-08-14",
-      evidenceSourceCount: 1,
-      retrospective: true,
-    });
-    const auditCatalog = await api(server.url, adminToken, "GET", "/v1/catalog?scope=all");
-    assert.equal(ids(auditCatalog.body.vendors).includes("internal-vendor"), true);
-    const auditRecord = await api(server.url, adminToken, "GET", "/v1/vendor-records/internal-vendor");
-    assert.equal(auditRecord.status, 200);
-    assert.equal(auditRecord.body.vendor.id, "internal-vendor");
+    const portalCatalog = await repository.sampleCatalogSnapshot();
+    assert.equal(ids(portalCatalog.vendors).includes("internal-vendor"), false);
+    const visibleCatalogVendor = entries(portalCatalog.vendors).find((entry) => entry.id === "visible-vendor");
+    assert.equal(Array.isArray(visibleCatalogVendor?.submissions), true);
+    assert.equal("procurementSummary" in (visibleCatalogVendor ?? {}), false);
+    assert.equal("demands" in portalCatalog, false);
 
     await repository.ingestSubmission(manifest("internal-vendor", "later-internal-batch", "internal"));
-    const stillArchived = await api(server.url, adminToken, "GET", "/v1/vendor-directory");
-    assert.equal(ids(stillArchived.body.vendors).includes("internal-vendor"), false);
+    const stillArchived = await repository.vendorDirectory();
+    assert.equal(ids(stillArchived).includes("internal-vendor"), false);
 
-    const unsafe = await api(server.url, adminToken, "POST", "/v1/vendors/archive", {
-      ...request,
-      vendorId: "visible-vendor",
-    });
-    assert.equal(unsafe.status, 409);
+    await assert.rejects(() => repository!.archiveVendor({ ...request, vendorId: "visible-vendor" }), /has non-internal submission/);
 
-    const restored = await api(server.url, adminToken, "POST", "/v1/vendors/restore", {
+    const restored = await repository.restoreVendor({
       vendorId: "internal-vendor",
       reason: "The corrected vendor record is active again.",
       actor: "TARS",
     });
-    assert.equal(restored.status, 200);
-    assert.equal(restored.body.changed, true);
-    assert.equal(restored.body.archived, false);
-    assert.equal(restored.body.previousArchive.archivedBy, "TARS");
+    assert.equal(restored.changed, true);
+    assert.equal(restored.archived, false);
+    assert.equal(restored.previousArchive?.archivedBy, "TARS");
 
-    const repeatedRestore = await api(server.url, adminToken, "POST", "/v1/vendors/restore", {
+    const repeatedRestore = await repository.restoreVendor({
       vendorId: "internal-vendor",
       reason: "The corrected vendor record is active again.",
       actor: "TARS",
     });
-    assert.equal(repeatedRestore.body.changed, false);
+    assert.equal(repeatedRestore.changed, false);
 
     const events = await administrator.query<{ event_type: string; payload: Record<string, unknown> }>(
       `SELECT event_type, payload FROM "${schema}".registry_status_events
@@ -139,7 +82,6 @@ test("archives and restores vendors through the admin API", { skip: !testDatabas
     assert.deepEqual(events.rows.map((event) => event.event_type), ["vendor.archived", "vendor.restored"]);
     assert.equal((events.rows[1]?.payload.previousArchive as { archivedBy?: unknown }).archivedBy, "TARS");
   } finally {
-    await server?.close();
     await repository?.close();
     await administrator.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await administrator.end();
@@ -182,24 +124,6 @@ function databaseUrlWithSearchPath(databaseUrl: string, schema: string): string 
   const url = new URL(databaseUrl);
   url.searchParams.set("options", `-csearch_path=${schema}`);
   return url.toString();
-}
-
-async function api(
-  baseUrl: string,
-  token: string,
-  method: "GET" | "POST",
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Record<string, any> }> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return { status: response.status, body: await response.json() as Record<string, any> };
 }
 
 function entries(value: unknown): Array<Record<string, any>> {

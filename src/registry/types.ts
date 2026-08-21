@@ -12,6 +12,11 @@ export type CatalogVisibility = "featured" | "available" | "log_only" | "interna
 export type CheckOutcome = "pass" | "fail" | "blocked" | "not_run";
 export type CatalogScope = "research" | "portal" | "all";
 
+export type SampleTaskKind = "task" | "trace";
+export type SampleTaskFormat = "harbor" | "non_harbor";
+export type HarborCheckPhase = "build" | "boot" | "oracle" | "nop";
+export type HarborCheckOutcome = "pass" | "fail";
+
 export type TaskRepresentationKind = "harbor" | "native" | "unknown";
 export type TaskRepresentationPath = "already_harbor" | "normalized_to_harbor" | "native_format_exception";
 export type TaskNormalizationOutcome = "already_harbor" | "normalized" | "needs_review" | "incomplete" | "blocked" | "not_a_task";
@@ -222,6 +227,44 @@ export type SourceEnvelopeInput = {
   }>;
 };
 
+export type CapturedSubmissionSourceInput =
+  | {
+      sourceEvent: SourceEventInput;
+      items: SourceItemInput[];
+      relations?: SourceRelationInput[];
+    }
+  | {
+      sourceEventId: string;
+      sourceItemIds?: string[];
+    };
+
+/**
+ * Canonical capture contract used by trusted CASE processes. Object bytes must
+ * already be present in CASE storage; this operation records all relational
+ * provenance and the dated submission in one database transaction.
+ */
+export type CaptureSubmissionInput = {
+  vendor: RegistryVendorInput;
+  submission: {
+    id: string;
+    date: string;
+    label: string;
+    sourceLabel: string;
+    formats?: SampleTaskFormat[];
+    revisesSubmissionId?: string;
+    metadata?: Record<string, unknown>;
+  };
+  artifacts: ArtifactInput[];
+  sources: CapturedSubmissionSourceInput[];
+  actor: string;
+};
+
+export type CaptureSubmissionResult = {
+  submissionId: string;
+  created: boolean;
+  sourceEventIds: string[];
+};
+
 export type TaskSourceLinksInput = {
   links: Array<{
     taskVersionId: string;
@@ -311,6 +354,55 @@ export type AppendNormalizedTasksResult = {
   taskVersionsAdded: number;
   taskVersionsFinalized: number;
   taskVersionIds: string[];
+};
+
+/** Active task-registration contract. Categories and normalization states are deliberately absent. */
+export type TaskRegistrationInput = {
+  id: string;
+  stableKey: string;
+  title: string;
+  summary?: string;
+  kind: SampleTaskKind;
+  format: SampleTaskFormat;
+  sourcePath: string;
+  artifactId: string;
+  contentSha256: string;
+  sourceItemIds: string[];
+};
+
+export type AppendTasksInput = {
+  submissionId: string;
+  tasks: TaskRegistrationInput[];
+  actor: string;
+};
+
+export type AppendTasksResult = {
+  submissionId: string;
+  tasksAdded: number;
+  taskIds: string[];
+};
+
+export type HarborCheckResultInput = {
+  id: string;
+  taskId: string;
+  phase: HarborCheckPhase;
+  outcome: HarborCheckOutcome;
+  summary: string;
+  evidenceArtifactId: string;
+  harborVersion: string;
+  modalVersion: string;
+  command: string;
+  sandboxRef?: string;
+  score?: number;
+  startedAt: string;
+  completedAt: string;
+};
+
+export type HarborFindingInput = {
+  id: string;
+  taskId: string;
+  checkRunId: string;
+  finding: string;
 };
 
 export type ArtifactInput = {
@@ -465,7 +557,6 @@ export type ResearcherUploadInput = {
   id: string;
   vendorId: string;
   label: string;
-  category: string;
   note?: string;
   uploadedAt: string;
   artifact: {
@@ -643,12 +734,73 @@ export type CatalogSnapshot = {
 export type OperationsSummary = {
   vendors: number;
   sourceEvents: number;
-  vendorEvents: number;
-  submissionsByStatus: Record<string, number>;
-  checksByOutcome: Record<string, number>;
+  submissions: number;
+  tasks: {
+    tasks: number;
+    traces: number;
+    harbor: number;
+    nonHarbor: number;
+  };
+  harborChecks: Record<string, { pass: number; fail: number }>;
   pendingWorkItems: number;
-  openFollowUps: number;
-  sourceItemsByFetchStatus: Record<string, number>;
-  sourceItemsByParseStatus: Record<string, number>;
   artifacts: number;
+};
+
+export type SampleCatalogCheck = {
+  id: string;
+  phase: HarborCheckPhase;
+  outcome: HarborCheckOutcome;
+  summary: string;
+  score: number | null;
+  completedAt: string;
+};
+
+export type SampleCatalogFinding = {
+  id: string;
+  phase: HarborCheckPhase;
+  checkRunId: string;
+  finding: string;
+};
+
+export type SampleCatalogTask = {
+  id: string;
+  stableKey: string;
+  title: string;
+  summary: string | null;
+  kind: SampleTaskKind;
+  format: SampleTaskFormat;
+  sourcePath: string | null;
+  artifactId: string | null;
+  contentSha256: string | null;
+  sourceItemIds: string[];
+  checks: Partial<Record<HarborCheckPhase, SampleCatalogCheck>>;
+  findings: SampleCatalogFinding[];
+};
+
+export type SampleCatalogSubmission = {
+  id: string;
+  date: string;
+  label: string;
+  source: string;
+  formats: SampleTaskFormat[];
+  sourceEvents: CatalogSourceEvent[];
+  tasks: SampleCatalogTask[];
+};
+
+export type SampleCatalogVendor = {
+  id: string;
+  name: string;
+  short: string;
+  submissions: SampleCatalogSubmission[];
+};
+
+export type SampleCatalogSnapshot = {
+  generatedAt: string;
+  vendors: SampleCatalogVendor[];
+  totals: {
+    vendors: number;
+    submissions: number;
+    tasks: number;
+    harborTasks: number;
+  };
 };

@@ -78,9 +78,7 @@ export const config = {
   maxReplyCharacters: Number(process.env.MAX_REPLY_CHARACTERS ?? 8_000),
   registryDatabaseUrl: process.env.DATABASE_URL?.trim() || undefined,
   registryCatalogToken: process.env.CASE_REGISTRY_CATALOG_TOKEN?.trim() || undefined,
-  registryReviewToken: process.env.CASE_REGISTRY_REVIEW_TOKEN?.trim() || undefined,
   registryUploadToken: process.env.CASE_REGISTRY_UPLOAD_TOKEN?.trim() || undefined,
-  registryAdminToken: process.env.CASE_REGISTRY_ADMIN_TOKEN?.trim() || undefined,
   registryPort: optionalNumber("PORT", 3000),
   registryS3: process.env.AWS_ENDPOINT_URL && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && process.env.AWS_S3_BUCKET_NAME
     ? {
@@ -99,13 +97,13 @@ export function validateConfig(): void {
       "No pilot users are allowed. Set ALLOWED_USER_IDS to comma-separated Feishu open_ids, or explicitly set ALLOW_ALL_USERS=true.",
     );
   }
-  const registryValues = [config.registryDatabaseUrl, config.registryCatalogToken, config.registryReviewToken, config.registryUploadToken, config.registryAdminToken];
+  const registryValues = [config.registryDatabaseUrl, config.registryCatalogToken, config.registryUploadToken];
   if (registryValues.some(Boolean) && !registryValues.every(Boolean)) {
-    throw new Error("DATABASE_URL and all CASE registry role tokens must be set together");
+    throw new Error("DATABASE_URL and the CASE catalog and upload tokens must be set together");
   }
-  for (const [name, token] of [["CASE_REGISTRY_CATALOG_TOKEN", config.registryCatalogToken], ["CASE_REGISTRY_REVIEW_TOKEN", config.registryReviewToken], ["CASE_REGISTRY_UPLOAD_TOKEN", config.registryUploadToken], ["CASE_REGISTRY_ADMIN_TOKEN", config.registryAdminToken]] as const) {
+  for (const [name, token] of [["CASE_REGISTRY_CATALOG_TOKEN", config.registryCatalogToken], ["CASE_REGISTRY_UPLOAD_TOKEN", config.registryUploadToken]] as const) {
     if (token && token.length < 32) throw new Error(`${name} must contain at least 32 characters`);
   }
-  const tokens = [config.registryCatalogToken, config.registryReviewToken, config.registryUploadToken, config.registryAdminToken].filter(Boolean);
+  const tokens = [config.registryCatalogToken, config.registryUploadToken].filter(Boolean);
   if (new Set(tokens).size !== tokens.length) throw new Error("CASE registry tokens must be distinct");
 }

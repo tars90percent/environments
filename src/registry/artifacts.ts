@@ -1,6 +1,8 @@
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 
 export type ArtifactStoreOptions = {
   endpoint: string;
@@ -40,6 +42,20 @@ export class ArtifactStore {
       { expiresIn: expiresInSeconds },
     );
     return { url, expiresInSeconds };
+  }
+
+  async putFile(input: { key: string; path: string; contentType: string; sha256: string; sizeBytes: number }): Promise<void> {
+    const file = await stat(input.path);
+    if (!file.isFile() || file.size !== input.sizeBytes) throw new Error("Artifact file size does not match");
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.options.bucket,
+      Key: safeKey(input.key),
+      Body: createReadStream(input.path),
+      ContentType: input.contentType,
+      ContentLength: input.sizeBytes,
+      Metadata: { sha256: input.sha256 },
+    }));
+    await this.verifyObject({ key: input.key, sha256: input.sha256, sizeBytes: input.sizeBytes });
   }
 
   async verifyObject(input: { key: string; sha256: string; sizeBytes?: number }): Promise<void> {
