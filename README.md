@@ -232,10 +232,14 @@ harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle
 ```
 
 The launcher adds `--env modal`; a different execution environment is rejected.
-Harbor creates its normal `jobs/` result tree beneath `/data/evaluations`, where
-CASE can inspect it and register immutable evidence. A separate controller
-service remains a future scaling option, not a prerequisite for remote sandbox
-execution.
+Each invocation also receives a unique CASE-owned Modal App, a two-hour hard
+sandbox lifetime, and a ten-minute idle timeout. After Harbor exits, the
+launcher stops that App and verifies that it has no active containers. These
+provider-side limits remain a cleanup backstop if the controller is killed
+before its exit handler can run. Harbor creates its normal `jobs/` result tree
+beneath `/data/evaluations`, where CASE can inspect it and register immutable
+evidence. A separate controller service remains a future scaling option, not a
+prerequisite for remote sandbox execution.
 
 The execution boundary, run sequence, and sandbox acceptance test are in
 [`docs/evaluation-runner.md`](docs/evaluation-runner.md).

@@ -12,7 +12,7 @@ The pinned toolchain is:
 - Modal CLI `1.5.4`;
 - a uv-managed Python 3.12 runtime.
 
-The public `harbor` command is a CASE launcher. For `harbor run`, it adds `--env modal` when omitted, rejects any other environment, changes into `/data/evaluations`, and starts upstream Harbor with a scrubbed environment. CASE database, object-store, Feishu, portal, and registry credentials are never inherited by Harbor. The direct `modal` command remains available for provider diagnostics.
+The public `harbor` command is a CASE launcher. For `harbor run`, it adds `--env modal` when omitted, rejects any other environment, assigns a unique per-run Modal App, enforces provider-side hard and idle timeouts, changes into `/data/evaluations`, and starts upstream Harbor with a scrubbed environment. When Harbor exits, the launcher stops the per-run App and verifies that it has no active containers; the run fails if cleanup cannot be verified. CASE database, object-store, Feishu, portal, and registry credentials are never inherited by Harbor. The direct `modal` command remains available for provider diagnostics.
 
 ## Modal identity
 
@@ -43,6 +43,7 @@ Record the invocation, artifact digest, Harbor version, Modal environment, agent
 - Vendor code, build scripts, tests, solutions, and agent-generated code execute only inside the disposable Modal sandbox.
 - The sandbox receives no CASE admin token, database URL, object-store credential, Feishu login, portal credential, or production private-network access.
 - Every sandbox must have a hard wall-clock timeout and be destroyed after the trial, including after build, agent, verifier, or collection failure.
+- The CASE launcher defaults the hard lifetime to two hours and idle shutdown to ten minutes. Configure policy values with `CASE_HARBOR_SANDBOX_TIMEOUT_SECS` and `CASE_HARBOR_SANDBOX_IDLE_TIMEOUT_SECS`; values above Modal's 24-hour maximum or an idle timeout longer than the hard lifetime are rejected before a run starts.
 
 ## Evaluation sequence
 
