@@ -39,6 +39,21 @@ export function deriveRuntimeVerification(
     };
   }
 
+  // A successful Oracle or Nop control necessarily executed inside a built,
+  // started task environment. Older registry records predate the dedicated
+  // build and boot evidence roles, so use the passed control as the supporting
+  // fact when either prerequisite phase is missing or explicitly not run.
+  // Preserve an explicit pass, fail, or blocked phase result rather than
+  // replacing separately recorded evidence.
+  const passedControl = latestPassedControl(phases);
+  if (passedControl) {
+    for (const key of ["build", "boot"] as const) {
+      if (phases[key].outcome === null || phases[key].outcome === "not_run") {
+        phases[key] = { ...passedControl };
+      }
+    }
+  }
+
   const outcomes = Object.values(phases).map((phase) => phase.outcome);
   const hasClassifiedEvidence = outcomes.some((outcome) => outcome !== null);
   const hasBeenChecked = outcomes.some((outcome) => outcome === "pass" || outcome === "fail" || outcome === "blocked");
@@ -64,6 +79,13 @@ export function deriveRuntimeVerification(
     unclassifiedCheckRuns,
     phases,
   };
+}
+
+function latestPassedControl(phases: RuntimeVerificationSummary["phases"]): RuntimePhaseEvidence | null {
+  const passed = [phases.positiveControl, phases.negativeControl]
+    .filter((phase) => phase.outcome === "pass")
+    .sort((left, right) => (left.completedAt ?? "").localeCompare(right.completedAt ?? ""));
+  return passed.at(-1) ?? null;
 }
 
 function phaseKey(role: CheckEvidenceRole): keyof RuntimeVerificationSummary["phases"] | null {

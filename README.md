@@ -107,6 +107,11 @@ only when `executionScope` is `remote_sandbox`. The catalog derives
 `runtimeVerification.hasBeenChecked` when at least one phase has a remote-sandbox
 pass, fail, or blocked result; `runtimeSuiteCompleted` only after all four phases
 have terminal pass/fail records; and `runtimeVerified` only when all four pass.
+Because a passed Oracle or Nop control necessarily ran inside a built and started
+task environment, the catalog uses that control as supporting evidence for a
+missing or `not_run` build or boot phase. This implication is one-way: build and
+boot do not imply either control, and separately recorded failures or blocks are
+not overwritten.
 Unclassified legacy checks remain visible as unclassified rather than being
 treated as completed runtime verification.
 
