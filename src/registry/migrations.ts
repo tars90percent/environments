@@ -809,6 +809,106 @@ const migrations: Migration[] = [
         ON registry_check_runs(task_version_id, execution_scope, completed_at DESC);
     `,
   },
+  {
+    id: "013_legacy_runtime_evidence_backfill",
+    sql: `
+      -- Migration 012 used broad text matching to classify legacy definitions. Correct
+      -- the known static definitions before deriving any runtime-attempt state.
+      UPDATE registry_check_definitions
+      SET evidence_role = 'contract'
+      WHERE id IN (
+        'case.task-contract-static',
+        'case-harbor-static-package-validation',
+        'case-harbor-package-validate',
+        'case-native-runtime-adapter-availability'
+      );
+
+      -- These definitions are the legacy checks that actually requested a build,
+      -- Oracle, or Nop run. Keep this mapping explicit: names and descriptions of
+      -- static checks often mention Oracle/Nop and are not runtime evidence.
+      UPDATE registry_check_definitions
+      SET evidence_role = 'build'
+      WHERE id IN (
+        'case.harbor.clean-build-boot',
+        'case-public-container-rebuild'
+      );
+
+      UPDATE registry_check_definitions
+      SET evidence_role = 'positive_control'
+      WHERE id IN (
+        'case-oracle-gold-control',
+        'case-oracle-gold-consistency',
+        'case-oracle-gold-consistency-repeat',
+        'case.harbor.oracle-control',
+        'case.harbor.oracle-repeat',
+        'case.harbor.oracle-repeatability',
+        'case.harbor-oracle-control',
+        'case.harbor-modal-oracle-smoke',
+        'case.harbor.positive-control-repeat'
+      );
+
+      UPDATE registry_check_definitions
+      SET evidence_role = 'negative_control'
+      WHERE id IN (
+        'case-nop-untouched-consistency',
+        'case-untouched-nop-consistency-repeat',
+        'case.harbor.nop-control',
+        'case.harbor.nop-repeat',
+        'case.harbor.nop-repeatability',
+        'case.harbor-nop-control',
+        'case.harbor-modal-nop-smoke',
+        'case.harbor.negative-control-repeat'
+      );
+
+      -- A pass or fail from one of the explicit runtime definitions records an
+      -- attempted remote check. A blocked result counts only when its retained
+      -- evidence proves that a job/trial actually started. not_run remains unknown.
+      UPDATE registry_check_runs
+      SET execution_scope = 'remote_sandbox'
+      WHERE definition_id IN (
+          'case.harbor.clean-build-boot',
+          'case-public-container-rebuild',
+          'case-oracle-gold-control',
+          'case-oracle-gold-consistency',
+          'case-oracle-gold-consistency-repeat',
+          'case.harbor.oracle-control',
+          'case.harbor.oracle-repeat',
+          'case.harbor.oracle-repeatability',
+          'case.harbor-oracle-control',
+          'case.harbor-modal-oracle-smoke',
+          'case.harbor.positive-control-repeat',
+          'case-nop-untouched-consistency',
+          'case-untouched-nop-consistency-repeat',
+          'case.harbor.nop-control',
+          'case.harbor.nop-repeat',
+          'case.harbor.nop-repeatability',
+          'case.harbor-nop-control',
+          'case.harbor-modal-nop-smoke',
+          'case.harbor.negative-control-repeat'
+        )
+        AND (
+          outcome IN ('pass', 'fail')
+          OR (
+            outcome = 'blocked'
+            AND (
+              (runner ? 'jobId' AND runner ? 'trialId')
+              OR (evidence->>'runtimeSecondsBeforeStop') ~ '^[1-9][0-9]*$'
+            )
+          )
+        )
+        -- These records describe a shared representative environment rather than
+        -- an execution attempt for the task version carrying the check record.
+        AND NOT (
+          definition_id = 'case.harbor.clean-build-boot'
+          AND evidence ? 'representativeTaskVersionId'
+        )
+        -- Legacy preflight failures explicitly recorded that no sandbox existed.
+        AND NOT (
+          definition_id = 'case.harbor.clean-build-boot'
+          AND COALESCE(evidence->>'sandboxProvisioned', '') = 'false'
+        );
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

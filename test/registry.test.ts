@@ -319,6 +319,15 @@ test("requires runtime checks to declare their evidence role and sandbox scope",
   };
   assert.equal(parseCheckResult(check).evidenceRole, "positive_control");
   assert.throws(() => parseCheckResult({ ...check, executionScope: "static" }), ValidationError);
+  assert.throws(() => parseCheckResult({ ...check, executionScope: "unknown" }), ValidationError);
+  assert.equal(
+    parseCheckResult({ ...check, outcome: "blocked", executionScope: "unknown" }).executionScope,
+    "unknown",
+  );
+  assert.equal(
+    parseCheckResult({ ...check, outcome: "not_run", executionScope: "unknown" }).executionScope,
+    "unknown",
+  );
   assert.throws(() => parseCheckResult({ ...check, evidenceRole: undefined }), ValidationError);
 });
 

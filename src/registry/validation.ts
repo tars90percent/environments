@@ -428,8 +428,13 @@ export function parseCheckResult(value: unknown): CheckResultInput {
   const input = object(value, "check result");
   const evidenceRole = enumValue(input.evidenceRole, CHECK_EVIDENCE_ROLES, "evidenceRole");
   const executionScope = enumValue(input.executionScope, CHECK_EXECUTION_SCOPES, "executionScope");
-  if (["build", "boot", "positive_control", "negative_control"].includes(evidenceRole) && executionScope !== "remote_sandbox") {
-    throw new ValidationError(`${evidenceRole} checks must use executionScope remote_sandbox`);
+  const isRuntimeCheck = ["build", "boot", "positive_control", "negative_control"].includes(evidenceRole);
+  const completedRuntimeAttempt = input.outcome === "pass" || input.outcome === "fail";
+  if (isRuntimeCheck && executionScope === "static") {
+    throw new ValidationError(`${evidenceRole} checks cannot use executionScope static`);
+  }
+  if (isRuntimeCheck && completedRuntimeAttempt && executionScope !== "remote_sandbox") {
+    throw new ValidationError(`${evidenceRole} ${String(input.outcome)} checks must use executionScope remote_sandbox`);
   }
   return {
     id: identifier(input.id, "id"),
