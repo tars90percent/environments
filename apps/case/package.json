@@ -1,0 +1,37 @@
+{
+  "name": "feishu-codex-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Feishu teammate powered by Codex.",
+  "bin": {
+    "case-registry": "dist/registry-cli.js",
+    "case-intake": "dist/intake-plan-cli.js",
+    "case-mail-intake": "dist/mail-intake-plan-cli.js",
+    "case-harbor": "dist/harbor-cli.js"
+  },
+  "scripts": {
+    "dev": "node --watch --import tsx src/index.ts",
+    "build": "node node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "check": "node node_modules/typescript/bin/tsc --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "test:postgres": "node -e \"if (!process.env.CASE_REGISTRY_TEST_DATABASE_URL) throw new Error('CASE_REGISTRY_TEST_DATABASE_URL is required')\" && node --import tsx --test test/*-postgres.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1108.0",
+    "@aws-sdk/s3-request-presigner": "^3.1108.0",
+    "@larksuite/cli": "1.0.85",
+    "@openai/codex-sdk": "0.147.0",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pg": "^8.21.0",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

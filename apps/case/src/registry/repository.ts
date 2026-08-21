@@ -1,0 +1,52 @@
+import type {
+  ArtifactInput,
+  ArtifactRecord,
+  AppendTasksInput,
+  AppendTasksResult,
+  CaptureSubmissionInput,
+  CaptureSubmissionResult,
+  CatalogSourceEvent,
+  HarborCheckResultInput,
+  HarborFindingInput,
+  OperationsSummary,
+  SampleCatalogSnapshot,
+  SampleCatalogSubmission,
+  SampleCatalogTask,
+  SourceEnvelopeInput,
+  SubmissionManifest,
+  SubmissionIntakeClassificationInput,
+  SubmissionIntakeClassificationResult,
+  SubmissionRemovalInput,
+  SubmissionRemovalResult,
+  VendorArchiveInput,
+  VendorArchiveResult,
+  VendorDirectoryEntry,
+  WorkCompletionInput,
+  WorkItem,
+} from "./types.js";
+
+export interface RegistryRepository {
+  initialize(): Promise<void>;
+  close(): Promise<void>;
+  captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
+  ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
+  appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;
+  classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;
+  removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
+  ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
+  vendorDirectory(includeArchived?: boolean): Promise<VendorDirectoryEntry[]>;
+  archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
+  restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
+  recordHarborCheck(input: HarborCheckResultInput): Promise<void>;
+  recordHarborFinding(input: HarborFindingInput): Promise<{ findingId: string; created: boolean }>;
+  registerArtifact(input: ArtifactInput): Promise<void>;
+  leaseWorkItem(workerId: string, leaseSeconds: number): Promise<WorkItem | null>;
+  completeWorkItem(input: WorkCompletionInput): Promise<void>;
+  sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot>;
+  getSampleSubmission(id: string): Promise<SampleCatalogSubmission | null>;
+  getSampleTask(id: string): Promise<SampleCatalogTask | null>;
+  getSourceEvent(id: string): Promise<CatalogSourceEvent | null>;
+  getArtifact(id: string): Promise<ArtifactRecord | null>;
+  unregisterArtifactIfUnreferenced(id: string): Promise<ArtifactRecord | null>;
+  operationsSummary(): Promise<OperationsSummary>;
+}

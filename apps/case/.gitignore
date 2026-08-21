@@ -1,0 +1,13 @@
+node_modules/
+.npm-cache/
+dist/
+.data/
+.codex/
+.lark-cli/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.log
