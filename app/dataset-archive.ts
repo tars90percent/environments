@@ -4,51 +4,32 @@ export type DatasetSubmission = {
   label: string;
   source: string;
   formats: string[];
-  categories: Array<{
+  tasks: Array<{
     id: string;
-    name: string;
-    tasks: Array<{
-      id: string;
-      stableKey: string;
-      title: string;
-      sourcePath: string | null;
-      format: string;
-      representation: {
-        kind: "harbor" | "native" | "unknown";
-        isHarbor: boolean | null;
-        path: string | null;
-        normalizationOutcome: string | null;
-        basis: string;
-      };
-      runtimeVerification: {
-        status: string;
-        hasBeenChecked: boolean;
-        runtimeSuiteCompleted: boolean;
-        runtimeVerified: boolean;
-        unclassifiedCheckRuns: number;
-        phases: Record<string, unknown>;
-      };
-      artifactId: string | null;
-      contentSha256: string | null;
-      workflowStatus: string;
-      checks: { pass: number; fail: number; blocked: number; notRun: number };
-    }>;
+    stableKey: string;
+    title: string;
+    summary: string | null;
+    kind: "task" | "trace";
+    format: "harbor" | "non_harbor";
+    sourcePath: string | null;
+    artifactId: string | null;
+    contentSha256: string | null;
+    checks: Record<string, unknown>;
+    findings: Array<{ id: string; phase: string; checkRunId: string; finding: string }>;
   }>;
 };
 
 export type DatasetPackage = {
-  taskVersionId: string;
+  taskId: string;
   stableKey: string;
   title: string;
-  category: { id: string; name: string };
-  format: string;
-  representation: DatasetSubmission["categories"][number]["tasks"][number]["representation"];
-  runtimeVerification: DatasetSubmission["categories"][number]["tasks"][number]["runtimeVerification"];
+  kind: "task" | "trace";
+  format: "harbor" | "non_harbor";
   sourcePath: string | null;
   artifactId: string;
   contentSha256: string | null;
-  workflowStatus: string;
-  checks: { pass: number; fail: number; blocked: number; notRun: number };
+  checks: Record<string, unknown>;
+  findings: Array<{ id: string; phase: string; checkRunId: string; finding: string }>;
   packagePath: string;
 };
 
@@ -59,7 +40,7 @@ const encoder = new TextEncoder();
 export function taskDatasetManifest(submission: DatasetSubmission) {
   const tasks = datasetPackages(submission);
   return {
-    schemaVersion: "case.task-dataset.v1",
+    schemaVersion: "case.tasks.v1",
     submission: {
       id: submission.id,
       date: submission.date,
@@ -68,10 +49,9 @@ export function taskDatasetManifest(submission: DatasetSubmission) {
       formats: submission.formats,
     },
     selection: {
-      kind: "all_available_task_packages",
+      kind: "all_available_task_artifacts",
       included: tasks.length,
-      omittedWithoutExactArtifact: submission.categories.reduce((total, category) => total + category.tasks.filter((task) => !task.artifactId).length, 0),
-      statusPolicy: "all_statuses_included",
+      omittedWithoutExactArtifact: submission.tasks.filter((task) => !task.artifactId).length,
     },
     tasks,
   };
@@ -79,7 +59,7 @@ export function taskDatasetManifest(submission: DatasetSubmission) {
 
 export function taskDatasetFilename(submission: DatasetSubmission): string {
   const label = submission.label.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "case-submission";
-  return `${label}-${submission.date}-task-dataset.tar`;
+  return `${label}-${submission.date}-tasks.tar`;
 }
 
 export function taskDatasetArchive(submission: DatasetSubmission, resolvePackage: PackageResolver): ReadableStream<Uint8Array> {
@@ -121,16 +101,16 @@ export function tarBytes(entries: Array<{ path: string; bytes: Uint8Array; mode?
 async function* taskDatasetChunks(submission: DatasetSubmission, resolvePackage: PackageResolver): AsyncGenerator<Uint8Array> {
   const manifest = taskDatasetManifest(submission);
   const tasks = manifest.tasks;
-  const readme = `# CASE task dataset\n\nThis archive contains all ${tasks.length} exact task packages retained for the submission “${submission.label}”.\n\nPackages are included regardless of workflow status so researchers can inspect ready, checking, blocked, or needs-fix material. Each file under tasks/ is the original immutable task-package archive. See manifest.json for task identity, status, checks, and content hash.\n`;
+  const readme = `# CASE tasks\n\nThis archive contains the ${tasks.length} exact task or trace artifacts retained for the submission “${submission.label}”. See manifest.json for source identity, Harbor/non-Harbor format, the four Harbor checks when applicable, findings, and content hashes.\n`;
 
   yield* inlineTarEntry("README.md", encoder.encode(readme));
   yield* inlineTarEntry("manifest.json", encoder.encode(`${JSON.stringify(manifest, null, 2)}\n`));
 
   for (const task of tasks) {
     const response = await resolvePackage(task);
-    if (!response.ok || !response.body) throw new Error(`Task package unavailable: ${task.taskVersionId}`);
+    if (!response.ok || !response.body) throw new Error(`Task unavailable: ${task.taskId}`);
     const size = Number(response.headers.get("content-length"));
-    if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Task package has no usable content length: ${task.taskVersionId}`);
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Task has no usable content length: ${task.taskId}`);
 
     yield tarHeader(task.packagePath, size, 0o644);
     const reader = response.body.getReader();
@@ -140,13 +120,13 @@ async function* taskDatasetChunks(submission: DatasetSubmission, resolvePackage:
         const chunk = await reader.read();
         if (chunk.done) break;
         received += chunk.value.length;
-        if (received > size) throw new Error(`Task package exceeded its declared size: ${task.taskVersionId}`);
+        if (received > size) throw new Error(`Task exceeded its declared size: ${task.taskId}`);
         yield chunk.value;
       }
     } finally {
       reader.releaseLock();
     }
-    if (received !== size) throw new Error(`Task package was truncated: ${task.taskVersionId}`);
+    if (received !== size) throw new Error(`Task was truncated: ${task.taskId}`);
     const padding = tarPadding(size);
     if (padding) yield new Uint8Array(padding);
   }
@@ -156,27 +136,25 @@ async function* taskDatasetChunks(submission: DatasetSubmission, resolvePackage:
 
 function datasetPackages(submission: DatasetSubmission): DatasetPackage[] {
   let index = 0;
-  return submission.categories.flatMap((category) => category.tasks
+  return submission.tasks
     .filter((task): task is typeof task & { artifactId: string } => Boolean(task.artifactId))
     .map((task) => {
       index += 1;
-      const slug = safePathSegment(task.stableKey || task.title, "task");
+      const slug = safePathSegment(task.stableKey || task.title, task.kind);
       return {
-        taskVersionId: task.id,
+        taskId: task.id,
         stableKey: task.stableKey,
         title: task.title,
-        category: { id: category.id, name: category.name },
+        kind: task.kind,
         format: task.format,
-        representation: task.representation,
-        runtimeVerification: task.runtimeVerification,
         sourcePath: task.sourcePath,
         artifactId: task.artifactId,
         contentSha256: task.contentSha256,
-        workflowStatus: task.workflowStatus,
         checks: task.checks,
-        packagePath: `tasks/${String(index).padStart(4, "0")}-${slug}.tar.gz`,
+        findings: task.findings,
+        packagePath: `tasks/${String(index).padStart(4, "0")}-${slug}.artifact`,
       };
-    }));
+    });
 }
 
 function* inlineTarEntry(path: string, bytes: Uint8Array): Generator<Uint8Array> {

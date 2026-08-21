@@ -1,8 +1,9 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { taskDatasetArchive, taskDatasetFilename, taskDatasetManifest, type DatasetPackage, type DatasetSubmission } from "../app/dataset-archive";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { taskDatasetArchive, taskDatasetFilename, taskDatasetManifest, type DatasetPackage } from "../app/dataset-archive";
+import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-compat";
 
 interface Env {
   ASSETS: Fetcher;
@@ -10,7 +11,6 @@ interface Env {
   CASE_REGISTRY_HOST?: string;
   CASE_REGISTRY_PORT?: string;
   CASE_REGISTRY_CATALOG_TOKEN?: string;
-  CASE_REGISTRY_REVIEW_TOKEN?: string;
   CASE_REGISTRY_UPLOAD_TOKEN?: string;
   FEISHU_APP_ID?: string;
   FEISHU_APP_SECRET?: string;
@@ -43,7 +43,7 @@ const worker = {
     const url = new URL(request.url);
     const runtimeEnv = env ?? (process.env as unknown as Env);
 
-    for (const key of ["CASE_REGISTRY_URL", "CASE_REGISTRY_HOST", "CASE_REGISTRY_PORT", "CASE_REGISTRY_CATALOG_TOKEN", "CASE_REGISTRY_REVIEW_TOKEN", "CASE_REGISTRY_UPLOAD_TOKEN", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_ALLOWED_TENANT_KEY", "PORTAL_BASE_URL", "PORTAL_SESSION_SECRET"] as const) {
+    for (const key of ["CASE_REGISTRY_URL", "CASE_REGISTRY_HOST", "CASE_REGISTRY_PORT", "CASE_REGISTRY_CATALOG_TOKEN", "CASE_REGISTRY_UPLOAD_TOKEN", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_ALLOWED_TENANT_KEY", "PORTAL_BASE_URL", "PORTAL_SESSION_SECRET"] as const) {
       if (runtimeEnv[key]) process.env[key] = runtimeEnv[key];
     }
     const registryUrl = caseRegistryUrl(runtimeEnv);
@@ -61,10 +61,10 @@ const worker = {
           headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
         });
         if (!upstream.ok) return registryErrorResponse(upstream, "dataset_unavailable");
-        const submission = await upstream.json() as DatasetSubmission;
+        const submission = normalizeCaseSubmission(await upstream.json());
         const manifest = taskDatasetManifest(submission);
         if (!manifest.tasks.length) return Response.json({ error: "dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
-        const archive = taskDatasetArchive(submission, (task) => fetchTaskPackage(task, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
+        const archive = taskDatasetArchive(submission, (task) => fetchTaskArtifact(task, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
         return new Response(archive, {
           status: 200,
           headers: {
@@ -80,52 +80,6 @@ const worker = {
       }
     }
 
-    const submissionReviewsMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/reviews$/);
-    if (submissionReviewsMatch?.[1]) {
-      if (request.method !== "GET" && request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-      const session = portalSession(request, runtimeEnv);
-      if (!session) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
-      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_REVIEW_TOKEN) {
-        return Response.json({ error: "case_reviews_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
-      }
-      if (request.method === "POST" && !isSameOrigin(request, runtimeEnv)) {
-        return Response.json({ error: "origin_denied" }, { status: 403, headers: { "cache-control": "no-store" } });
-      }
-
-      try {
-        const batchId = decodeURIComponent(submissionReviewsMatch[1]);
-        const body = request.method === "POST" ? await reviewRequestBody(request) : undefined;
-        const upstream = await fetch(`${registryUrl}/v1/submissions/${encodeURIComponent(batchId)}/reviews`, {
-          method: request.method,
-          headers: {
-            authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_REVIEW_TOKEN}`,
-            accept: "application/json",
-            ...(body ? { "content-type": "application/json; charset=utf-8" } : {}),
-          },
-          body: body ? JSON.stringify({
-            id: randomUUID(),
-            batchId,
-            ...body,
-            reviewer: {
-              openId: session.openId,
-              unionId: session.unionId ?? undefined,
-              tenantKey: session.tenantKey,
-              name: session.name,
-            },
-            metadata: { source: "env-portal-proto" },
-          }) : undefined,
-        });
-        return new Response(upstream.body, {
-          status: upstream.status,
-          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
-        });
-      } catch (error) {
-        if (error instanceof ReviewRequestError) {
-          return Response.json({ error: "invalid_review", message: error.message }, { status: error.status, headers: { "cache-control": "no-store" } });
-        }
-        return Response.json({ error: "case_reviews_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
-      }
-    }
     if (url.pathname === "/api/uploads") {
       if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
       const session = portalSession(request, runtimeEnv);
@@ -178,7 +132,8 @@ const worker = {
             id: upload.id,
             vendorId: upload.vendorId,
             label: upload.label,
-            category: upload.category,
+            // Required by the pre-migration CASE upload contract and ignored by the narrow contract.
+            category: "Unclassified",
             ...(upload.note ? { note: upload.note } : {}),
             uploadedAt: upload.uploadedAt,
             artifact: {
@@ -217,9 +172,9 @@ const worker = {
         const upstream = await fetch(`${registryUrl}/v1/catalog`, {
           headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
         });
-        return new Response(upstream.body, {
-          status: upstream.status,
-          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
+        if (!upstream.ok) return registryErrorResponse(upstream, "case_catalog_unavailable");
+        return Response.json(normalizeCaseCatalog(await upstream.json()), {
+          headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
         });
       } catch {
         return Response.json({ error: "case_catalog_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
@@ -268,15 +223,15 @@ const worker = {
 
 export default worker;
 
-async function fetchTaskPackage(task: DatasetPackage, registryUrl: string, catalogToken: string): Promise<Response> {
+async function fetchTaskArtifact(task: DatasetPackage, registryUrl: string, catalogToken: string): Promise<Response> {
   const signed = await fetch(`${registryUrl}/v1/artifacts/${encodeURIComponent(task.artifactId)}/download-url`, {
     headers: { authorization: `Bearer ${catalogToken}`, accept: "application/json" },
   });
   if (!signed.ok) return signed;
   const payload = await signed.json() as { url?: unknown };
-  if (typeof payload.url !== "string") throw new Error("CASE returned no task-package URL");
+  if (typeof payload.url !== "string") throw new Error("CASE returned no artifact URL");
   const downloadUrl = new URL(payload.url);
-  if (downloadUrl.protocol !== "https:") throw new Error("CASE returned an unsafe task-package URL");
+  if (downloadUrl.protocol !== "https:") throw new Error("CASE returned an unsafe artifact URL");
   return await fetch(downloadUrl, { headers: { accept: "application/octet-stream" } });
 }
 
@@ -325,48 +280,6 @@ function portalSession(request: Request, env: Env): VerifiedSession | null {
   }
 }
 
-type ReviewRequestBody = {
-  signal: "interested" | "needs_revision" | "not_interested" | "comment";
-  scope: "submission" | "categories";
-  categoryIds: string[];
-  comment?: string;
-};
-
-async function reviewRequestBody(request: Request): Promise<ReviewRequestBody> {
-  const length = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(length) && length > 16_384) throw new ReviewRequestError(413, "Review is too large.");
-  const text = await request.text();
-  if (text.length > 16_384) throw new ReviewRequestError(413, "Review is too large.");
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new ReviewRequestError(400, "Review must be valid JSON.");
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ReviewRequestError(400, "Review must be an object.");
-  const input = value as Record<string, unknown>;
-  const signals = new Set(["interested", "needs_revision", "not_interested", "comment"]);
-  const scopes = new Set(["submission", "categories"]);
-  if (typeof input.signal !== "string" || !signals.has(input.signal)) throw new ReviewRequestError(400, "Choose a valid response.");
-  if (typeof input.scope !== "string" || !scopes.has(input.scope)) throw new ReviewRequestError(400, "Choose a valid scope.");
-  if (!Array.isArray(input.categoryIds) || input.categoryIds.some((id) => typeof id !== "string" || !id)) {
-    throw new ReviewRequestError(400, "Categories must be valid identifiers.");
-  }
-  const categoryIds = [...new Set(input.categoryIds as string[])];
-  if (input.scope === "submission" && categoryIds.length) throw new ReviewRequestError(400, "A submission-wide response cannot select categories.");
-  if (input.scope === "categories" && !categoryIds.length) throw new ReviewRequestError(400, "Select at least one category.");
-  if (input.comment !== undefined && typeof input.comment !== "string") throw new ReviewRequestError(400, "Comment must be text.");
-  const comment = typeof input.comment === "string" ? input.comment.trim() : "";
-  if (comment.length > 5_000) throw new ReviewRequestError(400, "Comment must be 5,000 characters or fewer.");
-  if (input.signal !== "interested" && !comment) throw new ReviewRequestError(400, "Add a comment for this response.");
-  return {
-    signal: input.signal as ReviewRequestBody["signal"],
-    scope: input.scope as ReviewRequestBody["scope"],
-    categoryIds,
-    ...(comment ? { comment } : {}),
-  };
-}
-
 function isSameOrigin(request: Request, env: Env): boolean {
   if (!env.PORTAL_BASE_URL) return false;
   try {
@@ -376,17 +289,10 @@ function isSameOrigin(request: Request, env: Env): boolean {
   }
 }
 
-class ReviewRequestError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
-
 type ResearcherUploadRequest = {
   id: string;
   vendorId: string;
   label: string;
-  category: string;
   note: string;
   filename: string;
   sha256: string;
@@ -403,7 +309,6 @@ function researcherUploadRequest(request: Request): ResearcherUploadRequest {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(id)) throw new UploadRequestError(400, "Upload id is invalid.");
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(vendorId)) throw new UploadRequestError(400, "Vendor is invalid.");
   const label = encodedHeader(request, "x-case-upload-label", 300);
-  const category = encodedHeader(request, "x-case-upload-category", 200);
   const filename = encodedHeader(request, "x-case-file-name", 500);
   const note = optionalEncodedHeader(request, "x-case-upload-note", 5_000);
   const sha256 = plainHeader(request, "x-case-file-sha256", 64).toLowerCase();
@@ -415,7 +320,7 @@ function researcherUploadRequest(request: Request): ResearcherUploadRequest {
   if (requestLength && Number(requestLength) !== sizeBytes) throw new UploadRequestError(400, "File size does not match the request body.");
   const contentType = (request.headers.get("content-type") || "application/octet-stream").trim();
   if (!contentType || contentType.length > 300) throw new UploadRequestError(400, "File type is invalid.");
-  return { id, vendorId, label, category, note, filename, sha256, sizeBytes, contentType, uploadedAt: new Date().toISOString() };
+  return { id, vendorId, label, note, filename, sha256, sizeBytes, contentType, uploadedAt: new Date().toISOString() };
 }
 
 function plainHeader(request: Request, name: string, maximum: number): string {

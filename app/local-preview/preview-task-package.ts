@@ -3,9 +3,7 @@ import { tarBytes } from "../dataset-archive";
 type PreviewTask = { title: string; expected: string };
 
 export const previewTasks: Record<string, PreviewTask> = {
-  "repair-cache-invalidation": { title: "Repair cache invalidation across workers", expected: "cache repaired" },
-  "audit-release-manifest": { title: "Audit release manifest provenance", expected: "provenance audited" },
-  "compare-quarterly-reports": { title: "Compare quarterly reports across sources", expected: "reports compared" },
+  "repair-cache": { title: "Repair cache invalidation", expected: "cache repaired" },
 };
 
 export async function previewTaskPackage(taskKey: string): Promise<ArrayBuffer | null> {
