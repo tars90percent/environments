@@ -1,0 +1,25 @@
+.DS_Store
+.codex-*/
+.lark-slides/
+
+# Legacy standalone checkouts retained locally during the monorepo migration.
+/env-portal-proto/
+/feishu-codex-agent/
+
+# Node and application build artifacts can occur at any workspace depth.
+node_modules/
+.npm-cache/
+dist/
+.next/
+.vinext/
+.wrangler/
+coverage/
+.data/
+
+# Local configuration and credentials.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.log
