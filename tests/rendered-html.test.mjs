@@ -64,6 +64,9 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.match(source, /function harborTaskCountForVendor/);
   assert.match(source, /task\.representation\.isHarbor === true/);
   assert.match(source, /t\.stats\.harborTasks/);
+  assert.match(source, /HIDDEN_WORKFLOW_STATUSES = new Set<WorkflowStatus>\(\["checking", "needs_vendor_fix"\]\)/);
+  assert.match(source, /if \(HIDDEN_WORKFLOW_STATUSES\.has\(status\)\) return null/);
+  assert.doesNotMatch(styles, /\.status-needs_vendor_fix|\.status-checking/);
   assert.match(source, /const taskCount = logicalTaskCountForVendor\(vendor\)/);
   assert.match(source, /const taskCount = logicalTaskCountForVendor\(selectedVendor\)/);
   assert.doesNotMatch(source, /const inventory =/);

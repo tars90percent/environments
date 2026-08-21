@@ -188,8 +188,8 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .status-badge { width: max-content; padding: 5px 8px; border-radius: 999px; background: var(--surface-strong); color: var(--muted); font-size: 9px; font-weight: 620; white-space: nowrap; }
 .status-unchecked { background: #f3e6cb; color: #825b18; }
 .status-ready_for_research { background: #e2f7e9; color: var(--green); }
-.status-needs_vendor_fix, .status-quarantined { background: #ffeaec; color: var(--red); }
-.status-checking, .status-normalizing { background: #fff3d6; color: #936000; }
+.status-quarantined { background: #ffeaec; color: var(--red); }
+.status-normalizing { background: #fff3d6; color: #936000; }
 .status-superseded { opacity: .7; }
 
 .source-events { display: grid; gap: 9px; }

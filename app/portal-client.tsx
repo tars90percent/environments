@@ -6,6 +6,8 @@ import type { CatalogBatch, CatalogProcurementSummary, CatalogResearchDemand, Ca
 
 type Language = "zh" | "en";
 
+const HIDDEN_WORKFLOW_STATUSES = new Set<WorkflowStatus>(["checking", "needs_vendor_fix"]);
+
 export type PortalUser = {
   name: string;
   avatarUrl?: string;
@@ -1173,6 +1175,8 @@ function runtimeEvidenceSummary(task: CatalogTask, t: UiCopy): string {
 }
 
 function StatusBadge({ status, label }: { status: WorkflowStatus; label: string }) {
+  // CASE retains these historical workflow states, but task checks are the researcher-facing evidence.
+  if (HIDDEN_WORKFLOW_STATUSES.has(status)) return null;
   return <span className={`status-badge status-${status}`}>{label}</span>;
 }
 
