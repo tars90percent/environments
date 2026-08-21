@@ -3,6 +3,7 @@ import { Pool, type PoolClient } from "pg";
 import { runRegistryMigrations } from "./migrations.js";
 import { PROCUREMENT_EVENT_KINDS, procurementSummaryFromEvent } from "./procurement-summary.js";
 import type { RegistryRepository } from "./repository.js";
+import { deriveRuntimeVerification, type RuntimeCheckFact } from "./task-evidence.js";
 import type {
   ArtifactInput,
   ArtifactRecord,
@@ -17,6 +18,9 @@ import type {
   CatalogSourceRelation,
   CatalogTask,
   CatalogVendor,
+  CheckEvidenceRole,
+  CheckExecutionScope,
+  CheckOutcome,
   CheckResultInput,
   FollowUpInput,
   OperationsSummary,
@@ -94,6 +98,10 @@ type TaskRow = {
   summary: string | null;
   source_path: string | null;
   format: string;
+  representation_kind: CatalogTask["representation"]["kind"];
+  representation_path: CatalogTask["representation"]["path"];
+  normalization_outcome: CatalogTask["representation"]["normalizationOutcome"];
+  representation_basis: CatalogTask["representation"]["basis"];
   artifact_id: string | null;
   content_sha256: string | null;
   workflow_status: CatalogTask["workflowStatus"];
@@ -102,6 +110,15 @@ type TaskRow = {
   fail_count: string;
   blocked_count: string;
   not_run_count: string;
+  unclassified_check_count: string;
+};
+type RuntimeCheckRow = {
+  task_version_id: string;
+  id: string;
+  evidence_role: CheckEvidenceRole;
+  execution_scope: CheckExecutionScope;
+  outcome: CheckOutcome;
+  completed_at: string | Date;
 };
 type TaskFindingRow = {
   id: string;
@@ -618,13 +635,16 @@ export class PostgresRegistry implements RegistryRepository {
         await client.query(
           `INSERT INTO registry_task_versions(
              id, task_id, batch_id, category_id, source_path, format, content_sha256,
-             workflow_status, catalog_visibility, metadata
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+             workflow_status, catalog_visibility, metadata, representation_kind,
+             representation_path, normalization_outcome, representation_basis
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14)`,
           [task.id, stableTaskId(manifest.vendor.id, task.stableKey), manifest.batch.id, task.categoryId,
             task.sourcePath ?? null, task.format, task.contentSha256 ?? null,
             task.workflowStatus ?? manifest.batch.workflowStatus,
             task.catalogVisibility ?? manifest.batch.catalogVisibility,
-            json(task.metadata ?? {})],
+            json(task.metadata ?? {}), task.representationKind ?? "unknown",
+            task.representationPath ?? null, task.normalizationOutcome ?? null,
+            task.representationKind ? "recorded" : "unknown"],
         );
         for (const sourceItemId of task.sourceItemIds ?? []) {
           await client.query(
@@ -842,14 +862,19 @@ export class PostgresRegistry implements RegistryRepository {
           category_id: string;
           source_path: string | null;
           format: string;
+          representation_kind: CatalogTask["representation"]["kind"];
+          representation_path: CatalogTask["representation"]["path"];
+          normalization_outcome: CatalogTask["representation"]["normalizationOutcome"];
+          representation_basis: CatalogTask["representation"]["basis"];
           artifact_id: string | null;
           content_sha256: string | null;
           workflow_status: string;
           catalog_visibility: string;
           metadata: Record<string, unknown>;
         }>(
-          `SELECT id, task_id, batch_id, category_id, source_path, format, artifact_id,
-                  content_sha256, workflow_status, catalog_visibility, metadata
+          `SELECT id, task_id, batch_id, category_id, source_path, format,
+                  representation_kind, representation_path, normalization_outcome, representation_basis,
+                  artifact_id, content_sha256, workflow_status, catalog_visibility, metadata
            FROM registry_task_versions
            WHERE id = $1 OR (batch_id = $2 AND task_id = $3)
            FOR UPDATE`,
@@ -862,6 +887,10 @@ export class PostgresRegistry implements RegistryRepository {
           category_id: task.categoryId,
           source_path: task.sourcePath,
           format: task.format,
+          representation_kind: task.representationKind,
+          representation_path: task.representationPath,
+          normalization_outcome: task.normalizationOutcome,
+          representation_basis: "recorded" as const,
           artifact_id: task.artifactId,
           content_sha256: task.contentSha256,
           workflow_status: task.workflowStatus ?? batch.workflow_status,
@@ -877,9 +906,11 @@ export class PostgresRegistry implements RegistryRepository {
             await client.query(
               `UPDATE registry_task_versions
                SET artifact_id = $2, content_sha256 = $3, workflow_status = $4,
-                   metadata = $5::jsonb, updated_at = now()
+                   metadata = $5::jsonb, representation_kind = $6, representation_path = $7,
+                   normalization_outcome = $8, representation_basis = 'recorded', updated_at = now()
                WHERE id = $1`,
-              [task.id, task.artifactId, task.contentSha256, expected.workflow_status, json(metadata)],
+              [task.id, task.artifactId, task.contentSha256, expected.workflow_status, json(metadata),
+                task.representationKind, task.representationPath, task.normalizationOutcome],
             );
             taskVersionsFinalized += 1;
             await this.insertStatusEvent(client, "task_version", task.id, "normalization.task_finalized", input.actor, {
@@ -895,11 +926,12 @@ export class PostgresRegistry implements RegistryRepository {
           await client.query(
             `INSERT INTO registry_task_versions(
                id, task_id, batch_id, category_id, source_path, format, artifact_id, content_sha256,
-               workflow_status, catalog_visibility, metadata
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
+               workflow_status, catalog_visibility, metadata, representation_kind, representation_path,
+               normalization_outcome, representation_basis
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, 'recorded')`,
             [task.id, taskId, input.batchId, task.categoryId, task.sourcePath, task.format,
               task.artifactId, task.contentSha256, expected.workflow_status, expected.catalog_visibility,
-              json(task.metadata ?? {})],
+              json(task.metadata ?? {}), task.representationKind, task.representationPath, task.normalizationOutcome],
           );
           taskVersionsAdded += 1;
         }
@@ -1211,24 +1243,39 @@ export class PostgresRegistry implements RegistryRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(
-        `INSERT INTO registry_check_definitions(id, version, kind, name, description, required)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT(id, version) DO NOTHING`,
-        [input.definitionId, input.definitionVersion, input.kind, input.name, input.description, input.required],
+      const definition = await client.query(
+        `INSERT INTO registry_check_definitions(id, version, kind, name, description, required, evidence_role)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT(id, version) DO UPDATE SET
+           evidence_role = CASE
+             WHEN registry_check_definitions.evidence_role = 'other' THEN EXCLUDED.evidence_role
+             ELSE registry_check_definitions.evidence_role
+           END
+         WHERE registry_check_definitions.kind = EXCLUDED.kind
+           AND registry_check_definitions.name = EXCLUDED.name
+           AND registry_check_definitions.description = EXCLUDED.description
+           AND registry_check_definitions.required = EXCLUDED.required
+           AND registry_check_definitions.evidence_role IN ('other', EXCLUDED.evidence_role)
+         RETURNING id`,
+        [input.definitionId, input.definitionVersion, input.kind, input.name, input.description, input.required, input.evidenceRole],
       );
+      if (!definition.rowCount) {
+        throw new RegistryConflictError(`Check definition ${input.definitionId}@${input.definitionVersion} conflicts with its immutable record`);
+      }
       await client.query(
         `INSERT INTO registry_check_runs(
            id, task_version_id, definition_id, definition_version, outcome, summary,
-           runner, evidence, started_at, completed_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)
+           runner, evidence, started_at, completed_at, execution_scope
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11)
          ON CONFLICT(id) DO NOTHING`,
         [input.id, input.taskVersionId, input.definitionId, input.definitionVersion, input.outcome, input.summary,
-          json(input.runner), json(input.evidence), input.startedAt, input.completedAt],
+          json(input.runner), json(input.evidence), input.startedAt, input.completedAt, input.executionScope],
       );
       await this.insertStatusEvent(client, "task_version", input.taskVersionId, "check.completed", "case", {
         checkRunId: input.id,
         definition: `${input.definitionId}@${input.definitionVersion}`,
+        evidenceRole: input.evidenceRole,
+        executionScope: input.executionScope,
         outcome: input.outcome,
       });
       await client.query("COMMIT");
@@ -1609,7 +1656,7 @@ export class PostgresRegistry implements RegistryRepository {
 
   async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
     const visibility = catalogVisibility(scope);
-    const [demandsResult, vendorsResult, batchesResult, categoriesResult, tasksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, taskFindingsResult, procurementEventsResult] = await Promise.all([
+    const [demandsResult, vendorsResult, batchesResult, categoriesResult, tasksResult, runtimeChecksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, taskFindingsResult, procurementEventsResult] = await Promise.all([
       this.pool.query<ResearchDemandRow>(
         `SELECT id, domain_en, domain_zh, subdomain_en, subdomain_zh,
                 title_en, title_zh, note_en, note_zh,
@@ -1644,20 +1691,43 @@ export class PostgresRegistry implements RegistryRepository {
       ),
       this.pool.query<TaskRow>(
         `SELECT tv.batch_id, tv.category_id, tv.id, t.stable_key, t.title, t.summary,
-                tv.source_path, tv.format, tv.artifact_id, tv.content_sha256,
+                tv.source_path, tv.format, tv.representation_kind, tv.representation_path,
+                tv.normalization_outcome, tv.representation_basis, tv.artifact_id, tv.content_sha256,
                 tv.workflow_status, tv.catalog_visibility,
                 COUNT(cr.id) FILTER (WHERE cr.outcome = 'pass')::text AS pass_count,
                 COUNT(cr.id) FILTER (WHERE cr.outcome = 'fail')::text AS fail_count,
                 COUNT(cr.id) FILTER (WHERE cr.outcome = 'blocked')::text AS blocked_count,
-                COUNT(cr.id) FILTER (WHERE cr.outcome = 'not_run')::text AS not_run_count
+                COUNT(cr.id) FILTER (WHERE cr.outcome = 'not_run')::text AS not_run_count,
+                COUNT(cr.id) FILTER (
+                  WHERE cd.evidence_role = 'other'
+                     OR (cd.evidence_role IN ('build', 'boot', 'positive_control', 'negative_control')
+                         AND cr.execution_scope <> 'remote_sandbox')
+                )::text AS unclassified_check_count
          FROM registry_task_versions tv
          JOIN registry_tasks t ON t.id = tv.task_id
          LEFT JOIN registry_check_runs cr ON cr.task_version_id = tv.id
+         LEFT JOIN registry_check_definitions cd
+           ON cd.id = cr.definition_id AND cd.version = cr.definition_version
          WHERE tv.catalog_visibility = ANY($1::text[])
          GROUP BY tv.batch_id, tv.category_id, tv.id, t.stable_key, t.title, t.summary,
-                  tv.source_path, tv.format, tv.artifact_id, tv.content_sha256,
+                  tv.source_path, tv.format, tv.representation_kind, tv.representation_path,
+                  tv.normalization_outcome, tv.representation_basis, tv.artifact_id, tv.content_sha256,
                   tv.workflow_status, tv.catalog_visibility
          ORDER BY t.title`,
+        [visibility],
+      ),
+      this.pool.query<RuntimeCheckRow>(
+        `SELECT DISTINCT ON (cr.task_version_id, cd.evidence_role)
+                cr.task_version_id, cr.id, cd.evidence_role, cr.execution_scope,
+                cr.outcome, cr.completed_at
+         FROM registry_check_runs cr
+         JOIN registry_check_definitions cd
+           ON cd.id = cr.definition_id AND cd.version = cr.definition_version
+         JOIN registry_task_versions tv ON tv.id = cr.task_version_id
+         WHERE tv.catalog_visibility = ANY($1::text[])
+           AND cd.evidence_role IN ('build', 'boot', 'positive_control', 'negative_control')
+           AND cr.execution_scope = 'remote_sandbox'
+         ORDER BY cr.task_version_id, cd.evidence_role, cr.completed_at DESC, cr.created_at DESC, cr.id DESC`,
         [visibility],
       ),
       this.pool.query<SourceEventRow>(
@@ -1722,6 +1792,7 @@ export class PostgresRegistry implements RegistryRepository {
 
     const taskSourceIds = group(taskSourcesResult.rows, (row) => row.task_version_id);
     const taskFindings = group(taskFindingsResult.rows, (row) => row.task_version_id);
+    const runtimeChecks = group(runtimeChecksResult.rows, (row) => row.task_version_id);
     const tasksByCategory = group(tasksResult.rows, (row) => `${row.batch_id}\u0000${row.category_id}`);
     const categoriesByBatch = new Map<string, CatalogCategory[]>();
     for (const row of categoriesResult.rows) {
@@ -1730,6 +1801,7 @@ export class PostgresRegistry implements RegistryRepository {
           task,
           (taskSourceIds.get(task.id) ?? []).map((source) => source.source_item_id),
           (taskFindings.get(task.id) ?? []).map(taskFindingFromRow),
+          (runtimeChecks.get(task.id) ?? []).map(runtimeCheckFactFromRow),
         ));
       append(categoriesByBatch, row.batch_id, {
         id: row.id,
@@ -1970,6 +2042,10 @@ type StoredTaskVersion = {
   category_id: string;
   source_path: string | null;
   format: string;
+  representation_kind: CatalogTask["representation"]["kind"];
+  representation_path: CatalogTask["representation"]["path"];
+  normalization_outcome: CatalogTask["representation"]["normalizationOutcome"];
+  representation_basis: CatalogTask["representation"]["basis"];
   artifact_id: string | null;
   content_sha256: string | null;
   workflow_status: string;
@@ -1984,6 +2060,10 @@ function registeredTaskVersionMatches(current: StoredTaskVersion, expected: Stor
     && current.category_id === expected.category_id
     && current.source_path === expected.source_path
     && current.format === expected.format
+    && current.representation_kind === expected.representation_kind
+    && current.representation_path === expected.representation_path
+    && current.normalization_outcome === expected.normalization_outcome
+    && current.representation_basis === expected.representation_basis
     && current.artifact_id === expected.artifact_id
     && current.content_sha256 === expected.content_sha256
     && metadataContains(current.metadata, expected.metadata);
@@ -2044,7 +2124,12 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
-function taskFromRow(row: TaskRow, sourceItemIds: string[] = [], findings: CatalogTask["findings"] = []): CatalogTask {
+function taskFromRow(
+  row: TaskRow,
+  sourceItemIds: string[] = [],
+  findings: CatalogTask["findings"] = [],
+  runtimeFacts: RuntimeCheckFact[] = [],
+): CatalogTask {
   return {
     id: row.id,
     stableKey: row.stable_key,
@@ -2052,6 +2137,14 @@ function taskFromRow(row: TaskRow, sourceItemIds: string[] = [], findings: Catal
     summary: row.summary,
     sourcePath: row.source_path,
     format: row.format,
+    representation: {
+      kind: row.representation_kind,
+      isHarbor: row.representation_kind === "unknown" ? null : row.representation_kind === "harbor",
+      path: row.representation_path,
+      normalizationOutcome: row.normalization_outcome,
+      basis: row.representation_basis,
+    },
+    runtimeVerification: deriveRuntimeVerification(runtimeFacts, Number(row.unclassified_check_count)),
     artifactId: row.artifact_id,
     contentSha256: row.content_sha256,
     workflowStatus: row.workflow_status,
@@ -2064,6 +2157,15 @@ function taskFromRow(row: TaskRow, sourceItemIds: string[] = [], findings: Catal
     },
     sourceItemIds,
     findings,
+  };
+}
+
+function runtimeCheckFactFromRow(row: RuntimeCheckRow): RuntimeCheckFact {
+  return {
+    id: row.id,
+    evidenceRole: row.evidence_role,
+    outcome: row.outcome,
+    completedAt: new Date(row.completed_at).toISOString(),
   };
 }
 

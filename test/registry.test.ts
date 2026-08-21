@@ -3,7 +3,7 @@ import test from "node:test";
 import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
-import { parseAppendNormalizedTasks, parseResearcherUpload, parseSourceEnvelope, parseSubmissionIntakeClassification, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskFindingUpdate, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
+import { parseAppendNormalizedTasks, parseCheckResult, parseResearcherUpload, parseSourceEnvelope, parseSubmissionIntakeClassification, parseSubmissionManifest, parseSubmissionRemoval, parseSubmissionReview, parseTaskFinding, parseTaskFindingUpdate, parseTaskSourceLinks, parseVendorEvent, ValidationError } from "../src/registry/validation.js";
 
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
@@ -258,12 +258,15 @@ test("validates provenance-complete task registration for an existing submission
       categoryId: "vendor-one:normalized:systems",
       sourcePath: "delivery/tasks/task-one",
       format: "Harbor",
+      representationKind: "harbor",
+      representationPath: "already_harbor",
+      normalizationOutcome: "already_harbor",
       artifactId: `artifact:sha256:${sha256}`,
       contentSha256: sha256,
       sourceItemIds: ["source-task-package-one", "source-archive-one"],
       workflowStatus: "unchecked",
       catalogVisibility: "log_only",
-      metadata: { normalizationOutcome: "already_harbor" },
+      metadata: { guidanceVersion: "case-harbor-normalization" },
     }],
     reason: "Register the interpreted task after attachment-first capture.",
     actor: "TARS/CASE",
@@ -286,6 +289,37 @@ test("validates provenance-complete task registration for an existing submission
     () => parseAppendNormalizedTasks({ ...input, categories: [{ ...input.categories[0], count: 2 }] }),
     ValidationError,
   );
+  assert.throws(
+    () => parseAppendNormalizedTasks({
+      ...input,
+      tasks: [{ ...input.tasks[0], representationKind: "native" }],
+    }),
+    ValidationError,
+  );
+});
+
+test("requires runtime checks to declare their evidence role and sandbox scope", () => {
+  const check = {
+    id: "check:task-one:oracle",
+    taskVersionId: "vendor-one-2026-08-13:task-one:normalized",
+    definitionId: "oracle-control",
+    definitionVersion: 1,
+    kind: "deterministic",
+    evidenceRole: "positive_control",
+    executionScope: "remote_sandbox",
+    name: "Oracle control",
+    description: "Runs the gold solution and verifier in a disposable sandbox.",
+    required: true,
+    outcome: "pass",
+    summary: "Oracle returned reward 1.",
+    runner: { provider: "modal", version: "1" },
+    evidence: { artifactId: "artifact:oracle" },
+    startedAt: "2026-08-21T00:00:00.000Z",
+    completedAt: "2026-08-21T00:01:00.000Z",
+  };
+  assert.equal(parseCheckResult(check).evidenceRole, "positive_control");
+  assert.throws(() => parseCheckResult({ ...check, executionScope: "static" }), ValidationError);
+  assert.throws(() => parseCheckResult({ ...check, evidenceRole: undefined }), ValidationError);
 });
 
 test("validates plain task findings and updates without classification fields", () => {

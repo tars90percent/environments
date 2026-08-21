@@ -57,6 +57,13 @@ For each immutable task version:
 7. Collect complete trajectories, rewards, turn counts, timing, resource metadata, stdout/stderr, verifier output, and declared artifacts.
 8. Write named deterministic check results and trajectory records through CASE, upload immutable evidence, and mark missing evidence separately from failed checks.
 
+When recording those results, use the structured evidence roles `build`,
+`boot`, `positive_control`, and `negative_control`, with
+`executionScope: "remote_sandbox"`. Package/schema validation uses the separate
+`contract` role. Do not encode these facts in a check name, task format string,
+or workflow label; the catalog derives runtime state from the structured roles
+on the exact task version.
+
 Use no-network execution as the baseline when the provider and task support it. Grant only the minimum phase-scoped hosts required for dependency installation or model access. A successful process exit, sandbox completion, or image build is evidence for that step only; none is a quality endorsement.
 
 ## Checker, worker, queue, and scaling

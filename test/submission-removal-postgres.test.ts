@@ -72,6 +72,8 @@ test("removes an erroneous task-bearing submission and preserves surviving task 
       definitionId: "fixture-check",
       definitionVersion: 1,
       kind: "deterministic",
+      evidenceRole: "other",
+      executionScope: "unknown",
       name: "Fixture check",
       description: "Integration fixture.",
       required: true,

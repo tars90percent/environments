@@ -12,6 +12,43 @@ export type CatalogVisibility = "featured" | "available" | "log_only" | "interna
 export type CheckOutcome = "pass" | "fail" | "blocked" | "not_run";
 export type CatalogScope = "research" | "portal" | "all";
 
+export type TaskRepresentationKind = "harbor" | "native" | "unknown";
+export type TaskRepresentationPath = "already_harbor" | "normalized_to_harbor" | "native_format_exception";
+export type TaskNormalizationOutcome = "already_harbor" | "normalized" | "needs_review" | "incomplete" | "blocked" | "not_a_task";
+export type TaskRepresentationBasis = "recorded" | "legacy_format_backfill" | "unknown";
+
+export type CheckEvidenceRole =
+  | "contract"
+  | "build"
+  | "boot"
+  | "positive_control"
+  | "negative_control"
+  | "hermeticity"
+  | "evidence_completeness"
+  | "other";
+export type CheckExecutionScope = "static" | "remote_sandbox" | "unknown";
+export type RuntimeVerificationStatus = "not_checked" | "unclassified" | "partial" | "blocked" | "failed" | "verified";
+
+export type RuntimePhaseEvidence = {
+  outcome: CheckOutcome | null;
+  checkRunId: string | null;
+  completedAt: string | null;
+};
+
+export type RuntimeVerificationSummary = {
+  status: RuntimeVerificationStatus;
+  hasBeenChecked: boolean;
+  runtimeSuiteCompleted: boolean;
+  runtimeVerified: boolean;
+  unclassifiedCheckRuns: number;
+  phases: {
+    build: RuntimePhaseEvidence;
+    boot: RuntimePhaseEvidence;
+    positiveControl: RuntimePhaseEvidence;
+    negativeControl: RuntimePhaseEvidence;
+  };
+};
+
 export type SourceChannel =
   | "email"
   | "feishu"
@@ -211,6 +248,9 @@ export type SubmissionTaskInput = {
   categoryId: string;
   sourcePath?: string;
   format: string;
+  representationKind?: TaskRepresentationKind;
+  representationPath?: TaskRepresentationPath;
+  normalizationOutcome?: TaskNormalizationOutcome;
   contentSha256?: string;
   sourceItemIds?: string[];
   workflowStatus?: WorkflowStatus;
@@ -246,12 +286,15 @@ export type SubmissionManifest = {
 
 export type NormalizedTaskRegistrationInput = Omit<
   SubmissionTaskInput,
-  "sourcePath" | "contentSha256" | "sourceItemIds"
+  "sourcePath" | "contentSha256" | "sourceItemIds" | "representationKind" | "representationPath" | "normalizationOutcome"
 > & {
   sourcePath: string;
   artifactId: string;
   contentSha256: string;
   sourceItemIds: string[];
+  representationKind: TaskRepresentationKind;
+  representationPath: TaskRepresentationPath;
+  normalizationOutcome: TaskNormalizationOutcome;
 };
 
 export type AppendNormalizedTasksInput = {
@@ -358,6 +401,8 @@ export type CheckResultInput = {
   definitionId: string;
   definitionVersion: number;
   kind: "deterministic" | "heuristic";
+  evidenceRole: CheckEvidenceRole;
+  executionScope: CheckExecutionScope;
   name: string;
   description: string;
   required: boolean;
@@ -449,6 +494,14 @@ export type CatalogTask = {
   summary: string | null;
   sourcePath: string | null;
   format: string;
+  representation: {
+    kind: TaskRepresentationKind;
+    isHarbor: boolean | null;
+    path: TaskRepresentationPath | null;
+    normalizationOutcome: TaskNormalizationOutcome | null;
+    basis: TaskRepresentationBasis;
+  };
+  runtimeVerification: RuntimeVerificationSummary;
   artifactId: string | null;
   contentSha256: string | null;
   workflowStatus: WorkflowStatus;

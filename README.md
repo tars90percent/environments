@@ -96,6 +96,19 @@ adds provenance-linked categories and exact task versions to that same
 registration. Each task version must cite an existing immutable `task_package`
 artifact and a source item linked to the submission. Identical requests are
 idempotent; changed task contents are new versions rather than replacements.
+Normalized task registrations also record `representationKind`,
+`representationPath`, and `normalizationOutcome` as structured fields. The raw
+`format` string remains preserved as observed source data, but catalog clients
+must not use it to decide whether a task is Harbor.
+
+Every check result declares an `evidenceRole` and `executionScope`. Build, boot,
+positive-control, and negative-control results are accepted as runtime evidence
+only when `executionScope` is `remote_sandbox`. The catalog derives
+`runtimeVerification.hasBeenChecked` when at least one phase has a remote-sandbox
+pass, fail, or blocked result; `runtimeSuiteCompleted` only after all four phases
+have terminal pass/fail records; and `runtimeVerified` only when all four pass.
+Unclassified legacy checks remain visible as unclassified rather than being
+treated as completed runtime verification.
 
 If CASE created a submission record in error, `remove-submission` can hard-remove
 it with the explicit `erroneous_registration` disposition, an actor, and a

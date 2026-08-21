@@ -699,6 +699,116 @@ const migrations: Migration[] = [
       WHERE event_type = 'finding.recorded';
     `,
   },
+  {
+    id: "012_structured_task_evidence",
+    sql: `
+      ALTER TABLE registry_task_versions
+        ADD COLUMN IF NOT EXISTS representation_kind text NOT NULL DEFAULT 'unknown',
+        ADD COLUMN IF NOT EXISTS representation_path text,
+        ADD COLUMN IF NOT EXISTS normalization_outcome text,
+        ADD COLUMN IF NOT EXISTS representation_basis text NOT NULL DEFAULT 'unknown';
+
+      UPDATE registry_task_versions
+      SET representation_path = COALESCE(metadata->>'representationPath', metadata->>'representation_path')
+      WHERE COALESCE(metadata->>'representationPath', metadata->>'representation_path')
+        IN ('already_harbor', 'normalized_to_harbor', 'native_format_exception');
+
+      UPDATE registry_task_versions
+      SET normalization_outcome = COALESCE(metadata->>'normalizationOutcome', metadata->>'normalization_outcome')
+      WHERE COALESCE(metadata->>'normalizationOutcome', metadata->>'normalization_outcome')
+        IN ('already_harbor', 'normalized', 'needs_review', 'incomplete', 'blocked', 'not_a_task');
+
+      UPDATE registry_task_versions
+      SET representation_kind = CASE
+            WHEN representation_path IN ('already_harbor', 'normalized_to_harbor') THEN 'harbor'
+            WHEN representation_path = 'native_format_exception' THEN 'native'
+            ELSE representation_kind
+          END,
+          representation_basis = CASE
+            WHEN representation_path IS NOT NULL OR normalization_outcome IS NOT NULL THEN 'recorded'
+            ELSE representation_basis
+          END;
+
+      UPDATE registry_task_versions
+      SET representation_kind = 'harbor',
+          representation_path = COALESCE(representation_path, 'already_harbor'),
+          representation_basis = 'recorded'
+      WHERE normalization_outcome = 'already_harbor';
+
+      UPDATE registry_task_versions
+      SET representation_kind = 'harbor',
+          representation_basis = 'legacy_format_backfill'
+      WHERE representation_kind = 'unknown'
+        AND lower(format) ~ '^harbor($|[ _])';
+
+      UPDATE registry_task_versions
+      SET representation_kind = 'native',
+          representation_basis = 'legacy_format_backfill'
+      WHERE representation_kind = 'unknown'
+        AND lower(format) ~ '^native($|[ _])';
+
+      ALTER TABLE registry_task_versions
+        ADD CONSTRAINT registry_task_versions_representation_kind_check
+          CHECK (representation_kind IN ('harbor', 'native', 'unknown')),
+        ADD CONSTRAINT registry_task_versions_representation_path_check
+          CHECK (representation_path IS NULL OR representation_path IN ('already_harbor', 'normalized_to_harbor', 'native_format_exception')),
+        ADD CONSTRAINT registry_task_versions_normalization_outcome_check
+          CHECK (normalization_outcome IS NULL OR normalization_outcome IN ('already_harbor', 'normalized', 'needs_review', 'incomplete', 'blocked', 'not_a_task')),
+        ADD CONSTRAINT registry_task_versions_representation_basis_check
+          CHECK (representation_basis IN ('recorded', 'legacy_format_backfill', 'unknown'));
+
+      ALTER TABLE registry_check_definitions
+        ADD COLUMN IF NOT EXISTS evidence_role text NOT NULL DEFAULT 'other';
+
+      UPDATE registry_check_definitions
+      SET evidence_role = COALESCE(config->>'evidenceRole', config->>'evidence_role')
+      WHERE COALESCE(config->>'evidenceRole', config->>'evidence_role')
+        IN ('contract', 'build', 'boot', 'positive_control', 'negative_control', 'hermeticity', 'evidence_completeness', 'other');
+
+      UPDATE registry_check_definitions
+      SET evidence_role = CASE
+        WHEN lower(concat_ws(' ', id, name, description)) ~ '(^|[^a-z])(oracle|gold|positive[ _-]?control)([^a-z]|$)' THEN 'positive_control'
+        WHEN lower(concat_ws(' ', id, name, description)) ~ '(^|[^a-z])(nop|untouched|negative[ _-]?control)([^a-z]|$)' THEN 'negative_control'
+        WHEN lower(concat_ws(' ', id, name, description)) ~ 'harbor.*(validate|schema|contract)|(validate|schema|contract).*harbor' THEN 'contract'
+        WHEN lower(concat_ws(' ', id, name, description)) ~ '(^|[^a-z])(build|provision)([^a-z]|$)' THEN 'build'
+        WHEN lower(concat_ws(' ', id, name, description)) ~ '(^|[^a-z])(boot|startup|ready[ _-]?state)([^a-z]|$)' THEN 'boot'
+        WHEN lower(concat_ws(' ', id, name, description)) ~ '(^|[^a-z])(hermetic|hidden[ _-]?dependenc)([^a-z]|$)' THEN 'hermeticity'
+        ELSE evidence_role
+      END
+      WHERE evidence_role = 'other';
+
+      ALTER TABLE registry_check_definitions
+        ADD CONSTRAINT registry_check_definitions_evidence_role_check
+          CHECK (evidence_role IN ('contract', 'build', 'boot', 'positive_control', 'negative_control', 'hermeticity', 'evidence_completeness', 'other'));
+
+      ALTER TABLE registry_check_runs
+        ADD COLUMN IF NOT EXISTS execution_scope text NOT NULL DEFAULT 'unknown';
+
+      UPDATE registry_check_runs
+      SET execution_scope = COALESCE(
+        NULLIF(runner->>'executionScope', ''),
+        NULLIF(runner->>'execution_scope', ''),
+        NULLIF(evidence->>'executionScope', ''),
+        NULLIF(evidence->>'execution_scope', ''),
+        execution_scope
+      )
+      WHERE COALESCE(
+        NULLIF(runner->>'executionScope', ''),
+        NULLIF(runner->>'execution_scope', ''),
+        NULLIF(evidence->>'executionScope', ''),
+        NULLIF(evidence->>'execution_scope', '')
+      ) IN ('static', 'remote_sandbox', 'unknown');
+
+      ALTER TABLE registry_check_runs
+        ADD CONSTRAINT registry_check_runs_execution_scope_check
+          CHECK (execution_scope IN ('static', 'remote_sandbox', 'unknown'));
+
+      CREATE INDEX IF NOT EXISTS registry_task_versions_representation_idx
+        ON registry_task_versions(representation_kind, representation_path);
+      CREATE INDEX IF NOT EXISTS registry_check_runs_runtime_idx
+        ON registry_check_runs(task_version_id, execution_scope, completed_at DESC);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

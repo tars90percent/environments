@@ -1,6 +1,8 @@
 import type {
   ArtifactInput,
   AppendNormalizedTasksInput,
+  CheckEvidenceRole,
+  CheckExecutionScope,
   CheckResultInput,
   FollowUpInput,
   ResearcherUploadInput,
@@ -10,6 +12,9 @@ import type {
   SubmissionIntakeClassificationInput,
   SubmissionRemovalInput,
   SubmissionReviewInput,
+  TaskNormalizationOutcome,
+  TaskRepresentationKind,
+  TaskRepresentationPath,
   TaskFindingInput,
   TaskFindingUpdateInput,
   TaskSourceLinksInput,
@@ -39,6 +44,11 @@ const SOURCE_FETCH_STATUSES = new Set(["not_requested", "queued", "fetching", "s
 const SOURCE_PARSE_STATUSES = new Set(["not_requested", "queued", "parsing", "parsed", "partial", "blocked", "failed"]);
 const SOURCE_RELATIONS = new Set(["contains", "links_to", "derived_from", "describes", "mirrors", "supersedes"]);
 const VENDOR_EVENT_KINDS = new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]);
+const REPRESENTATION_KINDS = new Set<TaskRepresentationKind>(["harbor", "native", "unknown"]);
+const REPRESENTATION_PATHS = new Set<TaskRepresentationPath>(["already_harbor", "normalized_to_harbor", "native_format_exception"]);
+const NORMALIZATION_OUTCOMES = new Set<TaskNormalizationOutcome>(["already_harbor", "normalized", "needs_review", "incomplete", "blocked", "not_a_task"]);
+const CHECK_EVIDENCE_ROLES = new Set<CheckEvidenceRole>(["contract", "build", "boot", "positive_control", "negative_control", "hermeticity", "evidence_completeness", "other"]);
+const CHECK_EXECUTION_SCOPES = new Set<CheckExecutionScope>(["static", "remote_sandbox", "unknown"]);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
@@ -67,6 +77,16 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
     if (!categoryIds.has(categoryId)) {
       throw new ValidationError(`tasks[${index}].categoryId does not name a submitted category`);
     }
+    const representationKind = optionalEnum(task.representationKind, REPRESENTATION_KINDS, `tasks[${index}].representationKind`);
+    const representationPath = optionalEnum(task.representationPath, REPRESENTATION_PATHS, `tasks[${index}].representationPath`);
+    const normalizationOutcome = optionalEnum(task.normalizationOutcome, NORMALIZATION_OUTCOMES, `tasks[${index}].normalizationOutcome`);
+    const representationFields = [representationKind, representationPath, normalizationOutcome].filter((value) => value !== undefined).length;
+    if (representationFields !== 0 && representationFields !== 3) {
+      throw new ValidationError(`tasks[${index}] must provide representationKind, representationPath, and normalizationOutcome together`);
+    }
+    if (representationKind && representationPath && normalizationOutcome) {
+      validateRepresentation(representationKind, representationPath, normalizationOutcome, `tasks[${index}]`);
+    }
     return {
       id: string(task.id, `tasks[${index}].id`),
       stableKey: string(task.stableKey, `tasks[${index}].stableKey`),
@@ -75,6 +95,9 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
       categoryId,
       sourcePath: optionalString(task.sourcePath, `tasks[${index}].sourcePath`),
       format: string(task.format, `tasks[${index}].format`),
+      representationKind,
+      representationPath,
+      normalizationOutcome,
       contentSha256: optionalString(task.contentSha256, `tasks[${index}].contentSha256`),
       sourceItemIds: optionalStringArray(task.sourceItemIds, `tasks[${index}].sourceItemIds`),
       workflowStatus: optionalEnum(task.workflowStatus, WORKFLOW_STATUSES, `tasks[${index}].workflowStatus`),
@@ -142,6 +165,10 @@ export function parseAppendNormalizedTasks(value: unknown): AppendNormalizedTask
 
   const tasks = array(input.tasks, "tasks").map((value, index) => {
     const task = object(value, `tasks[${index}]`);
+    const representationKind = enumValue(task.representationKind, REPRESENTATION_KINDS, `tasks[${index}].representationKind`);
+    const representationPath = enumValue(task.representationPath, REPRESENTATION_PATHS, `tasks[${index}].representationPath`);
+    const normalizationOutcome = enumValue(task.normalizationOutcome, NORMALIZATION_OUTCOMES, `tasks[${index}].normalizationOutcome`);
+    validateRepresentation(representationKind, representationPath, normalizationOutcome, `tasks[${index}]`);
     const categoryId = identifier(task.categoryId, `tasks[${index}].categoryId`);
     if (!categoryIds.has(categoryId)) {
       throw new ValidationError(`tasks[${index}].categoryId does not name a supplied category`);
@@ -163,6 +190,9 @@ export function parseAppendNormalizedTasks(value: unknown): AppendNormalizedTask
       categoryId,
       sourcePath: boundedString(task.sourcePath, `tasks[${index}].sourcePath`, 2_000),
       format: boundedString(task.format, `tasks[${index}].format`, 200),
+      representationKind,
+      representationPath,
+      normalizationOutcome,
       artifactId,
       contentSha256,
       sourceItemIds,
@@ -396,12 +426,19 @@ export function parseWorkCompletion(value: unknown): WorkCompletionInput {
 
 export function parseCheckResult(value: unknown): CheckResultInput {
   const input = object(value, "check result");
+  const evidenceRole = enumValue(input.evidenceRole, CHECK_EVIDENCE_ROLES, "evidenceRole");
+  const executionScope = enumValue(input.executionScope, CHECK_EXECUTION_SCOPES, "executionScope");
+  if (["build", "boot", "positive_control", "negative_control"].includes(evidenceRole) && executionScope !== "remote_sandbox") {
+    throw new ValidationError(`${evidenceRole} checks must use executionScope remote_sandbox`);
+  }
   return {
     id: identifier(input.id, "id"),
     taskVersionId: identifier(input.taskVersionId, "taskVersionId"),
     definitionId: identifier(input.definitionId, "definitionId"),
     definitionVersion: positiveInteger(input.definitionVersion, "definitionVersion"),
     kind: enumValue(input.kind, new Set(["deterministic", "heuristic"]), "kind"),
+    evidenceRole,
+    executionScope,
     name: string(input.name, "name"),
     description: string(input.description, "description"),
     required: boolean(input.required, "required"),
@@ -412,6 +449,29 @@ export function parseCheckResult(value: unknown): CheckResultInput {
     startedAt: timestamp(input.startedAt, "startedAt"),
     completedAt: timestamp(input.completedAt, "completedAt"),
   } as CheckResultInput;
+}
+
+function validateRepresentation(
+  kind: TaskRepresentationKind,
+  path: TaskRepresentationPath,
+  outcome: TaskNormalizationOutcome,
+  name: string,
+): void {
+  if (kind === "harbor" && path === "native_format_exception") {
+    throw new ValidationError(`${name}.representationKind harbor conflicts with native_format_exception`);
+  }
+  if (kind === "native" && path !== "native_format_exception") {
+    throw new ValidationError(`${name}.representationKind native requires native_format_exception`);
+  }
+  if (kind === "unknown") {
+    throw new ValidationError(`${name}.representationKind must be resolved before registering an exact normalized package`);
+  }
+  if (outcome === "already_harbor" && path !== "already_harbor") {
+    throw new ValidationError(`${name}.normalizationOutcome already_harbor requires representationPath already_harbor`);
+  }
+  if (outcome === "normalized" && path === "already_harbor") {
+    throw new ValidationError(`${name}.normalizationOutcome normalized requires a transformed or native-exception representation path`);
+  }
 }
 
 export function parseTaskFinding(value: unknown): TaskFindingInput {

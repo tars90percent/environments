@@ -84,6 +84,22 @@ test("appends immutable normalized task versions to an attachment-first submissi
     assert.equal(batch?.categories[0]?.tasks[0]?.artifactId, packageArtifactId);
     assert.equal(batch?.categories[0]?.tasks[0]?.contentSha256, packageSha256);
     assert.deepEqual(batch?.categories[0]?.tasks[0]?.sourceItemIds, ["source-task-package-one"]);
+    assert.deepEqual(batch?.categories[0]?.tasks[0]?.representation, {
+      kind: "harbor",
+      isHarbor: true,
+      path: "already_harbor",
+      normalizationOutcome: "already_harbor",
+      basis: "recorded",
+    });
+
+    for (const role of ["build", "boot", "positive_control", "negative_control"] as const) {
+      await repository.recordCheckResult(runtimeCheck("vendor-one-attachment-first:task-one", role));
+    }
+    const checked = await repository.getTask("vendor-one-attachment-first:task-one", "all");
+    assert.equal(checked?.runtimeVerification.status, "verified");
+    assert.equal(checked?.runtimeVerification.hasBeenChecked, true);
+    assert.equal(checked?.runtimeVerification.runtimeSuiteCompleted, true);
+    assert.equal(checked?.runtimeVerification.runtimeVerified, true);
 
     const row = await administrator.query<{
       artifact_id: string;
@@ -197,7 +213,7 @@ test("appends immutable normalized task versions to an attachment-first submissi
     );
     assert.deepEqual(finalizedRow.rows[0]?.metadata, {
       discoveredFrom: "catalog",
-      normalizationOutcome: "already_harbor",
+      guidanceVersion: "case-harbor-normalization",
     });
     assert.equal(finalizedRow.rows[0]?.event_count, "1");
   } finally {
@@ -267,12 +283,15 @@ function normalizedCatalogTask(sha256: string): AppendNormalizedTasksInput {
       categoryId: "vendor-one:catalog-systems",
       sourcePath: "delivery/catalog-task",
       format: "Harbor",
+      representationKind: "harbor",
+      representationPath: "already_harbor",
+      normalizationOutcome: "already_harbor",
       artifactId: `artifact:sha256:${sha256}`,
       contentSha256: sha256,
       sourceItemIds: ["source-catalog-task-package"],
       workflowStatus: "unchecked",
       catalogVisibility: "available",
-      metadata: { normalizationOutcome: "already_harbor" },
+      metadata: { guidanceVersion: "case-harbor-normalization" },
     }],
     reason: "Bind the exact immutable package to the previously discovered task record.",
     actor: "TARS/CASE",
@@ -323,12 +342,15 @@ function normalizedTasks(sha256: string): AppendNormalizedTasksInput {
       categoryId: "vendor-one:normalized:systems",
       sourcePath: "delivery/tasks/task-one",
       format: "Harbor",
+      representationKind: "harbor",
+      representationPath: "already_harbor",
+      normalizationOutcome: "already_harbor",
       artifactId: `artifact:sha256:${sha256}`,
       contentSha256: sha256,
       sourceItemIds: ["source-task-package-one"],
       workflowStatus: "unchecked",
       catalogVisibility: "log_only",
-      metadata: { normalizationOutcome: "already_harbor" },
+      metadata: { guidanceVersion: "case-harbor-normalization" },
     }],
     reason: "Register the interpreted task after attachment-first capture.",
     actor: "TARS/CASE",
@@ -339,6 +361,30 @@ function databaseUrlWithSearchPath(databaseUrl: string, schema: string): string 
   const url = new URL(databaseUrl);
   url.searchParams.set("options", `-csearch_path=${schema}`);
   return url.toString();
+}
+
+function runtimeCheck(
+  taskVersionId: string,
+  evidenceRole: "build" | "boot" | "positive_control" | "negative_control",
+) {
+  return {
+    id: `${taskVersionId}:check:${evidenceRole}`,
+    taskVersionId,
+    definitionId: `case-${evidenceRole.replaceAll("_", "-")}`,
+    definitionVersion: 1,
+    kind: "deterministic" as const,
+    evidenceRole,
+    executionScope: "remote_sandbox" as const,
+    name: evidenceRole,
+    description: `CASE ${evidenceRole} runtime evidence.`,
+    required: true,
+    outcome: "pass" as const,
+    summary: `${evidenceRole} passed.`,
+    runner: { provider: "modal", version: "test" },
+    evidence: { artifactId: `artifact:${evidenceRole}` },
+    startedAt: "2026-08-21T00:00:00.000Z",
+    completedAt: "2026-08-21T00:01:00.000Z",
+  };
 }
 
 async function api(
