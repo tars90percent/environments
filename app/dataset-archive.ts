@@ -13,6 +13,21 @@ export type DatasetSubmission = {
       title: string;
       sourcePath: string | null;
       format: string;
+      representation: {
+        kind: "harbor" | "native" | "unknown";
+        isHarbor: boolean | null;
+        path: string | null;
+        normalizationOutcome: string | null;
+        basis: string;
+      };
+      runtimeVerification: {
+        status: string;
+        hasBeenChecked: boolean;
+        runtimeSuiteCompleted: boolean;
+        runtimeVerified: boolean;
+        unclassifiedCheckRuns: number;
+        phases: Record<string, unknown>;
+      };
       artifactId: string | null;
       contentSha256: string | null;
       workflowStatus: string;
@@ -27,6 +42,8 @@ export type DatasetPackage = {
   title: string;
   category: { id: string; name: string };
   format: string;
+  representation: DatasetSubmission["categories"][number]["tasks"][number]["representation"];
+  runtimeVerification: DatasetSubmission["categories"][number]["tasks"][number]["runtimeVerification"];
   sourcePath: string | null;
   artifactId: string;
   contentSha256: string | null;
@@ -150,6 +167,8 @@ function datasetPackages(submission: DatasetSubmission): DatasetPackage[] {
         title: task.title,
         category: { id: category.id, name: category.name },
         format: task.format,
+        representation: task.representation,
+        runtimeVerification: task.runtimeVerification,
         sourcePath: task.sourcePath,
         artifactId: task.artifactId,
         contentSha256: task.contentSha256,

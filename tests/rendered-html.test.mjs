@@ -55,11 +55,15 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.doesNotMatch(source, /axios|lark-cli|open\.feishu\.cn|webhook/i);
   assert.match(source, /环境与任务样本/);
   assert.match(source, /Environment & Task Samples/);
-  assert.match(source, /stats: \{ vendors: "家供应商", submissions: "次提交", tasks: "个任务" \}/);
-  assert.match(source, /stats: \{ vendors: "vendors", submissions: "submissions", tasks: "tasks" \}/);
+  assert.match(source, /stats: \{ vendors: "家供应商", submissions: "次提交", tasks: "个任务", harborTasks: "个 Harbor 任务" \}/);
+  assert.match(source, /stats: \{ vendors: "vendors", submissions: "submissions", tasks: "tasks", harborTasks: "Harbor tasks" \}/);
   assert.match(source, /const logicalTaskCount = useMemo/);
+  assert.match(source, /const harborTaskCount = useMemo/);
   assert.match(source, /task\.stableKey/);
   assert.match(source, /function logicalTaskCountForVendor/);
+  assert.match(source, /function harborTaskCountForVendor/);
+  assert.match(source, /task\.representation\.isHarbor === true/);
+  assert.match(source, /t\.stats\.harborTasks/);
   assert.match(source, /const taskCount = logicalTaskCountForVendor\(vendor\)/);
   assert.match(source, /const taskCount = logicalTaskCountForVendor\(selectedVendor\)/);
   assert.doesNotMatch(source, /const inventory =/);
@@ -106,11 +110,18 @@ test("keeps the portal narrowly scoped and free of vendor snapshot data", async 
   assert.doesNotMatch(source, /Every received batch|submission batches|供应商样本库|个提交批次|Update history|RL Environment Catalog|强化学习环境目录/);
   assert.doesNotMatch(source, /type Tab|global-nav|ChecksView|CriteriaView/);
   assert.match(source, /No check results recorded/);
+  assert.match(source, /task\.representation\.kind/);
+  assert.match(source, /task\.runtimeVerification\.runtimeVerified/);
+  assert.match(source, /function runtimeEvidenceSummary/);
+  assert.match(source, /Runtime verified/);
+  assert.match(source, /Legacy checks unclassified/);
+  assert.doesNotMatch(source, /<small>\{task\.format\}/);
   assert.match(source, /Recorded findings/);
   assert.match(source, /记录发现/);
   assert.match(source, /findings\.length > 0/);
   assert.match(source, /finding\.finding/);
   assert.doesNotMatch(source, /finding\.kind|observed_fact|vendor_claim|deterministic_result|heuristic_assessment|human_judgment|binding_term/);
+  assert.match(source, /sourceEvents\.filter\(\(event\) => event\.role !== "metadata"\)/);
   assert.doesNotMatch(source, /format-stack|batch\.formats\.map/);
   assert.match(source, /vendorMain\.scrollTo\(\{ top: 0 \}\)/);
   assert.match(source, /vendorMain\.scrollIntoView\(\{ block: "start" \}\)/);
@@ -218,6 +229,9 @@ test("downloads a dataset containing every available task package", async () => 
     const manifest = JSON.parse(new TextDecoder().decode(entries.get("manifest.json")));
     assert.equal(manifest.selection.statusPolicy, "all_statuses_included");
     assert.deepEqual(manifest.tasks.map((entry) => entry.workflowStatus), ["ready_for_research", "checking", "needs_vendor_fix"]);
+    assert.deepEqual(manifest.tasks.map((entry) => entry.representation.kind), ["harbor", "harbor", "harbor"]);
+    assert.deepEqual(manifest.tasks.map((entry) => entry.runtimeVerification.runtimeSuiteCompleted), [true, true, true]);
+    assert.deepEqual(manifest.tasks.map((entry) => entry.runtimeVerification.runtimeVerified), [true, true, true]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -230,6 +244,26 @@ function task(id, stableKey, workflowStatus, artifactId) {
     title: stableKey,
     sourcePath: `tasks/${stableKey}`,
     format: "harbor",
+    representation: {
+      kind: "harbor",
+      isHarbor: true,
+      path: "already_harbor",
+      normalizationOutcome: "already_harbor",
+      basis: "recorded",
+    },
+    runtimeVerification: {
+      status: "verified",
+      hasBeenChecked: true,
+      runtimeSuiteCompleted: true,
+      runtimeVerified: true,
+      unclassifiedCheckRuns: 0,
+      phases: {
+        build: { outcome: "pass", checkRunId: `${id}:build`, completedAt: "2026-08-20T00:00:00.000Z" },
+        boot: { outcome: "pass", checkRunId: `${id}:boot`, completedAt: "2026-08-20T00:00:00.000Z" },
+        positiveControl: { outcome: "pass", checkRunId: `${id}:oracle`, completedAt: "2026-08-20T00:00:00.000Z" },
+        negativeControl: { outcome: "pass", checkRunId: `${id}:nop`, completedAt: "2026-08-20T00:00:00.000Z" },
+      },
+    },
     artifactId,
     contentSha256: "a".repeat(64),
     workflowStatus,

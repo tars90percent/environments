@@ -11,6 +11,8 @@ export type WorkflowStatus =
 export type CatalogVisibility = "featured" | "available" | "log_only" | "internal";
 export type SubmissionReviewSignal = "interested" | "needs_revision" | "not_interested" | "comment";
 export type SubmissionReviewScope = "submission" | "categories";
+export type CheckOutcome = "pass" | "fail" | "blocked" | "not_run";
+export type RuntimeVerificationStatus = "not_checked" | "unclassified" | "partial" | "blocked" | "failed" | "verified";
 
 export type SubmissionReview = {
   id: string;
@@ -36,6 +38,26 @@ export type CatalogTask = {
   summary: string | null;
   sourcePath: string | null;
   format: string;
+  representation: {
+    kind: "harbor" | "native" | "unknown";
+    isHarbor: boolean | null;
+    path: "already_harbor" | "normalized_to_harbor" | "native_format_exception" | null;
+    normalizationOutcome: "already_harbor" | "normalized" | "needs_review" | "incomplete" | "blocked" | "not_a_task" | null;
+    basis: "recorded" | "legacy_format_backfill" | "unknown";
+  };
+  runtimeVerification: {
+    status: RuntimeVerificationStatus;
+    hasBeenChecked: boolean;
+    runtimeSuiteCompleted: boolean;
+    runtimeVerified: boolean;
+    unclassifiedCheckRuns: number;
+    phases: {
+      build: RuntimePhaseEvidence;
+      boot: RuntimePhaseEvidence;
+      positiveControl: RuntimePhaseEvidence;
+      negativeControl: RuntimePhaseEvidence;
+    };
+  };
   artifactId: string | null;
   contentSha256: string | null;
   workflowStatus: WorkflowStatus;
@@ -46,6 +68,12 @@ export type CatalogTask = {
     id: string;
     finding: string;
   }>;
+};
+
+export type RuntimePhaseEvidence = {
+  outcome: CheckOutcome | null;
+  checkRunId: string | null;
+  completedAt: string | null;
 };
 
 export type CatalogSourceItem = {

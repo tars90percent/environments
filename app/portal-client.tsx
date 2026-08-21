@@ -20,7 +20,7 @@ const copy = {
     accountLabel: "研究员账户",
     signOut: "退出登录",
     title: "环境与任务样本",
-    stats: { vendors: "家供应商", submissions: "次提交", tasks: "个任务" },
+    stats: { vendors: "家供应商", submissions: "次提交", tasks: "个任务", harborTasks: "个 Harbor 任务" },
     vendor: "供应商",
     submission: "次提交",
     submissions: "次提交",
@@ -42,7 +42,7 @@ const copy = {
     sourceRecord: "条来源记录",
     sourceRecords: "条来源记录",
     noSource: "尚未关联原始来源",
-    legacySource: "这条提交记录早于来源级接收流程，原始消息、链接和文件尚未挂接。",
+    legacySource: "这条提交尚未关联主要提交、补充提交或修订来源。",
     noLinks: "没有记录关联文件或链接。",
     senderUnknown: "未记录发送人",
     openOriginal: "打开原始记录",
@@ -53,7 +53,8 @@ const copy = {
       title: "任务数据集",
       note: "下载此提交中所有可用的精确任务包，包括待核验和需要修复的任务。压缩包内附任务状态、核验记录和内容哈希。",
       packages: "个任务包",
-      withChecks: "个已有核验记录",
+      harbor: "个 Harbor 任务",
+      runtimeVerified: "个运行核验通过",
       missing: "个尚无精确任务包",
       download: "下载完整数据集",
       empty: "当前没有可下载的标准化任务包。",
@@ -147,6 +148,28 @@ const copy = {
       blocked: "受阻",
       notRun: "未运行",
     },
+    representation: {
+      harbor: "Harbor",
+      native: "原生格式",
+      unknown: "格式未确认",
+      legacy: "按旧记录回填",
+    },
+    runtime: {
+      status: {
+        not_checked: "尚未运行核验",
+        unclassified: "旧核验记录未分类",
+        partial: "运行核验不完整",
+        blocked: "运行核验受阻",
+        failed: "运行核验失败",
+        verified: "运行核验通过",
+      },
+      build: "构建",
+      boot: "启动",
+      positiveControl: "Oracle",
+      negativeControl: "Nop",
+      noEvidence: "没有可证明远程沙箱构建、启动、Oracle 和 Nop 的记录。",
+      unclassified: "已有核验记录，但未标明运行阶段或远程沙箱范围。",
+    },
     findings: {
       title: "记录发现",
     },
@@ -188,7 +211,7 @@ const copy = {
     accountLabel: "Researcher account",
     signOut: "Sign out",
     title: "Environment & Task Samples",
-    stats: { vendors: "vendors", submissions: "submissions", tasks: "tasks" },
+    stats: { vendors: "vendors", submissions: "submissions", tasks: "tasks", harborTasks: "Harbor tasks" },
     vendor: "Vendor",
     submission: "submission",
     submissions: "submissions",
@@ -210,7 +233,7 @@ const copy = {
     sourceRecord: "source record",
     sourceRecords: "source records",
     noSource: "No original source linked yet",
-    legacySource: "This submission predates source-level intake. Its original message, links, and files have not yet been attached.",
+    legacySource: "No primary, supplemental, or correction source is linked to this submission.",
     noLinks: "No linked files or URLs recorded.",
     senderUnknown: "Sender not recorded",
     openOriginal: "Open original record",
@@ -221,7 +244,8 @@ const copy = {
       title: "Task dataset",
       note: "Download every exact task package available for this submission, including tasks still checking or needing fixes. Status, check records, and content hashes are included inside.",
       packages: "task packages",
-      withChecks: "with recorded checks",
+      harbor: "Harbor tasks",
+      runtimeVerified: "runtime verified",
       missing: "without an exact package",
       download: "Download complete dataset",
       empty: "No normalized task packages are currently available to download.",
@@ -314,6 +338,28 @@ const copy = {
       fail: "fail",
       blocked: "blocked",
       notRun: "not run",
+    },
+    representation: {
+      harbor: "Harbor",
+      native: "Native format",
+      unknown: "Format unconfirmed",
+      legacy: "Backfilled from legacy record",
+    },
+    runtime: {
+      status: {
+        not_checked: "Not runtime checked",
+        unclassified: "Legacy checks unclassified",
+        partial: "Runtime check incomplete",
+        blocked: "Runtime check blocked",
+        failed: "Runtime check failed",
+        verified: "Runtime verified",
+      },
+      build: "Build",
+      boot: "Boot",
+      positiveControl: "Oracle",
+      negativeControl: "Nop",
+      noEvidence: "No record proves remote-sandbox build, boot, Oracle, and Nop execution.",
+      unclassified: "Checks exist, but their runtime stage or remote-sandbox scope was not recorded.",
     },
     findings: {
       title: "Recorded findings",
@@ -566,6 +612,8 @@ export default function PortalClient({ user, initialView = "supply", localPrevie
   const contactedVendors = useMemo(() => vendors.filter((vendor) => vendor.batches.length === 0), [vendors]);
   const logicalTaskCount = useMemo(() => vendors.reduce((sum, vendor) =>
     sum + logicalTaskCountForVendor(vendor), 0), [vendors]);
+  const harborTaskCount = useMemo(() => vendors.reduce((sum, vendor) =>
+    sum + harborTaskCountForVendor(vendor), 0), [vendors]);
   const t = copy[language];
 
   useEffect(() => {
@@ -651,6 +699,7 @@ export default function PortalClient({ user, initialView = "supply", localPrevie
             <span><strong>{catalog ? sampledVendors.length : "—"}</strong>{t.stats.vendors}</span>
             <span><strong>{catalog?.totals.batches ?? "—"}</strong>{t.stats.submissions}</span>
             <span><strong>{catalog ? logicalTaskCount : "—"}</strong>{t.stats.tasks}</span>
+            <span><strong>{catalog ? harborTaskCount : "—"}</strong>{t.stats.harborTasks}</span>
           </div>
         </section> : <DemandHero language={language} />}
 
@@ -738,6 +787,20 @@ function logicalTaskCountForVendor(vendor: CatalogVendor): number {
       category.tasks.map((task) => task.stableKey),
     ),
   )).size;
+}
+
+function harborTaskCountForVendor(vendor: CatalogVendor): number {
+  const latestRepresentationByTask = new Map<string, boolean>();
+  for (const batch of vendor.batches) {
+    for (const category of batch.categories) {
+      for (const task of category.tasks) {
+        if (!latestRepresentationByTask.has(task.stableKey)) {
+          latestRepresentationByTask.set(task.stableKey, task.representation.isHarbor === true);
+        }
+      }
+    }
+  }
+  return [...latestRepresentationByTask.values()].filter(Boolean).length;
 }
 
 function VendorButton({ vendor, selected, onSelect, t }: { vendor: CatalogVendor; selected: boolean; onSelect(vendor: CatalogVendor): void; t: UiCopy }) {
@@ -927,7 +990,8 @@ function BatchCard({ batch, isExpanded, isLatest, onToggle, t, language, showRev
 function DatasetAccess({ batch, t, datasetHref }: { batch: CatalogBatch; t: UiCopy; datasetHref?: string }) {
   const tasks = batch.categories.flatMap((category) => category.tasks);
   const packaged = tasks.filter((task) => task.artifactId);
-  const withChecks = packaged.filter((task) => taskCheckCount(task) > 0).length;
+  const harbor = tasks.filter((task) => task.representation.kind === "harbor").length;
+  const runtimeVerified = tasks.filter((task) => task.runtimeVerification.runtimeVerified).length;
   const missing = tasks.length - packaged.length;
 
   return <section className="dataset-access" aria-labelledby={`dataset-${batch.id}`}>
@@ -938,7 +1002,8 @@ function DatasetAccess({ batch, t, datasetHref }: { batch: CatalogBatch; t: UiCo
     </div>
     <div className="dataset-metrics">
       <span><strong>{packaged.length}</strong><small>{t.dataset.packages}</small></span>
-      <span><strong>{withChecks}</strong><small>{t.dataset.withChecks}</small></span>
+      <span><strong>{harbor}</strong><small>{t.dataset.harbor}</small></span>
+      <span><strong>{runtimeVerified}</strong><small>{t.dataset.runtimeVerified}</small></span>
       {missing > 0 && <span className="dataset-missing"><strong>{missing}</strong><small>{t.dataset.missing}</small></span>}
     </div>
     {packaged.length
@@ -1041,11 +1106,12 @@ function SubmissionReviewPanel({ batch, t, language }: { batch: CatalogBatch; t:
 }
 
 function SubmissionSources({ sourceEvents, t, language }: { sourceEvents: CatalogSourceEvent[]; t: UiCopy; language: Language }) {
-  if (!sourceEvents.length) return <><div className="batch-section-head"><h4>{t.originalSources}</h4><span>{t.noSource}</span></div><div className="source-empty">{t.legacySource}</div></>;
+  const visibleSourceEvents = sourceEvents.filter((event) => event.role !== "metadata");
+  if (!visibleSourceEvents.length) return <><div className="batch-section-head"><h4>{t.originalSources}</h4><span>{t.noSource}</span></div><div className="source-empty">{t.legacySource}</div></>;
   return <>
-    <div className="batch-section-head"><h4>{t.originalSources}</h4><span>{sourceEvents.length} {sourceEvents.length === 1 ? t.sourceRecord : t.sourceRecords}</span></div>
+    <div className="batch-section-head"><h4>{t.originalSources}</h4><span>{visibleSourceEvents.length} {visibleSourceEvents.length === 1 ? t.sourceRecord : t.sourceRecords}</span></div>
     <p className="source-note">{t.sourceNote}</p>
-    <div className="source-events">{sourceEvents.map((event) => <SourceEvent key={event.id} event={event} t={t} language={language} />)}</div>
+    <div className="source-events">{visibleSourceEvents.map((event) => <SourceEvent key={event.id} event={event} t={t} language={language} />)}</div>
   </>;
 }
 
@@ -1072,13 +1138,19 @@ function SourceItem({ item, t, language }: { item: CatalogSourceItem; t: UiCopy;
 }
 
 function TaskRow({ task, t, taskDownloadBase }: { task: CatalogTask; t: UiCopy; taskDownloadBase?: string }) {
-  const checks = taskCheckCount(task);
   const findings = task.findings ?? [];
   const downloadHref = taskDownloadBase
     ? `${taskDownloadBase}/${encodeURIComponent(task.stableKey)}`
     : `/api/artifacts/${encodeURIComponent(task.artifactId ?? "")}/download`;
+  const representationLabel = t.representation[task.representation.kind];
+  const representationTitle = `${task.format}${task.representation.basis === "legacy_format_backfill" ? ` · ${t.representation.legacy}` : ""}`;
+  const runtime = task.runtimeVerification;
   return <div className="task-record">
-    <div className="task-row"><span><strong>{task.title}</strong><small>{task.format}{task.summary ? ` · ${task.summary}` : ""}</small></span><span className="task-checks">{checks ? `${task.checks.pass} ${t.checks.pass} · ${task.checks.fail} ${t.checks.fail} · ${task.checks.blocked} ${t.checks.blocked}` : t.checks.none}</span><span className="task-actions">{task.artifactId && <a href={downloadHref}>{t.dataset.taskDownload}</a>}<StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></span></div>
+    <div className="task-row">
+      <span className="task-copy"><strong>{task.title}</strong>{task.summary && <small>{task.summary}</small>}<span className="task-labels"><span className={`task-label representation-${task.representation.kind}`} title={representationTitle}>{representationLabel}</span><span className={`task-label runtime-${runtime.status}`}>{t.runtime.status[runtime.status]}</span></span></span>
+      <span className="task-checks" title={runtime.status === "unclassified" ? t.runtime.unclassified : undefined}>{runtimeEvidenceSummary(task, t)}</span>
+      <span className="task-actions">{task.artifactId && <a href={downloadHref}>{t.dataset.taskDownload}</a>}<StatusBadge status={task.workflowStatus} label={t.status[task.workflowStatus]} /></span>
+    </div>
     {findings.length > 0 && <details className="task-findings">
       <summary><span>{t.findings.title}</span><i>{findings.length}</i></summary>
       <div className="task-finding-list">{findings.map((finding) => <article className="task-finding" key={finding.id}>
@@ -1088,8 +1160,16 @@ function TaskRow({ task, t, taskDownloadBase }: { task: CatalogTask; t: UiCopy; 
   </div>;
 }
 
-function taskCheckCount(task: CatalogTask): number {
-  return task.checks.pass + task.checks.fail + task.checks.blocked + task.checks.notRun;
+function runtimeEvidenceSummary(task: CatalogTask, t: UiCopy): string {
+  const runtime = task.runtimeVerification;
+  if (runtime.status === "not_checked") return t.runtime.noEvidence;
+  if (runtime.status === "unclassified") return `${runtime.unclassifiedCheckRuns} · ${t.runtime.unclassified}`;
+  return ([
+    [t.runtime.build, runtime.phases.build.outcome],
+    [t.runtime.boot, runtime.phases.boot.outcome],
+    [t.runtime.positiveControl, runtime.phases.positiveControl.outcome],
+    [t.runtime.negativeControl, runtime.phases.negativeControl.outcome],
+  ] as const).map(([label, outcome]) => `${label} ${outcome ? t.checks[outcome === "not_run" ? "notRun" : outcome] : t.checks.notRun}`).join(" · ");
 }
 
 function StatusBadge({ status, label }: { status: WorkflowStatus; label: string }) {
@@ -1152,6 +1232,16 @@ export function LocalDownloadPreview() {
           summary: "Exact normalized task package",
           sourcePath: "tasks/repair-cache-invalidation",
           format: "harbor",
+          representation: { kind: "harbor", isHarbor: true, path: "already_harbor", normalizationOutcome: "already_harbor", basis: "recorded" },
+          runtimeVerification: {
+            status: "verified", hasBeenChecked: true, runtimeSuiteCompleted: true, runtimeVerified: true, unclassifiedCheckRuns: 0,
+            phases: {
+              build: { outcome: "pass", checkRunId: "check:build", completedAt: "2026-08-20T10:00:00.000Z" },
+              boot: { outcome: "pass", checkRunId: "check:boot", completedAt: "2026-08-20T10:02:00.000Z" },
+              positiveControl: { outcome: "pass", checkRunId: "check:oracle", completedAt: "2026-08-20T10:08:00.000Z" },
+              negativeControl: { outcome: "pass", checkRunId: "check:nop", completedAt: "2026-08-20T10:12:00.000Z" },
+            },
+          },
           artifactId: "artifact:preview:task-1",
           contentSha256: "92dae5373dcfb784388bdf42f6b349b8fdd37975930d17e2b76e6abe35e447fe",
           workflowStatus: "ready_for_research",
@@ -1166,6 +1256,16 @@ export function LocalDownloadPreview() {
           summary: "Exact normalized task package",
           sourcePath: "tasks/audit-release-manifest",
           format: "harbor",
+          representation: { kind: "harbor", isHarbor: true, path: "normalized_to_harbor", normalizationOutcome: "normalized", basis: "recorded" },
+          runtimeVerification: {
+            status: "failed", hasBeenChecked: true, runtimeSuiteCompleted: true, runtimeVerified: false, unclassifiedCheckRuns: 0,
+            phases: {
+              build: { outcome: "pass", checkRunId: "check:build-2", completedAt: "2026-08-20T11:00:00.000Z" },
+              boot: { outcome: "pass", checkRunId: "check:boot-2", completedAt: "2026-08-20T11:02:00.000Z" },
+              positiveControl: { outcome: "pass", checkRunId: "check:oracle-2", completedAt: "2026-08-20T11:08:00.000Z" },
+              negativeControl: { outcome: "fail", checkRunId: "check:nop-2", completedAt: "2026-08-20T11:12:00.000Z" },
+            },
+          },
           artifactId: "artifact:preview:task-2",
           contentSha256: "1dcc45e6b4a614f6b3221b388a453d3770d170829a06a18afb5f23bb94e6d6a6",
           workflowStatus: "needs_vendor_fix",
@@ -1187,6 +1287,16 @@ export function LocalDownloadPreview() {
         summary: "Exact normalized task package",
         sourcePath: "tasks/compare-quarterly-reports",
         format: "harbor",
+        representation: { kind: "harbor", isHarbor: true, path: "already_harbor", normalizationOutcome: "already_harbor", basis: "recorded" },
+        runtimeVerification: {
+          status: "blocked", hasBeenChecked: true, runtimeSuiteCompleted: false, runtimeVerified: false, unclassifiedCheckRuns: 0,
+          phases: {
+            build: { outcome: "pass", checkRunId: "check:build-3", completedAt: "2026-08-20T12:00:00.000Z" },
+            boot: { outcome: "blocked", checkRunId: "check:boot-3", completedAt: "2026-08-20T12:02:00.000Z" },
+            positiveControl: { outcome: null, checkRunId: null, completedAt: null },
+            negativeControl: { outcome: null, checkRunId: null, completedAt: null },
+          },
+        },
         artifactId: "artifact:preview:task-3",
         contentSha256: "52af82287d22f033058a35a3e22a06f32fbc9e885fe71b5e11ddc979acb98e79",
         workflowStatus: "checking",
