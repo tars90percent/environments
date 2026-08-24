@@ -49,8 +49,20 @@ export type CatalogSourceItem = {
   kind: string;
   displayName: string;
   locator: string | null;
+  mediaType: string | null;
   artifactId: string | null;
+  artifactKind: string | null;
   contentSha256: string | null;
+  sizeBytes: number | null;
+};
+
+export type CatalogRawArtifact = {
+  id: string;
+  kind: string;
+  contentSha256: string;
+  sizeBytes: number | null;
+  contentType: string | null;
+  originalName: string | null;
 };
 
 export type CatalogSourceEvent = {
@@ -60,6 +72,7 @@ export type CatalogSourceEvent = {
   sender: string | null;
   receivedAt: string;
   rawArtifactId: string | null;
+  rawArtifact: CatalogRawArtifact | null;
   items: CatalogSourceItem[];
 };
 

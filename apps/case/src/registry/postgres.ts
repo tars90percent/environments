@@ -185,6 +185,13 @@ type SourceEventRow = {
   received_at: string | Date;
   raw_artifact_id: string | null;
 };
+type SampleSourceEventRow = SourceEventRow & {
+  raw_artifact_kind: ArtifactInput["kind"] | null;
+  raw_artifact_sha256: string | null;
+  raw_artifact_size_bytes: string | null;
+  raw_artifact_content_type: string | null;
+  raw_artifact_original_name: string | null;
+};
 type SourceItemRow = {
   source_event_id: string;
   id: string;
@@ -200,6 +207,9 @@ type SourceItemRow = {
   mutable: boolean;
   captured_at: string | Date | null;
   metadata: Record<string, unknown>;
+};
+type SampleSourceItemRow = SourceItemRow & {
+  artifact_kind: ArtifactInput["kind"] | null;
 };
 type SourceRelationRow = {
   source_event_id: string;
@@ -2491,23 +2501,30 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_task_source_items
          ORDER BY created_at, source_item_id`,
       ),
-      this.pool.query<SourceEventRow>(
+      this.pool.query<SampleSourceEventRow>(
         `SELECT bse.batch_id, bse.role, se.id, se.channel, se.external_ref, se.sender,
-                se.received_at, se.raw_artifact_id
+                se.received_at, se.raw_artifact_id,
+                raw.kind AS raw_artifact_kind,
+                raw.sha256 AS raw_artifact_sha256,
+                raw.size_bytes AS raw_artifact_size_bytes,
+                raw.content_type AS raw_artifact_content_type,
+                raw.metadata->>'originalName' AS raw_artifact_original_name
          FROM registry_batch_source_events bse
          JOIN registry_source_events se ON se.id = bse.source_event_id
          JOIN registry_submission_batches b ON b.id = bse.batch_id
+         LEFT JOIN registry_artifacts raw ON raw.id = se.raw_artifact_id
          WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
          ORDER BY se.received_at, se.created_at, se.id`,
       ),
-      this.pool.query<SourceItemRow>(
+      this.pool.query<SampleSourceItemRow>(
         `SELECT DISTINCT si.source_event_id, si.id, si.kind, si.display_name, si.locator,
                 si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
                 si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata,
-                si.created_at
+                si.created_at, artifact.kind AS artifact_kind
          FROM registry_source_items si
          JOIN registry_batch_source_events bse ON bse.source_event_id = si.source_event_id
          JOIN registry_submission_batches b ON b.id = bse.batch_id
+         LEFT JOIN registry_artifacts artifact ON artifact.id = si.artifact_id
          WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
          ORDER BY si.source_event_id, si.created_at, si.id`,
       ),
@@ -2573,13 +2590,24 @@ export class PostgresRegistry implements RegistryRepository {
         sender: row.sender,
         receivedAt: new Date(row.received_at).toISOString(),
         rawArtifactId: row.raw_artifact_id,
+        rawArtifact: row.raw_artifact_id && row.raw_artifact_kind && row.raw_artifact_sha256 ? {
+          id: row.raw_artifact_id,
+          kind: row.raw_artifact_kind,
+          contentSha256: row.raw_artifact_sha256,
+          sizeBytes: row.raw_artifact_size_bytes === null ? null : Number(row.raw_artifact_size_bytes),
+          contentType: row.raw_artifact_content_type,
+          originalName: row.raw_artifact_original_name,
+        } : null,
         items: (sourceItemsByEvent.get(row.id) ?? []).map((item) => ({
           id: item.id,
           kind: item.kind,
           displayName: item.display_name,
           locator: item.locator,
+          mediaType: item.media_type,
           artifactId: item.artifact_id,
+          artifactKind: item.artifact_kind,
           contentSha256: item.content_sha256,
+          sizeBytes: item.size_bytes === null ? null : Number(item.size_bytes),
         })),
       });
     }

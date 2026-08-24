@@ -52,6 +52,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
 
     const catalog = await repository.sampleCatalogSnapshot();
     const submission = catalog.vendors[0]?.submissions[0];
+    assert.deepEqual(submission?.sourceEvents[0]?.items.map((item) => item.artifactKind), ["source_payload", "source_payload"]);
     assert.deepEqual(submission?.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
     assert.equal(submission?.tasks[0]?.checks.environment?.outcome, "fail");
     assert.equal(submission?.tasks[0]?.checks.oracle, undefined);

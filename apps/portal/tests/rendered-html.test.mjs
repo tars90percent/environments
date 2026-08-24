@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test, { after, before } from "node:test";
+import { strFromU8, unzipSync } from "fflate";
 
 const authEnv = {
   FEISHU_APP_ID: "cli_test",
@@ -35,7 +36,10 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
   assert.match(source, /Environment & Task Samples/);
-  assert.match(source, /Original delivery/);
+  assert.match(source, /Original submission/);
+  assert.match(source, /Direct CASE import/);
+  assert.match(source, /originalSubmissionArtifacts/);
+  assert.match(source, /original-download/);
   assert.match(source, /Tasks/);
   assert.match(source, /Environment/);
   assert.match(source, /Oracle/);
@@ -193,8 +197,75 @@ test("downloads every available task artifact", async () => {
   }
 });
 
+test("bundles only original payload artifacts and leaves receipts and task packages out", async () => {
+  const app = await worker();
+  const submission = {
+    id: "submission-1",
+    date: "2026-08-20",
+    label: "Vendor sample",
+    source: "Local folder handoff",
+    formats: ["harbor"],
+    sourceEvents: [{
+      id: "event-1",
+      channel: "workspace",
+      externalRef: "/evidence/vendor-sample",
+      sender: null,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      rawArtifactId: "artifact:receipt",
+      rawArtifact: { id: "artifact:receipt", kind: "source_snapshot", contentSha256: "c".repeat(64), sizeBytes: 20, contentType: "application/json", originalName: "receipt.json" },
+      items: [
+        sourceItem("item-one", "original-one.zip", "artifact:one", "source_payload", 12),
+        sourceItem("item-two", "original-two.zip", "artifact:two", "source_payload", 12),
+        sourceItem("item-receipt", "receipt.json", "artifact:receipt", "source_snapshot", 20),
+        sourceItem("item-task", "derived-task.tar.gz", "artifact:task", "task_package", 30),
+      ],
+    }],
+    tasks: [],
+  };
+  const artifactBytes = new Map([
+    ["artifact:one", new TextEncoder().encode("first source")],
+    ["artifact:two", new TextEncoder().encode("secondsource")],
+  ]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(target);
+    if (url.href === "https://case.example/v1/batches/submission-1") return Response.json(submission);
+    const signed = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);
+    if (url.origin === "https://case.example" && signed?.[1]) {
+      return Response.json({ url: `https://objects.example/artifact?id=${encodeURIComponent(decodeURIComponent(signed[1]))}` });
+    }
+    if (url.origin === "https://objects.example") {
+      const body = artifactBytes.get(url.searchParams.get("id"));
+      return body ? new Response(body, { headers: { "content-length": String(body.length) } }) : new Response("Not found", { status: 404 });
+    }
+    throw new Error(`Unexpected fetch: ${url.href}`);
+  };
+
+  try {
+    const response = await app.fetch(
+      new Request("http://localhost/api/submissions/submission-1/original-download", { headers: { cookie: sessionCookie() } }),
+      { ...authEnv, CASE_REGISTRY_URL: "https://case.example", CASE_REGISTRY_CATALOG_TOKEN: "catalog-test", ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+      { waitUntil() {}, passThroughOnException() {} },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/zip");
+    assert.equal(response.headers.get("x-case-original-file-count"), "2");
+    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    assert.deepEqual(Object.keys(entries), ["original-one.zip", "original-two.zip"]);
+    assert.equal(strFromU8(entries["original-one.zip"]), "first source");
+    assert.equal(strFromU8(entries["original-two.zip"]), "secondsource");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function task(id, stableKey, kind, format, artifactId) {
   return { id, stableKey, title: stableKey, summary: null, kind, format, sourcePath: `${kind}s/${stableKey}`, artifactId, contentSha256: "a".repeat(64), checks: {}, attempts: {}, findings: [] };
+}
+
+function sourceItem(id, displayName, artifactId, artifactKind, sizeBytes) {
+  return { id, kind: artifactKind === "task_package" ? "task_package" : "archive", displayName, locator: null, mediaType: "application/zip", artifactId, artifactKind, contentSha256: "a".repeat(64), sizeBytes };
 }
 
 function sessionCookie() {

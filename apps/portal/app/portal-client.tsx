@@ -4,12 +4,12 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import type {
   CatalogSnapshot,
-  CatalogSourceEvent,
   CatalogSubmission,
   CatalogTask,
   CatalogVendor,
   HarborCheckPhase,
 } from "./catalog";
+import { originalSubmissionArtifacts } from "./original-submission";
 
 type Language = "zh" | "en";
 
@@ -34,11 +34,16 @@ const text = {
     latest: "Latest submission",
     taskRecords: "tasks",
     noTasks: "No individual tasks or traces were clearly identified in this submission.",
-    sources: "Original delivery",
-    arrived: "Arrived",
+    sources: "Original submission",
+    originalNote: "Original files retained exactly as captured.",
+    arrived: "Received",
     sender: "Sender",
     open: "Open source",
-    download: "Download copy",
+    downloadOne: "Download original file",
+    downloadMany: "Download original files (.zip)",
+    showFiles: "Show filenames",
+    noOriginalFile: "No captured original file is available.",
+    directCaseImport: "Direct CASE import",
     dataset: "Download tasks",
     datasetNote: "Download the exact task or trace artifacts retained for this submission.",
     taskDownload: "Download",
@@ -69,11 +74,16 @@ const text = {
     latest: "最新提交",
     taskRecords: "个任务",
     noTasks: "这次提交中没有明确识别出的独立任务或轨迹。",
-    sources: "原始交付",
-    arrived: "到达时间",
+    sources: "原始提交",
+    originalNote: "原始文件已按接收时内容原样保留。",
+    arrived: "接收时间",
     sender: "发送人",
     open: "打开来源",
-    download: "下载留存副本",
+    downloadOne: "下载原始文件",
+    downloadMany: "下载原始文件（ZIP）",
+    showFiles: "查看文件名",
+    noOriginalFile: "没有可下载的原始文件。",
+    directCaseImport: "直接导入 CASE",
     dataset: "下载任务",
     datasetNote: "下载这次提交中保留的精确任务或轨迹文件。",
     taskDownload: "下载",
@@ -196,7 +206,7 @@ function SubmissionCard({ submission, open, latest, language, datasetHref }: { s
   return <details className="batch-card" open={open}>
     <summary className="batch-summary">
       <span className="batch-date"><strong>{formatDate(submission.date, language)}</strong>{latest && <small>{t.latest}</small>}</span>
-      <span className="batch-name"><strong>{submission.label}</strong><code>{submission.source}</code></span>
+      <span className="batch-name"><strong>{submission.label}</strong><code>{friendlySubmissionSource(submission, language)}</code></span>
       <span className="batch-count"><strong>{submission.tasks.length} {t.taskRecords}</strong><small>{harborTaskCount} {t.harbor}</small></span>
       <span className="disclosure">▾</span>
     </summary>
@@ -204,17 +214,24 @@ function SubmissionCard({ submission, open, latest, language, datasetHref }: { s
       <section className="dataset-access"><div className="dataset-copy"><span>CASE DATASET</span><h4>{t.tasks}</h4><p>{submission.tasks.length ? t.datasetNote : t.noTasks}</p></div><div className="dataset-metrics"><span><strong>{submission.tasks.length}</strong><small>{t.taskRecords}</small></span><span><strong>{submission.tasks.filter((task) => task.format === "harbor").length}</strong><small>{t.harbor}</small></span></div>{submission.tasks.some((task) => task.artifactId) && <a href={datasetHref}>{t.dataset}</a>}</section>
       <div className="batch-section-head"><h4>{t.tasks}</h4><span>{submission.tasks.length} {t.taskRecords}</span></div>
       <div className="task-list">{submission.tasks.length === 0 ? <p className="empty-task-list">{t.noTasks}</p> : submission.tasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>
-      <SourcePanel events={submission.sourceEvents} language={language} />
+      <OriginalSubmissionPanel language={language} submission={submission} />
     </div>
   </details>;
 }
 
-function SourcePanel({ events, language }: { events: CatalogSourceEvent[]; language: Language }) {
+function OriginalSubmissionPanel({ submission, language }: { submission: CatalogSubmission; language: Language }) {
   const t = text[language];
-  return <section className="source-block"><div className="batch-section-head"><h4>{t.sources}</h4><span>{events.length}</span></div><div className="source-events">{events.map((event) => <div className="source-event" key={event.id}>
-    <div className="source-event-head"><span className="source-channel">{event.channel}</span><span className="source-name"><strong>{t.arrived}: {formatTimestamp(event.receivedAt, language)}</strong><small>{event.sender ? `${t.sender}: ${event.sender}` : t.sender}</small></span><span className="source-actions">{safeExternalUrl(event.externalRef) && <a href={safeExternalUrl(event.externalRef)!} rel="noreferrer" target="_blank">{t.open}</a>}{event.rawArtifactId && <a href={`/api/artifacts/${encodeURIComponent(event.rawArtifactId)}/download`}>{t.download}</a>}</span></div>
-    <div className="source-items">{event.items.map((item) => <div className="source-item" key={item.id}><span className="source-kind">{item.kind}</span><span className="source-name"><strong>{item.displayName}</strong>{item.locator && <small>{item.locator}</small>}</span><span className="source-actions">{item.artifactId && <a aria-label={`${t.download}: ${item.displayName}`} href={`/api/artifacts/${encodeURIComponent(item.artifactId)}/download`}>{t.download}</a>}</span></div>)}</div>
-  </div>)}</div></section>;
+  const artifacts = originalSubmissionArtifacts(submission.sourceEvents);
+  const knownBytes = artifacts.map((artifact) => artifact.sizeBytes).filter((size): size is number => size !== null);
+  const size = knownBytes.length === artifacts.length && artifacts.length ? formatBytes(knownBytes.reduce((sum, value) => sum + value), language) : null;
+  const downloadHref = artifacts.length === 1
+    ? `/api/artifacts/${encodeURIComponent(artifacts[0]!.artifactId)}/download`
+    : `/api/submissions/${encodeURIComponent(submission.id)}/original-download`;
+  return <section className="original-submission"><div className="batch-section-head"><h4>{t.sources}</h4><span>{artifacts.length}</span></div><div className="original-card">
+    <div className="original-copy"><strong>{fileCount(artifacts.length, language)}{size ? ` · ${size}` : ""}</strong><p>{t.originalNote}</p><div className="original-provenance">{submission.sourceEvents.map((event) => <span key={event.id}>{friendlyChannel(event.channel, language)} · {formatTimestamp(event.receivedAt, language)}{event.sender ? ` · ${event.sender}` : ""}</span>)}</div></div>
+    <div className="original-actions">{submission.sourceEvents.map((event) => safeExternalUrl(event.externalRef) && <a href={safeExternalUrl(event.externalRef)!} key={event.id} rel="noreferrer" target="_blank">{t.open}</a>)}{artifacts.length > 0 && <a className="primary" href={downloadHref}>{artifacts.length === 1 ? t.downloadOne : t.downloadMany}</a>}</div>
+    {artifacts.length > 0 ? <details className="original-files"><summary>{t.showFiles} ({artifacts.length})</summary><ul>{artifacts.map((artifact) => <li key={artifact.artifactId}><span>{artifact.displayName}</span>{artifact.sizeBytes !== null && <small>{formatBytes(artifact.sizeBytes, language)}</small>}</li>)}</ul></details> : <p className="original-empty">{t.noOriginalFile}</p>}
+  </div></section>;
 }
 
 function TaskRow({ task, language }: { task: CatalogTask; language: Language }) {
@@ -258,6 +275,32 @@ function safeExternalUrl(value: string | null): string | null {
   try { const url = new URL(value); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; } catch { return null; }
 }
 
+function friendlySubmissionSource(submission: CatalogSubmission, language: Language): string {
+  const channel = submission.sourceEvents[0]?.channel;
+  if (channel === "workspace" || channel === "upload" || /local (folder )?handoff/i.test(submission.source)) return text[language].directCaseImport;
+  return friendlyChannel(channel ?? submission.source, language);
+}
+
+function friendlyChannel(channel: string, language: Language): string {
+  const normalized = channel.trim().toLowerCase();
+  if (normalized === "workspace" || normalized === "upload") return text[language].directCaseImport;
+  if (normalized === "email" || normalized === "mail") return language === "zh" ? "邮件" : "Email";
+  if (normalized === "website") return language === "zh" ? "网站" : "Website";
+  if (normalized === "vendor_portal") return language === "zh" ? "供应商门户" : "Vendor portal";
+  if (normalized === "feishu") return "Feishu";
+  if (normalized === "slack") return "Slack";
+  return channel;
+}
+
+function fileCount(count: number, language: Language): string {
+  if (language === "zh") return `${count} 个原始文件`;
+  return `${count} original ${count === 1 ? "file" : "files"}`;
+}
+
+function formatBytes(bytes: number, language: Language): string {
+  return new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en", { style: "unit", unit: bytes < 1024 ? "byte" : bytes < 1024 ** 2 ? "kilobyte" : "megabyte", unitDisplay: "short", maximumFractionDigits: bytes < 1024 ? 0 : 1 }).format(bytes < 1024 ? bytes : bytes < 1024 ** 2 ? bytes / 1024 : bytes / 1024 ** 2);
+}
+
 function formatDate(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
@@ -276,7 +319,7 @@ const previewSubmission: CatalogSubmission = {
   label: "August sample",
   source: "Captured vendor delivery",
   formats: ["harbor", "non_harbor"],
-  sourceEvents: [{ id: "preview-source", channel: "upload", externalRef: "", sender: "Vendor", receivedAt: "2026-08-20T09:30:00.000Z", rawArtifactId: "artifact:preview:raw", items: [{ id: "preview-file", kind: "archive", displayName: "original-payload.zip", locator: null, artifactId: "artifact:preview:raw", contentSha256: null }] }],
+  sourceEvents: [{ id: "preview-source", channel: "upload", externalRef: "", sender: "Vendor", receivedAt: "2026-08-20T09:30:00.000Z", rawArtifactId: "artifact:preview:raw", rawArtifact: { id: "artifact:preview:raw", kind: "source_payload", contentSha256: "0".repeat(64), sizeBytes: 5242880, contentType: "application/zip", originalName: "original-payload.zip" }, items: [{ id: "preview-file", kind: "archive", displayName: "original-payload.zip", locator: null, mediaType: "application/zip", artifactId: "artifact:preview:raw", artifactKind: "source_payload", contentSha256: "0".repeat(64), sizeBytes: 5242880 }] }],
   tasks: [
     { id: "preview-harbor", stableKey: "repair-cache", title: "Repair cache invalidation", summary: null, kind: "task", format: "harbor", sourcePath: "tasks/repair-cache", artifactId: "artifact:preview:task", contentSha256: null, sourceItemIds: ["preview-file"], checks: { environment: previewCheck("environment", "pass"), nop: previewCheck("nop", "fail") }, attempts: { oracle: previewAttempt("oracle", "inconclusive") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] },
     { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, attempts: {}, findings: [] },

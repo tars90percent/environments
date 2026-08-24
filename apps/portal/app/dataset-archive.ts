@@ -1,9 +1,12 @@
+import type { CatalogSourceEvent } from "./catalog";
+
 export type DatasetSubmission = {
   id: string;
   date: string;
   label: string;
   source: string;
   formats: string[];
+  sourceEvents?: CatalogSourceEvent[];
   tasks: Array<{
     id: string;
     stableKey: string;

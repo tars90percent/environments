@@ -30,7 +30,7 @@ operating policy; CASE remains the canonical registry and check orchestrator.
 
 - Browse vendors that have at least one recorded submission.
 - Open dated submissions without replacing earlier observations.
-- Follow the original Drive, Sheet, document, or message link and download CASE's captured copy when one exists.
+- Inspect each original submission as one compact block. It links to a safe external source when one exists and offers either the single captured payload or one ZIP containing all original files. Internal capture receipts, folder-graph nodes, and derived task packages remain in CASE rather than appearing as competing downloads.
 - Inspect tasks or traces. Non-Harbor tasks have no checks. Harbor tasks show only Environment, Oracle, and Nop: pass/fail when conclusive, a distinct tried marker when a result was blocked or inconclusive, and a dash when not attempted. Directly supported findings remain separate.
 
 ## Prerequisites

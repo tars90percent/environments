@@ -3,6 +3,8 @@ import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } fr
 import handler from "vinext/server/app-router-entry";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { taskDatasetArchive, taskDatasetFilename, taskDatasetManifest, type DatasetPackage } from "../app/dataset-archive";
+import { originalSubmissionArchive } from "../app/original-submission-archive";
+import { originalSubmissionArchiveFilename, originalSubmissionArtifacts, type OriginalSubmissionArtifact } from "../app/original-submission";
 import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-compat";
 
 interface Env {
@@ -47,6 +49,38 @@ const worker = {
     }
     const registryUrl = caseRegistryUrl(runtimeEnv);
 
+    const originalDownloadMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/original-download$/);
+    if (originalDownloadMatch?.[1]) {
+      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
+      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
+        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
+      }
+      try {
+        const submissionId = decodeURIComponent(originalDownloadMatch[1]);
+        const upstream = await fetch(`${registryUrl}/v1/batches/${encodeURIComponent(submissionId)}`, {
+          headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
+        });
+        if (!upstream.ok) return registryErrorResponse(upstream, "original_submission_unavailable");
+        const submission = normalizeCaseSubmission(await upstream.json());
+        const artifacts = originalSubmissionArtifacts(submission.sourceEvents ?? []);
+        if (!artifacts.length) return Response.json({ error: "original_submission_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
+        const archive = originalSubmissionArchive(artifacts, (artifact) => fetchOriginalArtifact(artifact, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
+        return new Response(archive, {
+          status: 200,
+          headers: {
+            "content-type": "application/zip",
+            "content-disposition": `attachment; filename="${originalSubmissionArchiveFilename(submission)}"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "x-case-original-file-count": String(artifacts.length),
+          },
+        });
+      } catch {
+        return Response.json({ error: "original_submission_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+      }
+    }
+
     const datasetDownloadMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/dataset-download$/);
     if (datasetDownloadMatch?.[1]) {
       if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
@@ -63,7 +97,7 @@ const worker = {
         const submission = normalizeCaseSubmission(await upstream.json());
         const manifest = taskDatasetManifest(submission);
         if (!manifest.tasks.length) return Response.json({ error: "dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
-        const archive = taskDatasetArchive(submission, (task) => fetchTaskArtifact(task, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
+        const archive = taskDatasetArchive(submission, (task) => fetchArtifact(task.artifactId, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
         return new Response(archive, {
           status: 200,
           headers: {
@@ -140,8 +174,12 @@ const worker = {
 
 export default worker;
 
-async function fetchTaskArtifact(task: DatasetPackage, registryUrl: string, catalogToken: string): Promise<Response> {
-  const signed = await fetch(`${registryUrl}/v1/artifacts/${encodeURIComponent(task.artifactId)}/download-url`, {
+async function fetchOriginalArtifact(artifact: OriginalSubmissionArtifact, registryUrl: string, catalogToken: string): Promise<Response> {
+  return fetchArtifact(artifact.artifactId, registryUrl, catalogToken);
+}
+
+async function fetchArtifact(artifactId: DatasetPackage["artifactId"], registryUrl: string, catalogToken: string): Promise<Response> {
+  const signed = await fetch(`${registryUrl}/v1/artifacts/${encodeURIComponent(artifactId)}/download-url`, {
     headers: { authorization: `Bearer ${catalogToken}`, accept: "application/json" },
   });
   if (!signed.ok) return signed;

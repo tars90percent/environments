@@ -119,6 +119,7 @@ function normalizeLegacySourceEvent(value: JsonRecord): CatalogSourceEvent {
     sender: nullableText(value.sender),
     receivedAt: text(value.receivedAt),
     rawArtifactId: nullableText(value.rawArtifactId),
+    rawArtifact: null,
     items: records(value.items).map(normalizeLegacySourceItem),
   };
 }
@@ -129,8 +130,11 @@ function normalizeLegacySourceItem(value: JsonRecord): CatalogSourceItem {
     kind: text(value.kind),
     displayName: text(value.displayName),
     locator: nullableText(value.locator),
+    mediaType: nullableText(value.mediaType),
     artifactId: nullableText(value.artifactId),
+    artifactKind: nullableText(value.artifactKind),
     contentSha256: nullableText(value.contentSha256),
+    sizeBytes: typeof value.sizeBytes === "number" ? value.sizeBytes : null,
   };
 }
 

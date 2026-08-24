@@ -144,20 +144,23 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .task-finding p { margin: 6px 0 0; color: var(--ink); font-size: 10px; line-height: 1.58; white-space: pre-wrap; }
 .empty-task-list { margin: 0; padding: 14px; background: var(--card); color: var(--muted); font-size: 9px; }
 
-.source-block { margin-top: 4px; }
-.source-events { display: grid; gap: 9px; }
-.source-event { border-radius: 14px; background: var(--surface); overflow: hidden; }
-.source-event-head { min-height: 62px; padding: 11px 13px; display: grid; grid-template-columns: 92px minmax(180px, 1fr) auto; align-items: center; gap: 12px; }
-.source-channel, .source-kind { width: max-content; max-width: 100%; color: var(--muted); font: 560 9px/1.2 var(--font-geist-mono, ui-monospace), monospace; text-transform: capitalize; }
-.source-name { min-width: 0; display: grid; gap: 4px; }
-.source-name strong { overflow: hidden; font-size: 11px; font-weight: 610; text-overflow: ellipsis; white-space: nowrap; }
-.source-name small { overflow: hidden; color: var(--muted); font-size: 9px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
-.source-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.source-actions a { padding: 6px 9px; border-radius: 7px; background: var(--card); color: var(--burgundy); font-size: 9px; font-weight: 620; text-decoration: none; white-space: nowrap; }
-.source-items { display: grid; margin: 0 8px 8px; border-radius: 10px; background: var(--card); overflow: hidden; }
-.source-item { min-height: 56px; padding: 9px 11px; display: grid; grid-template-columns: 92px minmax(180px, 1fr) auto; align-items: center; gap: 12px; border-top: 1px solid var(--line); }
-.source-item:first-child { border-top: 0; }
-.source-item .source-actions a { background: var(--burgundy-soft); }
+.original-submission { margin-top: 4px; }
+.original-card { padding: 16px; display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 14px 20px; border-radius: 14px; background: var(--surface); }
+.original-copy { min-width: 0; }
+.original-copy > strong { display: block; font-size: 12px; font-weight: 640; }
+.original-copy > p { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.original-provenance { margin-top: 10px; display: grid; gap: 3px; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.original-actions { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.original-actions a { padding: 7px 10px; border-radius: 8px; background: var(--card); color: var(--burgundy); font-size: 9px; font-weight: 620; text-decoration: none; white-space: nowrap; }
+.original-actions a.primary { background: var(--burgundy); color: #fff; }
+.original-files { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+.original-files summary { width: max-content; padding-top: 11px; color: var(--burgundy); cursor: pointer; font-size: 9px; font-weight: 620; list-style-position: inside; }
+.original-files ul { margin: 10px 0 0; padding: 0; display: grid; border-radius: 10px; background: var(--card); list-style: none; overflow: hidden; }
+.original-files li { min-width: 0; padding: 8px 10px; display: flex; justify-content: space-between; gap: 18px; border-top: 1px solid var(--line); color: var(--ink); font: 520 9px/1.4 var(--font-geist-mono, ui-monospace), monospace; }
+.original-files li:first-child { border-top: 0; }
+.original-files li span { overflow-wrap: anywhere; }
+.original-files li small { flex: 0 0 auto; color: var(--muted); font: inherit; }
+.original-empty { grid-column: 1 / -1; margin: 0; padding-top: 11px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; }
 
 .state-card { max-width: 760px; min-height: 180px; padding: 38px; border-radius: 24px; background: var(--surface); color: var(--muted); line-height: 1.65; }
 .preview-page { width: min(1100px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0; }
@@ -196,8 +199,9 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .batch-count { text-align: right; }
   .dataset-access { grid-template-columns: 1fr; gap: 16px; }
   .dataset-access > a { justify-self: start; }
-  .source-event-head, .source-item { grid-template-columns: 78px minmax(0, 1fr); }
-  .source-actions { grid-column: 2; justify-content: flex-start; }
+  .original-card { grid-template-columns: 1fr; }
+  .original-actions { justify-content: flex-start; }
+  .original-files, .original-empty { grid-column: 1; }
 }
 
 @media (max-width: 520px) {

@@ -807,8 +807,20 @@ export type SampleCatalogSourceItem = {
   kind: string;
   displayName: string;
   locator: string | null;
+  mediaType: string | null;
   artifactId: string | null;
+  artifactKind: ArtifactInput["kind"] | null;
   contentSha256: string | null;
+  sizeBytes: number | null;
+};
+
+export type SampleCatalogRawArtifact = {
+  id: string;
+  kind: ArtifactInput["kind"];
+  contentSha256: string;
+  sizeBytes: number | null;
+  contentType: string | null;
+  originalName: string | null;
 };
 
 export type SampleCatalogSourceEvent = {
@@ -818,6 +830,7 @@ export type SampleCatalogSourceEvent = {
   sender: string | null;
   receivedAt: string;
   rawArtifactId: string | null;
+  rawArtifact: SampleCatalogRawArtifact | null;
   items: SampleCatalogSourceItem[];
 };
 
