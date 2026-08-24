@@ -222,7 +222,7 @@ function SubmissionCard({ submission, open, latest, language, datasetHref }: { s
 function OriginalSubmissionPanel({ submission, language }: { submission: CatalogSubmission; language: Language }) {
   const t = text[language];
   const artifacts = originalSubmissionArtifacts(submission.sourceEvents);
-  const knownBytes = artifacts.map((artifact) => artifact.sizeBytes).filter((size): size is number => size !== null);
+  const knownBytes = artifacts.map((artifact) => artifact.sizeBytes).filter((size): size is number => typeof size === "number" && Number.isFinite(size) && size >= 0);
   const size = knownBytes.length === artifacts.length && artifacts.length ? formatBytes(knownBytes.reduce((sum, value) => sum + value), language) : null;
   const downloadHref = artifacts.length === 1
     ? `/api/artifacts/${encodeURIComponent(artifacts[0]!.artifactId)}/download`

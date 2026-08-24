@@ -25,7 +25,7 @@ export function originalSubmissionArtifacts(events: CatalogSourceEvent[]): Origi
           artifactId: event.rawArtifact.id,
           displayName: event.rawArtifact.originalName || "original-submission",
           contentSha256: event.rawArtifact.contentSha256,
-          sizeBytes: event.rawArtifact.sizeBytes,
+          sizeBytes: finiteSize(event.rawArtifact.sizeBytes),
           mediaType: event.rawArtifact.contentType,
         });
       }
@@ -76,9 +76,13 @@ function artifactFromItem(item: CatalogSourceItem & { artifactId: string }): Ori
     artifactId: item.artifactId,
     displayName: item.displayName,
     contentSha256: item.contentSha256,
-    sizeBytes: item.sizeBytes,
+    sizeBytes: finiteSize(item.sizeBytes),
     mediaType: item.mediaType,
   };
+}
+
+function finiteSize(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function safeEntryName(value: string): string {

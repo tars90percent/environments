@@ -40,6 +40,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Direct CASE import/);
   assert.match(source, /originalSubmissionArtifacts/);
   assert.match(source, /original-download/);
+  assert.match(source, /Number\.isFinite\(size\)/);
   assert.match(source, /Tasks/);
   assert.match(source, /Environment/);
   assert.match(source, /Oracle/);
