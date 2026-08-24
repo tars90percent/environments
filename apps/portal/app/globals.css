@@ -153,16 +153,6 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .original-actions { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .original-actions a { padding: 7px 10px; border-radius: 8px; background: var(--card); color: var(--burgundy); font-size: 9px; font-weight: 620; text-decoration: none; white-space: nowrap; }
 .original-actions a.primary { background: var(--burgundy); color: #fff; }
-.original-files { grid-column: 1 / -1; border-top: 1px solid var(--line); }
-.original-files summary { width: max-content; padding-top: 11px; color: var(--burgundy); cursor: pointer; font-size: 9px; font-weight: 620; list-style-position: inside; }
-.original-files ul { margin: 10px 0 0; padding: 0; display: grid; border-radius: 10px; background: var(--card); list-style: none; overflow: hidden; }
-.original-files li { min-width: 0; padding: 8px 10px; display: flex; justify-content: space-between; gap: 18px; border-top: 1px solid var(--line); color: var(--ink); font: 520 9px/1.4 var(--font-geist-mono, ui-monospace), monospace; }
-.original-files li:first-child { border-top: 0; }
-.original-files li span { overflow-wrap: anywhere; }
-.original-files li small { flex: 0 0 auto; color: var(--muted); font: inherit; }
-.original-files > p { margin: 8px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
-.source-record-meta { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
-.source-record-meta a { color: var(--burgundy); font: 620 9px/1.4 var(--font-geist, ui-sans-serif), sans-serif; text-decoration: none; }
 .original-empty { grid-column: 1 / -1; margin: 0; padding-top: 11px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; }
 
 .state-card { max-width: 760px; min-height: 180px; padding: 38px; border-radius: 24px; background: var(--surface); color: var(--muted); line-height: 1.65; }
@@ -204,7 +194,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .dataset-access > a { justify-self: start; }
   .original-card { grid-template-columns: 1fr; }
   .original-actions { justify-content: flex-start; }
-  .original-files, .original-empty { grid-column: 1; }
+  .original-empty { grid-column: 1; }
 }
 
 @media (max-width: 520px) {

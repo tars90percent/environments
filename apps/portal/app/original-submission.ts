@@ -8,11 +8,6 @@ export type OriginalSubmissionArtifact = {
   mediaType: string | null;
 };
 
-type ClassifiedSubmissionArtifacts = {
-  originalFiles: OriginalSubmissionArtifact[];
-  sourceRecords: OriginalSubmissionArtifact[];
-};
-
 const DERIVED_ARTIFACT_KINDS = new Set([
   "submission_manifest",
   "trajectory",
@@ -27,12 +22,7 @@ const DERIVED_ARTIFACT_KINDS = new Set([
  * artifact's single global kind is not.
  */
 export function originalSubmissionArtifacts(submission: CatalogSubmission): OriginalSubmissionArtifact[] {
-  return classifySubmissionArtifacts(submission).originalFiles;
-}
-
-/** Message captures, receipts, screenshots, and other provenance snapshots. */
-export function submissionSourceRecordArtifacts(submission: CatalogSubmission): OriginalSubmissionArtifact[] {
-  return classifySubmissionArtifacts(submission).sourceRecords;
+  return inboundSubmissionArtifacts(submission);
 }
 
 export function originalSubmissionArchiveFilename(submission: Pick<CatalogSubmission, "label" | "date">): string {
@@ -50,30 +40,23 @@ export function originalSubmissionEntryNames(artifacts: OriginalSubmissionArtifa
   });
 }
 
-function classifySubmissionArtifacts(submission: CatalogSubmission): ClassifiedSubmissionArtifacts {
+function inboundSubmissionArtifacts(submission: CatalogSubmission): OriginalSubmissionArtifact[] {
   const taskSourceItemIds = new Set(submission.tasks.flatMap((task) => task.sourceItemIds));
   const originalFiles: OriginalSubmissionArtifact[] = [];
-  const sourceRecords: OriginalSubmissionArtifact[] = [];
 
   for (const event of submission.sourceEvents) {
     if (isDerivedEvent(event)) continue;
 
     for (const item of event.items) {
       if (!item.artifactId) continue;
-      if (isSourceRecord(item)) {
-        sourceRecords.push(artifactFromItem(item));
-        continue;
-      }
+      if (isSourceRecord(item)) continue;
       if (isInboundFile(item, event, taskSourceItemIds)) {
         originalFiles.push(artifactFromItem(item));
       }
     }
   }
 
-  return {
-    originalFiles: uniqueArtifacts(originalFiles),
-    sourceRecords: uniqueArtifacts(sourceRecords),
-  };
+  return uniqueArtifacts(originalFiles);
 }
 
 function isInboundFile(

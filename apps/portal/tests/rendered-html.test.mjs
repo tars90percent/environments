@@ -37,7 +37,8 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
 
   assert.match(source, /Environment & Task Samples/);
   assert.match(source, /Original vendor files/);
-  assert.match(source, /Source records/);
+  assert.doesNotMatch(source, /Source records|来源记录|sourceRecord/);
+  assert.doesNotMatch(source, /Show vendor filenames|查看供应商文件名|showFiles/);
   assert.match(source, /Direct CASE import/);
   assert.doesNotMatch(source, /Open source|打开来源|safeExternalUrl/);
   assert.match(source, /originalSubmissionArtifacts/);
