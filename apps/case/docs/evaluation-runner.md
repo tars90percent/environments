@@ -32,6 +32,17 @@ harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle --force-build
 
 The launcher supplies `--env modal`. Harbor creates its normal `jobs/` result tree under `/data/evaluations`. That controller-side tree contains the job and trial configuration, results, agent trajectory, verifier output, logs, and collected artifacts downloaded from the sandbox. Treat the Modal filesystem as temporary: evidence is durable only after Harbor downloads it and CASE stores the relevant files as immutable registry artifacts.
 
+For the one approved Modal Dockerfile compatibility case, keep the registered
+task artifact pristine and prepare a disposable controller-side evaluation copy.
+If the Dockerfile deterministically establishes a named user's UID and named
+group's GID, replace only a named `COPY --chown` operand with the equivalent
+numeric `UID:GID` before submitting the copy to Modal. This compensates for
+Modal's parser limitation while preserving standard Docker semantics; it is not
+a corrected task or a new task version. Evidence must bind the adapted run to
+the original artifact hash and retain the exact transformation, resolved IDs,
+adapted Dockerfile hash, and original and adapted logs. No other task-content
+change is allowed by this adapter.
+
 For a source archive with known task boundaries, `case-task-package` performs bounded ZIP inspection and extraction and creates deterministic `tar.gz` task packages whose contents begin at the task root. It rejects traversal paths, links, devices, encrypted entries, duplicate paths, and configured size, depth, or compression-ratio violations. A catalog task record with no artifact may be finalized exactly once when its identity fields still match and the new content-addressed package is provenance-linked; an already bound task version remains immutable.
 
 Record the invocation, artifact digest, Harbor version, Modal environment, agent and model versions, start and finish time, and sandbox outcome. A controller crash or missing download is missing evidence, not a failed deterministic check.
@@ -51,7 +62,7 @@ For each immutable task version:
 
 1. Validate the declared package shape without executing task code.
 2. Record the exact artifact hash plus the pinned Harbor and Modal versions.
-3. Run Oracle once in a fresh sandbox with a forced clean build. Record Environment when Harbor's environment-setup phase and any declared healthcheck succeed, then retain the Oracle reward and log bundle.
+3. Run Oracle once in a fresh sandbox with a forced clean build, using the narrowly approved named-`COPY --chown` numeric adapter when applicable. Record Environment when Harbor's environment-setup phase and any declared healthcheck succeed, then retain the Oracle reward and log bundle.
 4. Run Nop once in a different fresh sandbox using the built image and retain its reward and log bundle.
 5. Collect rewards, timing, sandbox metadata, stdout/stderr, verifier output, and declared artifacts needed to support the three results.
 6. Write Environment, Oracle, and Nop through CASE, upload immutable evidence, and leave results unset when infrastructure prevents a conclusive check.
@@ -78,7 +89,7 @@ Use no-network execution as the baseline when the provider and task support it. 
 
 ## Checker, worker, queue, and scaling
 
-The **task checker** is the head-to-toe operation for one exact immutable task version. It resolves the applicable check policy, validates the package, invokes the clean build and controls, collects evidence, records named outcomes, and derives the task's current technical state.
+The **task checker** is the head-to-toe operation for one exact immutable task version. It resolves the applicable check policy, validates the package, prepares any approved provider-only compatibility copy without changing task identity, invokes the clean build and controls, collects evidence, records named outcomes, and derives the task's current technical state.
 
 A **worker** is only the long-running process around that operation. It leases one task work item, calls the task checker, heartbeats and records the attempt, completes or requeues the item, and then leases another. Multiple worker slots provide bounded task-level parallelism; they must all use the same versioned checker and must not contain separate evaluation logic.
 

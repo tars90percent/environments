@@ -55,6 +55,19 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.equal(submission?.tasks[0]?.checks.oracle, undefined);
     assert.equal(submission?.tasks[0]?.findings[0]?.phase, "environment");
     assert.deepEqual(submission?.tasks[1]?.checks, {});
+
+    await repository.recordHarborCheck({
+      ...check("task-one", evidenceSha),
+      id: "check-environment-pass",
+      outcome: "pass",
+      summary: "Harbor prepared a usable environment through an approved provider adapter.",
+      startedAt: "2026-08-21T02:00:00.000Z",
+      completedAt: "2026-08-21T02:01:00.000Z",
+    });
+    const correctedCatalog = await repository.sampleCatalogSnapshot();
+    const correctedTask = correctedCatalog.vendors[0]?.submissions[0]?.tasks[0];
+    assert.equal(correctedTask?.checks.environment?.outcome, "pass");
+    assert.deepEqual(correctedTask?.findings, []);
   } finally {
     await repository?.close();
     await administrator.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);

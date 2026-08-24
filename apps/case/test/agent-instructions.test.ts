@@ -48,6 +48,16 @@ test("the CASE guide permits only the three Modal-backed Harbor checks", async (
   assert.match(guide, /DeepSeek diagnostics/);
 });
 
+test("the CASE guide narrowly permits Modal's named COPY chown adapter", async () => {
+  const guide = await readFile(rootGuide, "utf8");
+
+  assert.match(guide, /Modal Dockerfile compatibility adapter/);
+  assert.match(guide, /Do not count that Modal-only parser limitation as an Environment failure/);
+  assert.match(guide, /replace only the ownership operand with the equivalent numeric form/);
+  assert.match(guide, /not a modification of the stored artifact.*new task version.*permission to repair the task/s);
+  assert.match(guide, /Apply no other source transformation under this exception/);
+});
+
 test("the CASE guide limits findings to demonstrated check issues", async () => {
   const guide = await readFile(rootGuide, "utf8");
 

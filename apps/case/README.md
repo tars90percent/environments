@@ -123,6 +123,17 @@ unset only when it contains no failure and is insufficient to prove both steps
 passed. A Harbor finding is immutable and must cite a failed check for the same
 task.
 
+The root policy permits one narrowly defined execution adapter for Modal's
+partial Dockerfile implementation. When a task validly uses a named
+`COPY --chown` owner and its Dockerfile deterministically establishes the
+corresponding UID and GID, the checker may replace only that operand with its
+numeric equivalent in a disposable evaluation copy. The stored task artifact
+and task version remain unchanged. Evidence must retain the original artifact
+hash, exact transformation, resolved IDs, adapted Dockerfile hash, and both the
+original rejection and adapted-run logs. A successful adapted run supplies the
+ordinary Environment, Oracle, and Nop results for the original task version;
+this exception does not authorize any other task repair or normalization.
+
 If CASE created a submission record in error, `remove-submission` can hard-remove
 it with the explicit `erroneous_registration` disposition, an actor, and a
 reason. The operation preserves a tombstone and any shared sources, artifacts,

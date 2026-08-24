@@ -49,7 +49,7 @@ Parsing is organizational, not evaluative. Preserve the vendor's stable task ide
 
 ## Harbor checks
 
-Run Harbor checks only on the exact immutable Harbor task version. Harbor CLI commands must use Modal as the sandbox provider; do not execute vendor Dockerfiles, solutions, tests, or other task code directly on this workstation, in CASE, in the portal, or in any production-connected service.
+Run Harbor checks only on the exact immutable Harbor task version. Harbor CLI commands must use Modal as the sandbox provider; do not execute vendor Dockerfiles, solutions, tests, or other task code directly on this workstation, in CASE, in the portal, or in any production-connected service. The approved Modal compatibility adapter below is part of the check harness and does not create or revise a task version.
 
 Track exactly these three checks, matching the portal tags:
 
@@ -59,7 +59,15 @@ Track exactly these three checks, matching the portal tags:
 
 Retain the exact task artifact, pinned Harbor CLI and Modal/runtime versions, commands, logs, rewards, timeouts, and sandbox metadata needed to support those results. Store check evidence separately from the task package.
 
-A result is `pass` or `fail` only when that check ran against the exact task version. Use two Harbor trials: an Oracle trial with a forced clean build, which supplies the Environment and Oracle results, followed by a Nop trial in a different fresh sandbox using the built image. Record Environment as soon as Harbor's environment-setup phase and any declared healthcheck succeed; do not run a separate Environment trial. If Environment failure makes a later check impossible, leave the later check unset rather than marking it failed. If a controller, authentication, Modal, network, or other infrastructure problem prevents a check, leave its tag unset and retain the details only in operational logs, not findings.
+A result is `pass` or `fail` only when that check ran against the exact task version, allowing only the approved Modal compatibility adapter below. Use two Harbor trials: an Oracle trial with a forced clean build, which supplies the Environment and Oracle results, followed by a Nop trial in a different fresh sandbox using the built image. Record Environment as soon as Harbor's environment-setup phase and any declared healthcheck succeed; do not run a separate Environment trial. If Environment failure makes a later check impossible, leave the later check unset rather than marking it failed. If a controller, authentication, Modal, network, or other infrastructure problem prevents a check, leave its tag unset and retain the details only in operational logs, not findings.
+
+### Modal Dockerfile compatibility adapter
+
+Modal's image builder rejects named ownership in Dockerfile instructions such as `COPY --chown=agent:agent`, although named `COPY --chown` is valid under standard Docker semantics when the named user and group exist. Do not count that Modal-only parser limitation as an Environment failure.
+
+When the task Dockerfile deterministically establishes the named user's UID and the named group's GID, the checker may create a disposable evaluation copy and replace only the ownership operand with the equivalent numeric form, for example `COPY --chown=agent:agent` with `COPY --chown=1000:1000`. Run Harbor against that disposable copy in Modal and attribute the resulting Environment, Oracle, and Nop evidence to the original immutable task version. This is a provider compatibility adaptation during the check, not a modification of the stored artifact, a corrected submission, a new task version, or permission to repair the task.
+
+Never alter the canonical task package. Retain the original artifact hash, the exact original and adapted instruction, the deterministic name-to-ID mapping, the adapted Dockerfile hash, the Harbor command, and both the original Modal rejection and adapted-run logs as check evidence. Apply no other source transformation under this exception. If the mapping is ambiguous, if the original instruction would be invalid under standard Docker semantics, or if the adapted run exposes another task-specific setup failure, do not infer a pass. A successful adapted setup supplies Environment pass; a successful Oracle or Nop run through the adapter supplies its ordinary control result as well. Do not add a finding merely because this adapter was required and succeeded.
 
 For historical records, a passing Oracle or Nop result is conclusive evidence that Harbor first prepared a usable environment for that exact task version and supplies an Environment pass. Otherwise, the latest historical Build and Boot results supply an Environment pass when both are explicit passes, while an explicit failure in either latest legacy setup result supplies an Environment fail even if the other setup result is absent. Leave Environment unset only when the available legacy setup evidence contains no failure and is insufficient to prove both steps passed. A failed or unset historical control alone does not determine Environment because it may represent a score mismatch rather than setup failure.
 

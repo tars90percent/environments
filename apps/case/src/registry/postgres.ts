@@ -2361,12 +2361,21 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY task_id, phase, completed_at DESC, id DESC`,
       ),
       this.pool.query<SampleFindingRow>(
-        `SELECT tf.task_version_id AS task_id, tf.id, tf.check_run_id, tf.check_phase, tf.finding
+        `WITH latest_checks AS (
+           SELECT DISTINCT ON (task_id, phase)
+                  task_id, phase, id, outcome
+           FROM registry_harbor_check_results
+           ORDER BY task_id, phase, completed_at DESC, id DESC
+         )
+         SELECT tf.task_version_id AS task_id, tf.id, tf.check_run_id, tf.check_phase, tf.finding
          FROM registry_task_findings tf
-         JOIN registry_check_runs cr ON cr.id = tf.check_run_id
+         JOIN latest_checks latest
+           ON latest.task_id = tf.task_version_id
+          AND latest.phase = tf.check_phase
+          AND latest.id = tf.check_run_id
          WHERE tf.check_run_id IS NOT NULL
            AND tf.check_phase IN ('environment', 'oracle', 'nop')
-           AND cr.outcome = 'fail'
+           AND latest.outcome = 'fail'
          ORDER BY tf.created_at, tf.id`,
       ),
       this.pool.query<{ task_version_id: string; source_item_id: string }>(
