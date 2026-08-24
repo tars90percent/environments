@@ -126,7 +126,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .task-meta span + span::before, .task-meta span + code::before { margin: 0 7px; color: var(--faint); content: "·"; }
 .task-meta code { flex-shrink: 1; }
 .task-checks { color: var(--muted); font-size: 9px; }
-.checks { min-width: 270px; display: grid; grid-template-columns: repeat(4, minmax(58px, 1fr)); }
+.checks { min-width: 240px; display: grid; grid-template-columns: repeat(3, minmax(72px, 1fr)); }
 .check { min-width: 0; padding: 1px 10px; display: grid; gap: 3px; border-left: 1px solid var(--line); white-space: nowrap; }
 .check-label { color: var(--muted); font-size: 8px; font-weight: 520; }
 .check-mark { color: var(--faint); font-size: 13px; font-weight: 650; line-height: 1; }

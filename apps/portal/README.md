@@ -3,7 +3,7 @@
 A researcher catalog for vendor RL-task samples, hosted on
 Railway and available to authenticated members of TARS's Feishu organization.
 小环境 loads vendors, dated submissions, original-source records, parsed tasks
-or traces, four Harbor tags, findings, and downloads from CASE.
+or traces, three Harbor tags, findings, and downloads from CASE.
 
 The interface intentionally contains no procurement, research-demand, category,
 quality, status, scoring, recommendation, or review workflow.
@@ -30,7 +30,7 @@ operating policy; CASE remains the canonical registry and check orchestrator.
 - Browse vendors that have at least one recorded submission.
 - Open dated submissions without replacing earlier observations.
 - Follow the original Drive, Sheet, document, or message link and download CASE's captured copy when one exists.
-- Inspect tasks or traces. Non-Harbor tasks have no checks. Harbor tasks show only Build, Boot, Oracle, and Nop pass/fail tags plus directly supported findings.
+- Inspect tasks or traces. Non-Harbor tasks have no checks. Harbor tasks show only Environment, Oracle, and Nop pass/fail tags plus directly supported findings.
 
 ## Prerequisites
 

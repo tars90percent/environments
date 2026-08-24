@@ -37,8 +37,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Environment & Task Samples/);
   assert.match(source, /Original delivery/);
   assert.match(source, /Tasks/);
-  assert.match(source, /Build/);
-  assert.match(source, /Boot/);
+  assert.match(source, /Environment/);
   assert.match(source, /Oracle/);
   assert.match(source, /Nop/);
   assert.match(source, /task\.format === "harbor"/);
@@ -99,7 +98,7 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
               representation: { path: "already_harbor", normalizationOutcome: "already_harbor" },
               runtimeVerification: { phases: {
                 build: { outcome: "pass", checkRunId: "check-build", completedAt: "2026-08-20T01:00:00.000Z" },
-                boot: { outcome: null, checkRunId: null, completedAt: null },
+                boot: { outcome: "pass", checkRunId: "check-boot", completedAt: "2026-08-20T01:30:00.000Z" },
                 positiveControl: { outcome: "fail", checkRunId: "check-oracle", completedAt: "2026-08-20T02:00:00.000Z" },
                 negativeControl: { outcome: "blocked", checkRunId: "check-nop", completedAt: "2026-08-20T03:00:00.000Z" },
               } },
@@ -130,7 +129,9 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
     assert.deepEqual(submission.formats, ["harbor"]);
     assert.equal(submission.tasks[0].kind, "task");
     assert.equal(submission.tasks[0].format, "harbor");
-    assert.deepEqual(Object.keys(submission.tasks[0].checks), ["build", "oracle"]);
+    assert.deepEqual(Object.keys(submission.tasks[0].checks), ["oracle", "environment"]);
+    assert.equal(submission.tasks[0].checks.environment.outcome, "pass");
+    assert.match(submission.tasks[0].checks.environment.summary, /inferred from passing Build and Boot evidence/i);
     assert.deepEqual(submission.tasks[0].findings, []);
   } finally {
     globalThis.fetch = originalFetch;

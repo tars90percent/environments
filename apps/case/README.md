@@ -5,12 +5,12 @@ Codex.
 
 CASE owns the canonical sample registry used by its own tools and 小环境.
 PostgreSQL holds vendors, original source graphs, dated submissions, parsed
-tasks or traces, four Harbor check phases, findings, and operational work.
+tasks or traces, three Harbor check phases, findings, and operational work.
 S3-compatible object storage holds immutable payloads, task artifacts,
 and check evidence.
 
 The workflow is deliberately narrow: preserve a submission, identify clear tasks
-or traces, label each task `harbor` or `non_harbor`, and run Build, Boot, Oracle,
+or traces, label each task `harbor` or `non_harbor`, and run Environment, Oracle,
 and Nop only for Harbor tasks.
 
 This README describes the CASE application and its runtime. The monorepo's root
@@ -110,10 +110,14 @@ submission ID/date/label, attachments, and an optional explicit `harbor` or
 `non_harbor` classification. File extensions are never treated as formats, and
 categories are not part of capture.
 
-`record-harbor-check` accepts only Build, Boot, Oracle, or Nop pass/fail evidence
-for Harbor tasks. Oracle and Nop must include the observed score, which must
-agree with the outcome. No phase is inferred from another. A Harbor finding is
-immutable and must cite a failed check for the same task.
+`record-harbor-check` accepts only Environment, Oracle, or Nop pass/fail evidence
+for Harbor tasks. Environment covers Harbor's clean image construction,
+environment startup, and any declared healthcheck. Oracle and Nop must include
+the observed score, which must agree with the outcome. A passing historical
+Oracle or Nop result supplies an inferred Environment pass because Harbor could
+not have produced that score before preparing the environment. Passing latest
+historical Build and Boot results also supply an inferred Environment pass. A
+Harbor finding is immutable and must cite a failed check for the same task.
 
 If CASE created a submission record in error, `remove-submission` can hard-remove
 it with the explicit `erroneous_registration` disposition, an actor, and a
@@ -215,10 +219,12 @@ inside the CASE service.
 Configure a dedicated Modal service-user token with `MODAL_TOKEN_ID` and
 `MODAL_TOKEN_SECRET`, and select its least-privilege Modal environment with
 `MODAL_ENVIRONMENT`. The direct `modal` command is available for provider
-diagnostics. A normal invocation is:
+diagnostics. A normal two-trial check uses an Oracle run with a forced clean
+build followed by Nop in a different fresh sandbox:
 
 ```sh
-harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle
+harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle --force-build
+harbor run -p /data/evaluations/input/<artifact-sha256> -a nop --no-force-build
 ```
 
 The launcher adds `--env modal`; a different execution environment is rejected.

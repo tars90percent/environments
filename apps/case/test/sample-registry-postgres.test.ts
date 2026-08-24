@@ -6,7 +6,7 @@ import { PostgresRegistry, RegistryConflictError } from "../src/registry/postgre
 
 const testDatabaseUrl = process.env.CASE_REGISTRY_TEST_DATABASE_URL;
 
-test("stores submissions, tasks, four-phase Harbor results, and failed-check findings", { skip: !testDatabaseUrl }, async () => {
+test("stores submissions, tasks, three-phase Harbor results, and failed-check findings", { skip: !testDatabaseUrl }, async () => {
   if (!testDatabaseUrl) throw new Error("CASE_REGISTRY_TEST_DATABASE_URL is required");
   const schema = `case_sample_registry_${randomUUID().replaceAll("-", "_")}`;
   const administrator = new Pool({ connectionString: testDatabaseUrl });
@@ -46,14 +46,14 @@ test("stores submissions, tasks, four-phase Harbor results, and failed-check fin
     });
     await assert.rejects(() => repository!.recordHarborCheck(check("task-trace", evidenceSha)), RegistryConflictError);
     await repository.recordHarborCheck(check("task-one", evidenceSha));
-    await repository.recordHarborFinding({ id: "finding-build", taskId: "task-one", checkRunId: "check-build", finding: "The Dockerfile build exited with code 1." });
+    await repository.recordHarborFinding({ id: "finding-environment", taskId: "task-one", checkRunId: "check-environment", finding: "Harbor could not prepare the task environment." });
 
     const catalog = await repository.sampleCatalogSnapshot();
     const submission = catalog.vendors[0]?.submissions[0];
     assert.deepEqual(submission?.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
-    assert.equal(submission?.tasks[0]?.checks.build?.outcome, "fail");
-    assert.equal(submission?.tasks[0]?.checks.boot, undefined);
-    assert.equal(submission?.tasks[0]?.findings[0]?.phase, "build");
+    assert.equal(submission?.tasks[0]?.checks.environment?.outcome, "fail");
+    assert.equal(submission?.tasks[0]?.checks.oracle, undefined);
+    assert.equal(submission?.tasks[0]?.findings[0]?.phase, "environment");
     assert.deepEqual(submission?.tasks[1]?.checks, {});
   } finally {
     await repository?.close();
@@ -63,7 +63,7 @@ test("stores submissions, tasks, four-phase Harbor results, and failed-check fin
 });
 
 function check(taskId: string, evidenceSha: string) {
-  return { id: "check-build", taskId, phase: "build" as const, outcome: "fail" as const, summary: "Dockerfile build failed.", evidenceArtifactId: `artifact:sha256:${evidenceSha}`, harborVersion: "0.1.0", modalVersion: "1.0.0", command: "case-harbor run --phase build --provider modal", startedAt: "2026-08-21T01:00:00.000Z", completedAt: "2026-08-21T01:01:00.000Z" };
+  return { id: "check-environment", taskId, phase: "environment" as const, outcome: "fail" as const, summary: "Harbor environment setup failed.", evidenceArtifactId: `artifact:sha256:${evidenceSha}`, harborVersion: "0.21.0", modalVersion: "1.5.4", command: "case-harbor run --path /data/evaluations/input/task --agent oracle --force-build", startedAt: "2026-08-21T01:00:00.000Z", completedAt: "2026-08-21T01:01:00.000Z" };
 }
 
 function databaseUrlWithSearchPath(databaseUrl: string, schema: string): string {

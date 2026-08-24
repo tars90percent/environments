@@ -96,7 +96,7 @@ test("registers only clearly identified tasks or traces with two formats", () =>
   assert.throws(() => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[0], sourceItemIds: [] }] }), ValidationError);
 });
 
-test("validates exactly four Harbor pass/fail phases and explicit control scores", () => {
+test("validates exactly three Harbor pass/fail phases and explicit control scores", () => {
   const base = {
     id: "check:oracle",
     taskId: "task-harbor",
@@ -115,7 +115,8 @@ test("validates exactly four Harbor pass/fail phases and explicit control scores
   assert.equal(parseHarborCheckResult(base).phase, "oracle");
   assert.throws(() => parseHarborCheckResult({ ...base, outcome: "fail" }), /must match the observed score/);
   assert.throws(() => parseHarborCheckResult({ ...base, phase: "hermeticity" }), ValidationError);
-  assert.throws(() => parseHarborCheckResult({ ...base, phase: "build", score: 1 }), /cannot record a score/);
+  assert.throws(() => parseHarborCheckResult({ ...base, phase: "environment", score: 1 }), /cannot record a score/);
+  assert.throws(() => parseHarborCheckResult({ ...base, phase: "build", score: undefined }), ValidationError);
   assert.throws(() => parseHarborCheckResult({ ...base, phase: "nop", outcome: "pass", score: 1 }), /must match the observed score/);
 });
 

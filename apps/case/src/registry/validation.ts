@@ -50,11 +50,11 @@ const VENDOR_EVENT_KINDS = new Set(["contact", "sample", "evaluation", "commerci
 const REPRESENTATION_KINDS = new Set<TaskRepresentationKind>(["harbor", "native", "unknown"]);
 const REPRESENTATION_PATHS = new Set<TaskRepresentationPath>(["already_harbor", "normalized_to_harbor", "native_format_exception"]);
 const NORMALIZATION_OUTCOMES = new Set<TaskNormalizationOutcome>(["already_harbor", "normalized", "needs_review", "incomplete", "blocked", "not_a_task"]);
-const CHECK_EVIDENCE_ROLES = new Set<CheckEvidenceRole>(["contract", "build", "boot", "positive_control", "negative_control", "hermeticity", "evidence_completeness", "other"]);
+const CHECK_EVIDENCE_ROLES = new Set<CheckEvidenceRole>(["contract", "environment", "build", "boot", "positive_control", "negative_control", "hermeticity", "evidence_completeness", "other"]);
 const CHECK_EXECUTION_SCOPES = new Set<CheckExecutionScope>(["static", "remote_sandbox", "unknown"]);
 const TASK_KINDS = new Set(["task", "trace"] as const);
 const TASK_FORMATS = new Set(["harbor", "non_harbor"] as const);
-const HARBOR_PHASES = new Set(["build", "boot", "oracle", "nop"] as const);
+const HARBOR_PHASES = new Set(["environment", "oracle", "nop"] as const);
 const HARBOR_OUTCOMES = new Set(["pass", "fail"] as const);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
@@ -291,7 +291,7 @@ export function parseHarborCheckResult(value: unknown): HarborCheckResultInput {
   if ((phase === "oracle" || phase === "nop") && score === undefined) {
     throw new ValidationError(`${phase} checks must record the observed score`);
   }
-  if ((phase === "build" || phase === "boot") && score !== undefined) {
+  if (phase === "environment" && score !== undefined) {
     throw new ValidationError(`${phase} checks cannot record a score`);
   }
   const expectedScore = phase === "oracle" ? 1 : phase === "nop" ? 0 : undefined;
@@ -533,7 +533,7 @@ export function parseCheckResult(value: unknown): CheckResultInput {
   const input = object(value, "check result");
   const evidenceRole = enumValue(input.evidenceRole, CHECK_EVIDENCE_ROLES, "evidenceRole");
   const executionScope = enumValue(input.executionScope, CHECK_EXECUTION_SCOPES, "executionScope");
-  const isRuntimeCheck = ["build", "boot", "positive_control", "negative_control"].includes(evidenceRole);
+  const isRuntimeCheck = ["environment", "build", "boot", "positive_control", "negative_control"].includes(evidenceRole);
   const completedRuntimeAttempt = input.outcome === "pass" || input.outcome === "fail";
   if (isRuntimeCheck && executionScope === "static") {
     throw new ValidationError(`${evidenceRole} checks cannot use executionScope static`);

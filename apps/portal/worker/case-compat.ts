@@ -22,14 +22,12 @@ const LEGACY_TRACE_FORMATS = new Set([
 ]);
 
 const LEGACY_PHASES: Array<[string, HarborCheckPhase]> = [
-  ["build", "build"],
-  ["boot", "boot"],
   ["positiveControl", "oracle"],
   ["negativeControl", "nop"],
 ];
 
 /**
- * Temporary deployment bridge. It can be removed after CASE migration 014 has
+ * Temporary deployment bridge. It can be removed after CASE migration 015 has
  * deployed and the portal no longer needs to consume the former catalog shape.
  */
 export function normalizeCaseCatalog(value: unknown): CatalogSnapshot {
@@ -158,23 +156,56 @@ function legacyChecks(runtimeVerification: JsonRecord | null): Partial<Record<Ha
   const phases = optionalRecord(runtimeVerification?.phases);
   if (!phases) return {};
   const checks: Partial<Record<HarborCheckPhase, CatalogCheck>> = {};
+  const explicitEnvironment = legacyCheck(optionalRecord(phases.environment), "environment");
+  if (explicitEnvironment) checks.environment = explicitEnvironment;
   for (const [legacyPhase, phase] of LEGACY_PHASES) {
-    const evidence = optionalRecord(phases[legacyPhase]);
-    const outcome = evidence?.outcome;
-    const id = evidence?.checkRunId;
-    const completedAt = evidence?.completedAt;
-    if ((outcome === "pass" || outcome === "fail") && typeof id === "string" && typeof completedAt === "string") {
-      checks[phase] = {
-        id,
-        phase,
-        outcome: outcome as HarborCheckOutcome,
-        summary: `Recorded ${phase} result.`,
+    const check = legacyCheck(optionalRecord(phases[legacyPhase]), phase);
+    if (check) checks[phase] = check;
+  }
+  if (!checks.environment) {
+    const passingControl = [checks.oracle, checks.nop]
+      .filter((check): check is CatalogCheck => check?.outcome === "pass")
+      .sort((left, right) => left.completedAt.localeCompare(right.completedAt))[0];
+    if (passingControl) {
+      checks.environment = {
+        id: `inferred-environment:${passingControl.id}`,
+        phase: "environment",
+        outcome: "pass",
+        summary: `Environment usability inferred from passing ${passingControl.phase} evidence.`,
         score: null,
-        completedAt,
+        completedAt: passingControl.completedAt,
       };
+    } else {
+      const build = legacyCheck(optionalRecord(phases.build), "environment");
+      const boot = legacyCheck(optionalRecord(phases.boot), "environment");
+      if (build?.outcome === "pass" && boot?.outcome === "pass") {
+        checks.environment = {
+          id: `inferred-environment:${boot.id}`,
+          phase: "environment",
+          outcome: "pass",
+          summary: "Environment usability inferred from passing Build and Boot evidence.",
+          score: null,
+          completedAt: [build.completedAt, boot.completedAt].sort().at(-1) ?? boot.completedAt,
+        };
+      }
     }
   }
   return checks;
+}
+
+function legacyCheck(evidence: JsonRecord | null, phase: HarborCheckPhase): CatalogCheck | null {
+  const outcome = evidence?.outcome;
+  const id = evidence?.checkRunId;
+  const completedAt = evidence?.completedAt;
+  if ((outcome !== "pass" && outcome !== "fail") || typeof id !== "string" || typeof completedAt !== "string") return null;
+  return {
+    id,
+    phase,
+    outcome: outcome as HarborCheckOutcome,
+    summary: `Recorded ${phase} result.`,
+    score: null,
+    completedAt,
+  };
 }
 
 function record(value: unknown): JsonRecord {

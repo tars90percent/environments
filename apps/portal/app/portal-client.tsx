@@ -88,8 +88,7 @@ const text = {
 } as const;
 
 const phaseLabels: Record<HarborCheckPhase, string> = {
-  build: "Build",
-  boot: "Boot",
+  environment: "Environment",
   oracle: "Oracle",
   nop: "Nop",
 };
@@ -228,7 +227,7 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
       {task.summary && <p>{task.summary}</p>}
     </div>
     <div className="task-checks">
-      {task.format === "harbor" ? <div className="checks">{(["build", "boot", "oracle", "nop"] as HarborCheckPhase[]).map((phase) => {
+      {task.format === "harbor" ? <div className="checks">{(["environment", "oracle", "nop"] as HarborCheckPhase[]).map((phase) => {
         const check = task.checks[phase];
         const outcome = check?.outcome ?? "unset";
         const mark = outcome === "pass" ? "✓" : outcome === "fail" ? "×" : t.unset;
@@ -273,7 +272,7 @@ const previewSubmission: CatalogSubmission = {
   formats: ["harbor", "non_harbor"],
   sourceEvents: [{ id: "preview-source", channel: "upload", externalRef: "", sender: "Vendor", receivedAt: "2026-08-20T09:30:00.000Z", rawArtifactId: "artifact:preview:raw", items: [{ id: "preview-file", kind: "archive", displayName: "original-payload.zip", locator: null, artifactId: "artifact:preview:raw", contentSha256: null }] }],
   tasks: [
-    { id: "preview-harbor", stableKey: "repair-cache", title: "Repair cache invalidation", summary: null, kind: "task", format: "harbor", sourcePath: "tasks/repair-cache", artifactId: "artifact:preview:task", contentSha256: null, sourceItemIds: ["preview-file"], checks: { build: previewCheck("build", "pass"), boot: previewCheck("boot", "pass"), oracle: previewCheck("oracle", "pass"), nop: previewCheck("nop", "fail") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] },
+    { id: "preview-harbor", stableKey: "repair-cache", title: "Repair cache invalidation", summary: null, kind: "task", format: "harbor", sourcePath: "tasks/repair-cache", artifactId: "artifact:preview:task", contentSha256: null, sourceItemIds: ["preview-file"], checks: { environment: previewCheck("environment", "pass"), oracle: previewCheck("oracle", "pass"), nop: previewCheck("nop", "fail") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] },
     { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, findings: [] },
   ],
 };

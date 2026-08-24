@@ -14,7 +14,7 @@ export type CatalogScope = "research" | "portal" | "all";
 
 export type SampleTaskKind = "task" | "trace";
 export type SampleTaskFormat = "harbor" | "non_harbor";
-export type HarborCheckPhase = "build" | "boot" | "oracle" | "nop";
+export type HarborCheckPhase = "environment" | "oracle" | "nop";
 export type HarborCheckOutcome = "pass" | "fail";
 
 export type TaskRepresentationKind = "harbor" | "native" | "unknown";
@@ -24,6 +24,7 @@ export type TaskRepresentationBasis = "recorded" | "legacy_format_backfill" | "u
 
 export type CheckEvidenceRole =
   | "contract"
+  | "environment"
   | "build"
   | "boot"
   | "positive_control"
@@ -47,8 +48,7 @@ export type RuntimeVerificationSummary = {
   runtimeVerified: boolean;
   unclassifiedCheckRuns: number;
   phases: {
-    build: RuntimePhaseEvidence;
-    boot: RuntimePhaseEvidence;
+    environment: RuntimePhaseEvidence;
     positiveControl: RuntimePhaseEvidence;
     negativeControl: RuntimePhaseEvidence;
   };

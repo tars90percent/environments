@@ -23,13 +23,16 @@ export function deriveRuntimeVerification(
   unclassifiedCheckRuns: number,
 ): RuntimeVerificationSummary {
   const phases: RuntimeVerificationSummary["phases"] = {
-    build: { ...EMPTY_PHASE },
-    boot: { ...EMPTY_PHASE },
+    environment: { ...EMPTY_PHASE },
     positiveControl: { ...EMPTY_PHASE },
     negativeControl: { ...EMPTY_PHASE },
   };
 
+  let legacyBuild: RuntimeCheckFact | undefined;
+  let legacyBoot: RuntimeCheckFact | undefined;
   for (const fact of facts) {
+    if (fact.evidenceRole === "build") legacyBuild = fact;
+    if (fact.evidenceRole === "boot") legacyBoot = fact;
     const key = phaseKey(fact.evidenceRole);
     if (!key) continue;
     phases[key] = {
@@ -37,6 +40,25 @@ export function deriveRuntimeVerification(
       checkRunId: fact.id,
       completedAt: fact.completedAt,
     };
+  }
+
+  if (phases.environment.outcome === null) {
+    const passingControl = [phases.positiveControl, phases.negativeControl]
+      .filter((phase) => phase.outcome === "pass")
+      .sort((left, right) => (left.completedAt ?? "").localeCompare(right.completedAt ?? ""))[0];
+    if (passingControl) {
+      phases.environment = {
+        outcome: "pass",
+        checkRunId: passingControl.checkRunId,
+        completedAt: passingControl.completedAt,
+      };
+    } else if (legacyBuild?.outcome === "pass" && legacyBoot?.outcome === "pass") {
+      phases.environment = {
+        outcome: "pass",
+        checkRunId: legacyBoot.id,
+        completedAt: [legacyBuild.completedAt, legacyBoot.completedAt].sort().at(-1) ?? legacyBoot.completedAt,
+      };
+    }
   }
 
   const outcomes = Object.values(phases).map((phase) => phase.outcome);
@@ -67,8 +89,7 @@ export function deriveRuntimeVerification(
 }
 
 function phaseKey(role: CheckEvidenceRole): keyof RuntimeVerificationSummary["phases"] | null {
-  if (role === "build") return "build";
-  if (role === "boot") return "boot";
+  if (role === "environment") return "environment";
   if (role === "positive_control") return "positiveControl";
   if (role === "negative_control") return "negativeControl";
   return null;

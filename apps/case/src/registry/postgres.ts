@@ -968,7 +968,7 @@ export class PostgresRegistry implements RegistryRepository {
           tasksAdded += 1;
           if (task.format === "harbor") {
             await this.enqueueWork(client, "harbor_checks", "task", task.id, {
-              phases: ["build", "boot", "oracle", "nop"],
+              phases: ["environment", "oracle", "nop"],
             });
           }
         }
@@ -1583,7 +1583,7 @@ export class PostgresRegistry implements RegistryRepository {
         throw new RegistryConflictError(`Harbor check ${input.id} must reference an immutable check_evidence artifact`);
       }
 
-      const phaseOrder: HarborCheckPhase[] = ["build", "boot", "oracle", "nop"];
+      const phaseOrder: HarborCheckPhase[] = ["environment", "oracle", "nop"];
       const phaseIndex = phaseOrder.indexOf(input.phase);
       if (phaseIndex > 0) {
         const prior = await client.query<{ phase: HarborCheckPhase; outcome: "pass" | "fail" }>(
@@ -1601,11 +1601,8 @@ export class PostgresRegistry implements RegistryRepository {
             throw new RegistryConflictError(`${input.phase} cannot be recorded before ${requiredPhase}`);
           }
         }
-        if (input.phase !== "boot" && (priorByPhase.get("build") !== "pass" || priorByPhase.get("boot") !== "pass")) {
-          throw new RegistryConflictError(`${input.phase} requires Build and Boot to pass`);
-        }
-        if (input.phase === "boot" && priorByPhase.get("build") !== "pass") {
-          throw new RegistryConflictError("Boot requires Build to pass");
+        if (input.phase !== "environment" && priorByPhase.get("environment") !== "pass") {
+          throw new RegistryConflictError(`${input.phase} requires Environment to pass`);
         }
       }
 
@@ -1648,9 +1645,10 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       const definitionId = `case.harbor.${input.phase}`;
-      const evidenceRole = input.phase === "oracle" ? "positive_control"
+      const evidenceRole = input.phase === "environment" ? "environment"
+        : input.phase === "oracle" ? "positive_control"
         : input.phase === "nop" ? "negative_control"
-          : input.phase;
+          : "other";
       await client.query(
         `INSERT INTO registry_check_definitions(id, version, kind, name, description, required, evidence_role)
          VALUES ($1, 1, 'deterministic', $2, $3, true, $4)
@@ -1691,7 +1689,7 @@ export class PostgresRegistry implements RegistryRepository {
       const check = await client.query<{ check_phase: HarborCheckPhase; outcome: string; task_version_id: string }>(
         `SELECT check_phase, outcome, task_version_id
          FROM registry_check_runs
-         WHERE id = $1 AND check_phase IS NOT NULL`,
+         WHERE id = $1 AND check_phase IN ('environment', 'oracle', 'nop')`,
         [input.checkRunId],
       );
       const row = check.rows[0];
@@ -2147,7 +2145,7 @@ export class PostgresRegistry implements RegistryRepository {
                 COUNT(cr.id) FILTER (WHERE cr.outcome = 'not_run')::text AS not_run_count,
                 COUNT(cr.id) FILTER (
                   WHERE cd.evidence_role = 'other'
-                     OR (cd.evidence_role IN ('build', 'boot', 'positive_control', 'negative_control')
+                     OR (cd.evidence_role IN ('environment', 'positive_control', 'negative_control')
                          AND cr.execution_scope <> 'remote_sandbox')
                 )::text AS unclassified_check_count
          FROM registry_task_versions tv
@@ -2172,7 +2170,7 @@ export class PostgresRegistry implements RegistryRepository {
            ON cd.id = cr.definition_id AND cd.version = cr.definition_version
          JOIN registry_task_versions tv ON tv.id = cr.task_version_id
          WHERE tv.catalog_visibility = ANY($1::text[])
-           AND cd.evidence_role IN ('build', 'boot', 'positive_control', 'negative_control')
+           AND cd.evidence_role IN ('environment', 'build', 'boot', 'positive_control', 'negative_control')
            AND cr.execution_scope = 'remote_sandbox'
          ORDER BY cr.task_version_id, cd.evidence_role, cr.completed_at DESC, cr.created_at DESC, cr.id DESC`,
         [visibility],
@@ -2367,7 +2365,7 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_task_findings tf
          JOIN registry_check_runs cr ON cr.id = tf.check_run_id
          WHERE tf.check_run_id IS NOT NULL
-           AND tf.check_phase IS NOT NULL
+           AND tf.check_phase IN ('environment', 'oracle', 'nop')
            AND cr.outcome = 'fail'
          ORDER BY tf.created_at, tf.id`,
       ),
@@ -2581,7 +2579,7 @@ export class PostgresRegistry implements RegistryRepository {
       .filter((row) => row[field] === value)
       .reduce((sum, row) => sum + Number(row.count), 0);
     const harborChecks: Record<string, { pass: number; fail: number }> = Object.fromEntries(
-      (["build", "boot", "oracle", "nop"] as const).map((phase) => [phase, { pass: 0, fail: 0 }]),
+      (["environment", "oracle", "nop"] as const).map((phase) => [phase, { pass: 0, fail: 0 }]),
     );
     for (const row of checks.rows) harborChecks[row.phase]![row.outcome] = Number(row.count);
     return {

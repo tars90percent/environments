@@ -1,6 +1,6 @@
 # Environment and Task Sample Operations
 
-This workspace collects and stores sample RL-task deliveries from vendors. Its job is deliberately narrow: preserve each original submission and its arrival provenance, parse clearly identifiable tasks or traces, classify the material as Harbor or non-Harbor, and run four checks on Harbor tasks.
+This workspace collects and stores sample RL-task deliveries from vendors. Its job is deliberately narrow: preserve each original submission and its arrival provenance, parse clearly identifiable tasks or traces, classify the material as Harbor or non-Harbor, and run three checks on Harbor tasks.
 
 Do not expand this workflow into sample-quality analysis, task repair, format conversion, model evaluation, procurement advice, or research recommendations.
 
@@ -15,8 +15,8 @@ For each vendor delivery:
 3. Parse individual tasks or traces only when they clearly exist in the delivered material.
 4. Classify each task as exactly one of `harbor` or `non_harbor`.
 5. For `non_harbor`, record the task and stop. Do not check it.
-6. For `harbor`, use the Harbor CLI with Modal as the sandbox provider to record exactly four results: Build, Boot, Oracle, and Nop.
-7. Add a finding only for an unequivocal, task-specific problem demonstrated by one of those four checks.
+6. For `harbor`, use the Harbor CLI with Modal as the sandbox provider to record exactly three results: Environment, Oracle, and Nop.
+7. Add a finding only for an unequivocal, task-specific problem demonstrated by one of those three checks.
 
 That is the complete sample-processing workflow. Older instructions, requirements, or implementation notes that prescribe Harbor conversion, native-format exception review, generalized cleaning, verifier classification, model trials, diagnostics, quality judgments, recommendations, or next-action planning do not govern this workflow.
 
@@ -51,42 +51,42 @@ Parsing is organizational, not evaluative. Preserve the vendor's stable task ide
 
 Run Harbor checks only on the exact immutable Harbor task version. Harbor CLI commands must use Modal as the sandbox provider; do not execute vendor Dockerfiles, solutions, tests, or other task code directly on this workstation, in CASE, in the portal, or in any production-connected service.
 
-Track exactly these four checks, matching the portal tags:
+Track exactly these three checks, matching the portal tags:
 
-- **Build pass/fail:** whether the task's Dockerfile builds an image.
-- **Boot pass/fail:** whether a container from that image starts.
+- **Environment pass/fail:** whether Harbor can prepare a usable task environment in Modal, including clean image construction, environment startup, and any declared healthcheck.
 - **Oracle pass/fail:** whether the task's Oracle solution receives score `1`.
 - **Nop pass/fail:** whether Nop receives score `0`.
 
 Retain the exact task artifact, pinned Harbor CLI and Modal/runtime versions, commands, logs, rewards, timeouts, and sandbox metadata needed to support those results. Store check evidence separately from the task package.
 
-A result is `pass` or `fail` only when that check ran against the exact task version. Run the checks in Build, Boot, Oracle, Nop order. If Build or Boot failure makes a later check impossible, leave the later check unset rather than marking it failed. If a controller, authentication, Modal, network, or other infrastructure problem prevents a check, leave its tag unset and retain the details only in operational logs, not findings.
+A result is `pass` or `fail` only when that check ran against the exact task version. Use two Harbor trials: an Oracle trial with a forced clean build, which supplies the Environment and Oracle results, followed by a Nop trial in a different fresh sandbox using the built image. Record Environment as soon as Harbor's environment-setup phase and any declared healthcheck succeed; do not run a separate Environment trial. If Environment failure makes a later check impossible, leave the later check unset rather than marking it failed. If a controller, authentication, Modal, network, or other infrastructure problem prevents a check, leave its tag unset and retain the details only in operational logs, not findings.
+
+For historical records, a passing Oracle or Nop result is conclusive evidence that Harbor first prepared a usable environment for that exact task version. An Environment pass may be inferred from that retained passing control evidence, or from the latest historical Build and Boot results when both are explicit passes. Do not infer Environment from a failed or unset historical control, or when either latest legacy setup result is failed or unset, because older failure records may not distinguish a score mismatch from setup failure.
 
 Do not add extra gates such as generalized package-quality review, public-dependency review, document/rubric inspection, undeclared-dependency analysis, repeat controls, model trials, reference-agent runs, DeepSeek diagnostics, verifier-type analysis, or nondeterministic assessments.
 
 ## Findings
 
-Findings are short factual notes for unequivocal task-specific issues exposed by the four Harbor checks. Limit them to:
+Findings are short factual notes for unequivocal task-specific issues exposed by the three Harbor checks. Limit them to:
 
-- an image-building issue demonstrated by Build;
-- a container-starting issue demonstrated by Boot;
+- an image-building, startup, or declared-healthcheck issue demonstrated by Environment;
 - an Oracle failure or reward different from `1`; or
 - a Nop failure or reward different from `0`.
 
-Do not use findings for infrastructure failures, missing evidence, format opinions, task quality, difficulty, novelty, realism, usefulness, likely training signal, purchasing advice, proposed repairs, speculation, or recommended next actions. Do not philosophize about the sample. The four results and any directly supported task-specific finding are the complete evaluation output.
+Do not use findings for infrastructure failures, missing evidence, format opinions, task quality, difficulty, novelty, realism, usefulness, likely training signal, purchasing advice, proposed repairs, speculation, or recommended next actions. Do not philosophize about the sample. The three results and any directly supported task-specific finding are the complete evaluation output.
 
 ## CASE and portal boundaries
 
 CASE owns the canonical registry and sample artifacts:
 
-- Railway PostgreSQL stores vendors, source graphs, dated submissions, parsed tasks or traces, exact task versions, the four Harbor check results, findings, and supporting operational records.
+- Railway PostgreSQL stores vendors, source graphs, dated submissions, parsed tasks or traces, exact task versions, the three Harbor check results, findings, and supporting operational records.
 - Railway S3-compatible object storage stores immutable original payloads, snapshots, task packages, traces, and check evidence. It must not retain full purchased deliveries.
 - The durable queue may schedule capture, parsing, and Harbor-check work. A queued item does not prove that a worker ran it.
 - Use the `case-registry` CLI rather than raw database writes. It calls the canonical registry library directly. Inspect the existing record first, choose the narrowest operation, and run `case-registry operations` for the current command schemas instead of guessing fields. The HTTP API serves the portal-facing catalog. A dormant researcher-upload adapter may remain for compatibility, but it is not an active capture path.
 
 Trusted CASE capture commands call the same registry library directly with CASE's database and object-store credentials so that artifact, source, submission, and link records are committed through one canonical transaction. This is not permission for ad hoc SQL; humans and agents still use the supported commands.
 
-小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, source links, parsed material, downloads, the four Harbor tags, and findings. It has no submission upload, procurement, research-demand, category, status, scoring, recommendation, or review workflow.
+小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, source links, parsed material, downloads, the three Harbor tags, and findings. It has no submission upload, procurement, research-demand, category, status, scoring, recommendation, or review workflow.
 
 The current dedicated capture paths are reviewed Feishu message/file plans and reviewed Feishu Mail message/attachment plans. They preserve payloads and register submissions; they do not imply universal discovery or parsing. Researcher upload through 小环境 is disabled. Check live authentication, scopes, ACLs, and transport configuration before claiming a source is monitored or accessible.
 
@@ -110,4 +110,4 @@ Both Railway services deploy independently from `main` using scoped paths. CASE 
 
 ## Completion
 
-A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked and classified; and every parsed Harbor task has accurate Build, Boot, Oracle, and Nop tags for each check that ran, with prerequisite-blocked checks left unset and only directly supported task-specific findings. Non-Harbor material requires no checks or further analysis.
+A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked and classified; and every parsed Harbor task has accurate Environment, Oracle, and Nop tags for each check that ran, with prerequisite-blocked checks left unset and only directly supported task-specific findings. Non-Harbor material requires no checks or further analysis.

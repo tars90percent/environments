@@ -31,18 +31,18 @@ test("the CASE guide defines the narrow submission-processing workflow", async (
   assert.match(guide, /preserve each original submission and its arrival provenance/);
   assert.match(guide, /exactly one of `harbor` or `non_harbor`/);
   assert.match(guide, /For `non_harbor`, record the task and stop\. Do not check it/);
-  assert.match(guide, /exactly four results: Build, Boot, Oracle, and Nop/);
+  assert.match(guide, /exactly three results: Environment, Oracle, and Nop/);
   assert.match(guide, /complete sample-processing workflow/);
 });
 
-test("the CASE guide permits only the four Modal-backed Harbor checks", async () => {
+test("the CASE guide permits only the three Modal-backed Harbor checks", async () => {
   const guide = await readFile(rootGuide, "utf8");
 
-  assert.match(guide, /\*\*Build pass\/fail:\*\*.*Dockerfile builds an image/);
-  assert.match(guide, /\*\*Boot pass\/fail:\*\*.*container.*start/);
+  assert.match(guide, /\*\*Environment pass\/fail:\*\*.*clean image construction.*environment startup.*declared healthcheck/);
   assert.match(guide, /\*\*Oracle pass\/fail:\*\*.*score `1`/);
   assert.match(guide, /\*\*Nop pass\/fail:\*\*.*score `0`/);
   assert.match(guide, /Modal as the sandbox provider/);
+  assert.match(guide, /do not run a separate Environment trial/i);
   assert.match(guide, /Do not add.*package-quality/);
   assert.match(guide, /model trials/);
   assert.match(guide, /DeepSeek diagnostics/);

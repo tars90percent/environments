@@ -1076,6 +1076,197 @@ const migrations: Migration[] = [
       DELETE FROM registry_research_demands;
     `,
   },
+  {
+    id: "015_environment_oracle_nop_checks",
+    sql: `
+      -- Harbor exposes image construction, environment startup, and any declared
+      -- healthcheck as one environment-setup operation. Preserve historical
+      -- Build/Boot rows, but make Environment, Oracle, and Nop the active contract.
+      ALTER TABLE registry_check_definitions
+        DROP CONSTRAINT registry_check_definitions_evidence_role_check,
+        ADD CONSTRAINT registry_check_definitions_evidence_role_check
+          CHECK (evidence_role IN (
+            'contract', 'environment', 'build', 'boot', 'positive_control',
+            'negative_control', 'hermeticity', 'evidence_completeness', 'other'
+          ));
+
+      ALTER TABLE registry_check_runs
+        DROP CONSTRAINT registry_check_runs_check_phase_check,
+        ADD CONSTRAINT registry_check_runs_check_phase_check
+          CHECK (check_phase IS NULL OR check_phase IN (
+            'environment', 'oracle', 'nop', 'build', 'boot'
+          ));
+
+      ALTER TABLE registry_task_findings
+        DROP CONSTRAINT registry_task_findings_check_phase_check,
+        ADD CONSTRAINT registry_task_findings_check_phase_check
+          CHECK (check_phase IS NULL OR check_phase IN (
+            'environment', 'oracle', 'nop', 'build', 'boot'
+          ));
+
+      INSERT INTO registry_check_definitions(
+        id, version, kind, name, description, required, evidence_role
+      ) VALUES (
+        'case.harbor.environment', 1, 'deterministic', 'environment',
+        'Harbor environment setup pass/fail', true, 'environment'
+      )
+      ON CONFLICT(id, version) DO NOTHING;
+
+      UPDATE registry_work_items
+      SET payload = jsonb_set(payload, '{phases}', '["environment", "oracle", "nop"]'::jsonb),
+          updated_at = now()
+      WHERE kind = 'harbor_checks'
+        AND status IN ('queued', 'leased');
+
+      -- A passing Oracle or Nop control could only have produced its expected
+      -- score after Harbor prepared the environment. Add a new provenance-linked
+      -- Environment result instead of rewriting the historical control record.
+      WITH passing_controls AS (
+        SELECT DISTINCT ON (task_version_id)
+               id, task_version_id, evidence_artifact_id, harbor_version,
+               modal_version, command, sandbox_ref, started_at, completed_at,
+               check_phase
+        FROM registry_check_runs
+        WHERE check_phase IN ('oracle', 'nop')
+          AND outcome = 'pass'
+        ORDER BY task_version_id, completed_at, created_at, id
+      )
+      INSERT INTO registry_check_runs(
+        id, task_version_id, definition_id, definition_version, outcome, summary,
+        runner, evidence, started_at, completed_at, execution_scope, check_phase,
+        evidence_artifact_id, harbor_version, modal_version, command, sandbox_ref, score
+      )
+      SELECT 'case:environment-inferred-from:' || pc.id,
+             pc.task_version_id,
+             'case.harbor.environment',
+             1,
+             'pass',
+             'Environment usability inferred from passing historical ' || initcap(pc.check_phase) || ' evidence.',
+             jsonb_build_object(
+               'inferred', true,
+               'basis', 'passing_control',
+               'sourceCheckRunId', pc.id
+             ),
+             jsonb_build_object(
+               'inferred', true,
+               'basis', 'passing_control',
+               'sourceCheckRunId', pc.id
+             ),
+             pc.started_at,
+             pc.completed_at,
+             'remote_sandbox',
+             'environment',
+             pc.evidence_artifact_id,
+             pc.harbor_version,
+             pc.modal_version,
+             pc.command,
+             pc.sandbox_ref,
+             NULL
+      FROM passing_controls pc
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM registry_check_runs existing
+        WHERE existing.task_version_id = pc.task_version_id
+          AND existing.check_phase = 'environment'
+          AND existing.outcome IN ('pass', 'fail')
+      )
+      ON CONFLICT(id) DO NOTHING;
+
+      -- Some historical tasks have explicit successful Build and Boot evidence
+      -- but no completed control. Treat the latest result for each legacy phase
+      -- as authoritative and infer Environment only when both are passes.
+      WITH latest_legacy_phases AS (
+        SELECT DISTINCT ON (task_version_id, check_phase)
+               id, task_version_id, evidence_artifact_id, harbor_version,
+               modal_version, command, sandbox_ref, started_at, completed_at,
+               check_phase, outcome
+        FROM registry_check_runs
+        WHERE check_phase IN ('build', 'boot')
+          AND outcome IN ('pass', 'fail')
+        ORDER BY task_version_id, check_phase, completed_at DESC, created_at DESC, id DESC
+      ),
+      passing_build_and_boot AS (
+        SELECT boot.id AS boot_id,
+               build.id AS build_id,
+               boot.task_version_id,
+               boot.evidence_artifact_id,
+               boot.harbor_version,
+               boot.modal_version,
+               boot.command,
+               boot.sandbox_ref,
+               LEAST(build.started_at, boot.started_at) AS started_at,
+               GREATEST(build.completed_at, boot.completed_at) AS completed_at
+        FROM latest_legacy_phases build
+        JOIN latest_legacy_phases boot
+          ON boot.task_version_id = build.task_version_id
+         AND boot.check_phase = 'boot'
+        WHERE build.check_phase = 'build'
+          AND build.outcome = 'pass'
+          AND boot.outcome = 'pass'
+      )
+      INSERT INTO registry_check_runs(
+        id, task_version_id, definition_id, definition_version, outcome, summary,
+        runner, evidence, started_at, completed_at, execution_scope, check_phase,
+        evidence_artifact_id, harbor_version, modal_version, command, sandbox_ref, score
+      )
+      SELECT 'case:environment-inferred-from:' || pair.boot_id,
+             pair.task_version_id,
+             'case.harbor.environment',
+             1,
+             'pass',
+             'Environment usability inferred from passing historical Build and Boot evidence.',
+             jsonb_build_object(
+               'inferred', true,
+               'basis', 'passing_build_and_boot',
+               'sourceCheckRunIds', jsonb_build_array(pair.build_id, pair.boot_id)
+             ),
+             jsonb_build_object(
+               'inferred', true,
+               'basis', 'passing_build_and_boot',
+               'sourceCheckRunIds', jsonb_build_array(pair.build_id, pair.boot_id)
+             ),
+             pair.started_at,
+             pair.completed_at,
+             'remote_sandbox',
+             'environment',
+             pair.evidence_artifact_id,
+             pair.harbor_version,
+             pair.modal_version,
+             pair.command,
+             pair.sandbox_ref,
+             NULL
+      FROM passing_build_and_boot pair
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM registry_check_runs existing
+        WHERE existing.task_version_id = pair.task_version_id
+          AND existing.check_phase = 'environment'
+          AND existing.outcome IN ('pass', 'fail')
+      )
+      ON CONFLICT(id) DO NOTHING;
+
+      CREATE OR REPLACE VIEW registry_harbor_check_results AS
+      SELECT id,
+             task_version_id AS task_id,
+             check_phase AS phase,
+             outcome,
+             summary,
+             evidence_artifact_id,
+             harbor_version,
+             modal_version,
+             command,
+             sandbox_ref,
+             score,
+             started_at,
+             completed_at
+      FROM registry_check_runs
+      WHERE check_phase IN ('environment', 'oracle', 'nop')
+        AND outcome IN ('pass', 'fail');
+
+      COMMENT ON VIEW registry_harbor_check_results IS
+        'Active CASE check abstraction: Environment, Oracle, or Nop pass/fail only.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

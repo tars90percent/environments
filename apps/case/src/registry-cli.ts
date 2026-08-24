@@ -237,7 +237,7 @@ function operationSchemas() {
     "restore-vendor": { arguments: ["<restore.json>"], fields: ["vendorId", "reason", "actor"] },
     "store-file": { arguments: ["<artifact-kind>", "<absolute-file-path>"] },
     "download-artifact": { arguments: ["<artifact-id>", "<output-path>"] },
-    "record-harbor-check": { arguments: ["<check.json>"], phases: ["build", "boot", "oracle", "nop"] },
+    "record-harbor-check": { arguments: ["<check.json>"], phases: ["environment", "oracle", "nop"] },
     "record-harbor-finding": { arguments: ["<finding.json>"], fields: ["id", "taskId", "checkRunId", "finding"] },
     "register-artifact": { arguments: ["<artifact.json>"], note: "The object is verified before its record is registered." },
     "remove-submission": { arguments: ["<removal.json>"], fields: ["batchId", "disposition", "reason", "actor"] },

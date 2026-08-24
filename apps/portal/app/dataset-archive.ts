@@ -101,7 +101,7 @@ export function tarBytes(entries: Array<{ path: string; bytes: Uint8Array; mode?
 async function* taskDatasetChunks(submission: DatasetSubmission, resolvePackage: PackageResolver): AsyncGenerator<Uint8Array> {
   const manifest = taskDatasetManifest(submission);
   const tasks = manifest.tasks;
-  const readme = `# CASE tasks\n\nThis archive contains the ${tasks.length} exact task or trace artifacts retained for the submission “${submission.label}”. See manifest.json for source identity, Harbor/non-Harbor format, the four Harbor checks when applicable, findings, and content hashes.\n`;
+  const readme = `# CASE tasks\n\nThis archive contains the ${tasks.length} exact task or trace artifacts retained for the submission “${submission.label}”. See manifest.json for source identity, Harbor/non-Harbor format, the three Harbor checks when applicable, findings, and content hashes.\n`;
 
   yield* inlineTarEntry("README.md", encoder.encode(readme));
   yield* inlineTarEntry("manifest.json", encoder.encode(`${JSON.stringify(manifest, null, 2)}\n`));

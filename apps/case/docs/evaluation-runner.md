@@ -27,7 +27,7 @@ If an agent or model needs an API key, use one dedicated to evaluation. Common m
 Unpack the exact content-addressed task artifact beneath `/data/evaluations/input/<artifact-sha256>`. A typical first run is:
 
 ```sh
-harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle
+harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle --force-build
 ```
 
 The launcher supplies `--env modal`. Harbor creates its normal `jobs/` result tree under `/data/evaluations`. That controller-side tree contains the job and trial configuration, results, agent trajectory, verifier output, logs, and collected artifacts downloaded from the sandbox. Treat the Modal filesystem as temporary: evidence is durable only after Harbor downloads it and CASE stores the relevant files as immutable registry artifacts.
@@ -50,20 +50,27 @@ Record the invocation, artifact digest, Harbor version, Modal environment, agent
 For each immutable task version:
 
 1. Validate the declared package shape without executing task code.
-2. Record the exact artifact hash plus the pinned Harbor, agent, model, and harness versions.
-3. Build the task environment from the declared public dependencies in Modal.
-4. Run the Oracle/gold solution once in a fresh sandbox and retain its reward and log bundle.
-5. Run the Nop/untouched baseline once in a different fresh sandbox and retain its reward and log bundle.
-6. Run the currently designated target-model and frontier-reference trials with the required repetition count.
-7. Collect complete trajectories, rewards, turn counts, timing, resource metadata, stdout/stderr, verifier output, and declared artifacts.
-8. Write named deterministic check results and trajectory records through CASE, upload immutable evidence, and mark missing evidence separately from failed checks.
+2. Record the exact artifact hash plus the pinned Harbor and Modal versions.
+3. Run Oracle once in a fresh sandbox with a forced clean build. Record Environment when Harbor's environment-setup phase and any declared healthcheck succeed, then retain the Oracle reward and log bundle.
+4. Run Nop once in a different fresh sandbox using the built image and retain its reward and log bundle.
+5. Collect rewards, timing, sandbox metadata, stdout/stderr, verifier output, and declared artifacts needed to support the three results.
+6. Write Environment, Oracle, and Nop through CASE, upload immutable evidence, and leave results unset when infrastructure prevents a conclusive check.
 
-When recording those results, use the structured evidence roles `build`,
-`boot`, `positive_control`, and `negative_control`, with
+When recording those results, use the structured evidence roles `environment`,
+`positive_control`, and `negative_control`, with
 `executionScope: "remote_sandbox"`. Package/schema validation uses the separate
 `contract` role. Do not encode these facts in a check name, task format string,
 or workflow label; the catalog derives runtime state from the structured roles
 on the exact task version.
+
+Harbor exposes image construction, environment startup, and any declared
+healthcheck as one environment-setup operation. Do not parse provider error text
+into separate Build and Boot results and do not run a redundant startup trial.
+A passing historical Oracle or Nop result is sufficient to infer Environment
+pass. Passing latest historical Build and Boot results are also sufficient. An
+older failed control is not, and a failed or unset latest Build or Boot result
+does not support inference, because older failures may not distinguish setup
+failure from an unexpected score.
 
 Use no-network execution as the baseline when the provider and task support it. Grant only the minimum phase-scoped hosts required for dependency installation or model access. A successful process exit, sandbox completion, or image build is evidence for that step only; none is a quality endorsement.
 
@@ -85,8 +92,8 @@ Modal is eligible for purchased-sample evaluation only after a disposable trial 
 - a representative multi-container task works when the current task mix requires it;
 - CPU, memory, disk, wall-clock, process, and output limits are enforced;
 - default network isolation and explicit allowlists behave as recorded;
-- one Oracle trial returns the expected positive reward;
-- one Nop trial returns the expected negative reward;
+- one Oracle trial returns score `1`;
+- one Nop trial returns score `0`;
 - a deliberately hanging task is killed and its sandbox is destroyed;
 - task code cannot reach production CASE services or credentials;
 - logs and complete trajectories survive sandbox destruction and are registered against the exact task version.

@@ -1,6 +1,6 @@
 export type TaskKind = "task" | "trace";
 export type TaskFormat = "harbor" | "non_harbor";
-export type HarborCheckPhase = "build" | "boot" | "oracle" | "nop";
+export type HarborCheckPhase = "environment" | "oracle" | "nop";
 export type HarborCheckOutcome = "pass" | "fail";
 
 export type CatalogCheck = {
