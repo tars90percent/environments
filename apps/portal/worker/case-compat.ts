@@ -106,6 +106,7 @@ function normalizeLegacyTask(value: JsonRecord): CatalogTask {
     contentSha256: nullableText(value.contentSha256),
     sourceItemIds: strings(value.sourceItemIds),
     checks: legacyChecks(optionalRecord(value.runtimeVerification)),
+    attempts: {},
     findings: [],
   };
 }

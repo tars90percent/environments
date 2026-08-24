@@ -2,6 +2,7 @@ export type TaskKind = "task" | "trace";
 export type TaskFormat = "harbor" | "non_harbor";
 export type HarborCheckPhase = "environment" | "oracle" | "nop";
 export type HarborCheckOutcome = "pass" | "fail";
+export type HarborCheckAttemptStatus = "blocked" | "inconclusive";
 
 export type CatalogCheck = {
   id: string;
@@ -9,6 +10,14 @@ export type CatalogCheck = {
   outcome: HarborCheckOutcome;
   summary: string;
   score: number | null;
+  completedAt: string;
+};
+
+export type CatalogAttempt = {
+  id: string;
+  phase: HarborCheckPhase;
+  status: HarborCheckAttemptStatus;
+  summary: string;
   completedAt: string;
 };
 
@@ -31,6 +40,7 @@ export type CatalogTask = {
   contentSha256: string | null;
   sourceItemIds: string[];
   checks: Partial<Record<HarborCheckPhase, CatalogCheck>>;
+  attempts: Partial<Record<HarborCheckPhase, CatalogAttempt>>;
   findings: CatalogFinding[];
 };
 

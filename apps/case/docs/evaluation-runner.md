@@ -45,7 +45,7 @@ change is allowed by this adapter.
 
 For a source archive with known task boundaries, `case-task-package` performs bounded ZIP inspection and extraction and creates deterministic `tar.gz` task packages whose contents begin at the task root. It rejects traversal paths, links, devices, encrypted entries, duplicate paths, and configured size, depth, or compression-ratio violations. A catalog task record with no artifact may be finalized exactly once when its identity fields still match and the new content-addressed package is provenance-linked; an already bound task version remains immutable.
 
-Record the invocation, artifact digest, Harbor version, Modal environment, agent and model versions, start and finish time, and sandbox outcome. A controller crash or missing download is missing evidence, not a failed deterministic check.
+Record the invocation, artifact digest, Harbor version, Modal environment, agent and model versions, start and finish time, and sandbox outcome. A controller crash or missing download is missing evidence, not a failed deterministic check; append a `blocked` or `inconclusive` phase attempt when the phase was actually tried.
 
 ## Trust boundaries
 
@@ -65,7 +65,7 @@ For each immutable task version:
 3. Run Oracle once in a fresh sandbox with a forced clean build, using the narrowly approved named-`COPY --chown` numeric adapter when applicable. Record Environment when Harbor's environment-setup phase and any declared healthcheck succeed, then retain the Oracle reward and log bundle.
 4. Run Nop once in a different fresh sandbox using the built image and retain its reward and log bundle.
 5. Collect rewards, timing, sandbox metadata, stdout/stderr, verifier output, and declared artifacts needed to support the three results.
-6. Write Environment, Oracle, and Nop through CASE, upload immutable evidence, and leave results unset when infrastructure prevents a conclusive check.
+6. Write Environment, Oracle, and Nop through CASE, upload immutable evidence, and leave results unset when infrastructure prevents a conclusive check. For every phase actually tried without a result, append a `blocked` or `inconclusive` attempt; do not create attempt records for prerequisite phases that were never reached.
 
 When recording those results, use the structured evidence roles `environment`,
 `positive_control`, and `negative_control`, with

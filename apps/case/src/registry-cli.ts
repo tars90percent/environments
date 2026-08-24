@@ -13,6 +13,7 @@ import type { RegistryRepository } from "./registry/repository.js";
 import {
   parseAppendTasks,
   parseArtifact,
+  parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
   parseSourceEnvelope,
@@ -98,6 +99,10 @@ if (command === "operations") {
         await repository.recordHarborCheck(parseHarborCheckResult(await jsonFile(argument)));
         output({ recorded: true });
         break;
+      case "record-harbor-attempt":
+        await repository.recordHarborAttempt(parseHarborCheckAttempt(await jsonFile(argument)));
+        output({ recorded: true });
+        break;
       case "record-harbor-finding":
         output(await repository.recordHarborFinding(parseHarborFinding(await jsonFile(argument))));
         break;
@@ -123,7 +128,7 @@ if (command === "operations") {
         output({ updated: true });
         break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|import|import-source|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|import|import-source|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
     }
   } finally {
     await repository.close();
@@ -238,6 +243,12 @@ function operationSchemas() {
     "store-file": { arguments: ["<artifact-kind>", "<absolute-file-path>"] },
     "download-artifact": { arguments: ["<artifact-id>", "<output-path>"] },
     "record-harbor-check": { arguments: ["<check.json>"], phases: ["environment", "oracle", "nop"] },
+    "record-harbor-attempt": {
+      arguments: ["<attempt.json>"],
+      fields: ["id", "taskId", "phase", "status", "summary", "evidenceArtifactId", "harborVersion", "modalVersion", "command", "sandboxRef?", "startedAt", "completedAt"],
+      phases: ["environment", "oracle", "nop"],
+      statuses: ["blocked", "inconclusive"],
+    },
     "record-harbor-finding": { arguments: ["<finding.json>"], fields: ["id", "taskId", "checkRunId", "finding"] },
     "register-artifact": { arguments: ["<artifact.json>"], note: "The object is verified before its record is registered." },
     "remove-submission": { arguments: ["<removal.json>"], fields: ["batchId", "disposition", "reason", "actor"] },

@@ -16,6 +16,7 @@ export type SampleTaskKind = "task" | "trace";
 export type SampleTaskFormat = "harbor" | "non_harbor";
 export type HarborCheckPhase = "environment" | "oracle" | "nop";
 export type HarborCheckOutcome = "pass" | "fail";
+export type HarborCheckAttemptStatus = "blocked" | "inconclusive";
 
 export type TaskRepresentationKind = "harbor" | "native" | "unknown";
 export type TaskRepresentationPath = "already_harbor" | "normalized_to_harbor" | "native_format_exception";
@@ -398,6 +399,21 @@ export type HarborCheckResultInput = {
   completedAt: string;
 };
 
+export type HarborCheckAttemptInput = {
+  id: string;
+  taskId: string;
+  phase: HarborCheckPhase;
+  status: HarborCheckAttemptStatus;
+  summary: string;
+  evidenceArtifactId: string;
+  harborVersion: string;
+  modalVersion: string;
+  command: string;
+  sandboxRef?: string;
+  startedAt: string;
+  completedAt: string;
+};
+
 export type HarborFindingInput = {
   id: string;
   taskId: string;
@@ -755,6 +771,14 @@ export type SampleCatalogCheck = {
   completedAt: string;
 };
 
+export type SampleCatalogAttempt = {
+  id: string;
+  phase: HarborCheckPhase;
+  status: HarborCheckAttemptStatus;
+  summary: string;
+  completedAt: string;
+};
+
 export type SampleCatalogFinding = {
   id: string;
   phase: HarborCheckPhase;
@@ -774,6 +798,7 @@ export type SampleCatalogTask = {
   contentSha256: string | null;
   sourceItemIds: string[];
   checks: Partial<Record<HarborCheckPhase, SampleCatalogCheck>>;
+  attempts: Partial<Record<HarborCheckPhase, SampleCatalogAttempt>>;
   findings: SampleCatalogFinding[];
 };
 

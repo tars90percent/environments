@@ -6,6 +6,7 @@ import type {
   CheckExecutionScope,
   CheckResultInput,
   FollowUpInput,
+  HarborCheckAttemptInput,
   HarborCheckResultInput,
   HarborFindingInput,
   ResearcherUploadInput,
@@ -56,6 +57,7 @@ const TASK_KINDS = new Set(["task", "trace"] as const);
 const TASK_FORMATS = new Set(["harbor", "non_harbor"] as const);
 const HARBOR_PHASES = new Set(["environment", "oracle", "nop"] as const);
 const HARBOR_OUTCOMES = new Set(["pass", "fail"] as const);
+const HARBOR_ATTEMPT_STATUSES = new Set(["blocked", "inconclusive"] as const);
 
 export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
@@ -313,6 +315,31 @@ export function parseHarborCheckResult(value: unknown): HarborCheckResultInput {
     command: boundedString(input.command, "command", 10_000),
     sandboxRef: optionalString(input.sandboxRef, "sandboxRef"),
     ...(score === undefined ? {} : { score }),
+    startedAt,
+    completedAt,
+  };
+}
+
+export function parseHarborCheckAttempt(value: unknown): HarborCheckAttemptInput {
+  const input = object(value, "Harbor check attempt");
+  onlyKeys(input, new Set([
+    "id", "taskId", "phase", "status", "summary", "evidenceArtifactId",
+    "harborVersion", "modalVersion", "command", "sandboxRef", "startedAt", "completedAt",
+  ]), "Harbor check attempt");
+  const startedAt = timestamp(input.startedAt, "startedAt");
+  const completedAt = timestamp(input.completedAt, "completedAt");
+  if (Date.parse(completedAt) < Date.parse(startedAt)) throw new ValidationError("completedAt must not precede startedAt");
+  return {
+    id: identifier(input.id, "id"),
+    taskId: identifier(input.taskId, "taskId"),
+    phase: enumValue(input.phase, HARBOR_PHASES, "phase"),
+    status: enumValue(input.status, HARBOR_ATTEMPT_STATUSES, "status"),
+    summary: boundedString(input.summary, "summary", 10_000),
+    evidenceArtifactId: identifier(input.evidenceArtifactId, "evidenceArtifactId"),
+    harborVersion: boundedString(input.harborVersion, "harborVersion", 300),
+    modalVersion: boundedString(input.modalVersion, "modalVersion", 300),
+    command: boundedString(input.command, "command", 10_000),
+    sandboxRef: optionalString(input.sandboxRef, "sandboxRef"),
     startedAt,
     completedAt,
   };

@@ -132,6 +132,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .check-mark { color: var(--faint); font-size: 13px; font-weight: 650; line-height: 1; }
 .check.pass .check-mark { color: var(--green); }
 .check.fail .check-mark { color: var(--red); }
+.check.attempted .check-mark { color: var(--burgundy); font-size: 8px; font-weight: 620; }
 .task-actions { display: flex; justify-content: flex-end; }
 .task-actions a { padding: 5px 8px; border-radius: 7px; background: var(--burgundy-soft); color: var(--burgundy); font-size: 8px; font-weight: 620; text-decoration: none; white-space: nowrap; }
 .task-findings { margin: 0 10px 10px; border: 1px solid rgba(125,31,42,.09); border-radius: 10px; background: #fffdf9; overflow: hidden; }

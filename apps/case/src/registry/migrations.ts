@@ -1378,6 +1378,33 @@ const migrations: Migration[] = [
       ON CONFLICT(id) DO NOTHING;
     `,
   },
+  {
+    id: "017_harbor_check_attempts",
+    sql: `
+      CREATE TABLE registry_harbor_check_attempts (
+        id text PRIMARY KEY,
+        task_version_id text NOT NULL REFERENCES registry_task_versions(id) ON DELETE CASCADE,
+        check_phase text NOT NULL CHECK (check_phase IN ('environment', 'oracle', 'nop')),
+        status text NOT NULL CHECK (status IN ('blocked', 'inconclusive')),
+        summary text NOT NULL,
+        evidence_artifact_id text NOT NULL REFERENCES registry_artifacts(id),
+        harbor_version text NOT NULL,
+        modal_version text NOT NULL,
+        command text NOT NULL,
+        sandbox_ref text,
+        started_at timestamptz NOT NULL,
+        completed_at timestamptz NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (completed_at >= started_at)
+      );
+
+      CREATE INDEX registry_harbor_check_attempts_task_phase_idx
+        ON registry_harbor_check_attempts(task_version_id, check_phase, completed_at DESC, id DESC);
+
+      COMMENT ON TABLE registry_harbor_check_attempts IS
+        'Append-only operational records for Harbor phases that were attempted without a conclusive pass/fail result.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

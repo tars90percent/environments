@@ -42,6 +42,9 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Nop/);
   assert.match(source, /task\.format === "harbor"/);
   assert.match(source, /check-mark/);
+  assert.match(source, /task\.attempts\?\.\[phase\]/);
+  assert.match(source, /attempted: "Tried"/);
+  assert.match(source, /notAttempted: "Not attempted"/);
   assert.match(source, /task\.findings\.length > 0/);
   assert.match(source, /fetch\("\/api\/catalog"/);
   assert.match(source, /filter\(\(vendor\) => vendor\.submissions\.length > 0\)/);
@@ -191,7 +194,7 @@ test("downloads every available task artifact", async () => {
 });
 
 function task(id, stableKey, kind, format, artifactId) {
-  return { id, stableKey, title: stableKey, summary: null, kind, format, sourcePath: `${kind}s/${stableKey}`, artifactId, contentSha256: "a".repeat(64), checks: {}, findings: [] };
+  return { id, stableKey, title: stableKey, summary: null, kind, format, sourcePath: `${kind}s/${stableKey}`, artifactId, contentSha256: "a".repeat(64), checks: {}, attempts: {}, findings: [] };
 }
 
 function sessionCookie() {

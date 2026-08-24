@@ -6,6 +6,7 @@ import type {
   CaptureSubmissionInput,
   CaptureSubmissionResult,
   CatalogSourceEvent,
+  HarborCheckAttemptInput,
   HarborCheckResultInput,
   HarborFindingInput,
   OperationsSummary,
@@ -37,6 +38,7 @@ export interface RegistryRepository {
   vendorDirectory(includeArchived?: boolean): Promise<VendorDirectoryEntry[]>;
   archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
+  recordHarborAttempt(input: HarborCheckAttemptInput): Promise<void>;
   recordHarborCheck(input: HarborCheckResultInput): Promise<void>;
   recordHarborFinding(input: HarborFindingInput): Promise<{ findingId: string; created: boolean }>;
   registerArtifact(input: ArtifactInput): Promise<void>;

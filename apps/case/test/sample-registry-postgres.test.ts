@@ -44,6 +44,8 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
         { id: "task-trace", stableKey: "trace-one", title: "Trace one", kind: "trace", format: "non_harbor", sourcePath: "traces/one.jsonl", artifactId: `artifact:sha256:${traceSha}`, contentSha256: traceSha, sourceItemIds: ["source-trace"] },
       ],
     });
+    await assert.rejects(() => repository!.recordHarborAttempt(attempt("task-trace", evidenceSha)), RegistryConflictError);
+    await repository.recordHarborAttempt(attempt("task-one", evidenceSha));
     await assert.rejects(() => repository!.recordHarborCheck(check("task-trace", evidenceSha)), RegistryConflictError);
     await repository.recordHarborCheck(check("task-one", evidenceSha));
     await repository.recordHarborFinding({ id: "finding-environment", taskId: "task-one", checkRunId: "check-environment", finding: "Harbor could not prepare the task environment." });
@@ -53,8 +55,10 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.deepEqual(submission?.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
     assert.equal(submission?.tasks[0]?.checks.environment?.outcome, "fail");
     assert.equal(submission?.tasks[0]?.checks.oracle, undefined);
+    assert.equal(submission?.tasks[0]?.attempts.oracle?.status, "blocked");
     assert.equal(submission?.tasks[0]?.findings[0]?.phase, "environment");
     assert.deepEqual(submission?.tasks[1]?.checks, {});
+    assert.deepEqual(submission?.tasks[1]?.attempts, {});
 
     await repository.recordHarborCheck({
       ...check("task-one", evidenceSha),
@@ -77,6 +81,10 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
 
 function check(taskId: string, evidenceSha: string) {
   return { id: "check-environment", taskId, phase: "environment" as const, outcome: "fail" as const, summary: "Harbor environment setup failed.", evidenceArtifactId: `artifact:sha256:${evidenceSha}`, harborVersion: "0.21.0", modalVersion: "1.5.4", command: "case-harbor run --path /data/evaluations/input/task --agent oracle --force-build", startedAt: "2026-08-21T01:00:00.000Z", completedAt: "2026-08-21T01:01:00.000Z" };
+}
+
+function attempt(taskId: string, evidenceSha: string) {
+  return { id: "attempt-oracle", taskId, phase: "oracle" as const, status: "blocked" as const, summary: "The evaluation credential was unavailable.", evidenceArtifactId: `artifact:sha256:${evidenceSha}`, harborVersion: "0.21.0", modalVersion: "1.5.4", command: "case-harbor run --path /data/evaluations/input/task --agent oracle --force-build", startedAt: "2026-08-21T00:00:00.000Z", completedAt: "2026-08-21T00:01:00.000Z" };
 }
 
 function databaseUrlWithSearchPath(databaseUrl: string, schema: string): string {

@@ -5,7 +5,8 @@ Codex.
 
 CASE owns the canonical sample registry used by its own tools and 小环境.
 PostgreSQL holds vendors, original source graphs, dated submissions, parsed
-tasks or traces, three Harbor check phases, findings, and operational work.
+tasks or traces, three Harbor check phases, non-conclusive check attempts,
+findings, and operational work.
 S3-compatible object storage holds immutable payloads, task artifacts,
 and check evidence.
 
@@ -88,6 +89,7 @@ case-registry append-tasks /absolute/path/tasks.json
 case-registry archive-vendor /absolute/path/vendor-archive.json
 case-registry restore-vendor /absolute/path/vendor-restore.json
 case-registry lease-work case-checker
+case-registry record-harbor-attempt /absolute/path/harbor-attempt.json
 case-registry record-harbor-check /absolute/path/harbor-check.json
 case-registry record-harbor-finding /absolute/path/harbor-finding.json
 case-registry remove-submission /absolute/path/submission-removal.json
@@ -122,6 +124,13 @@ Environment fail even if the other setup result is absent. Setup evidence stays
 unset only when it contains no failure and is insufficient to prove both steps
 passed. A Harbor finding is immutable and must cite a failed check for the same
 task.
+
+`record-harbor-attempt` records a phase that was actually tried but could not
+produce a conclusive pass/fail result. Its status is `blocked` or
+`inconclusive`, and it requires immutable check evidence plus the command,
+versions, and timing. This operational state does not add another check result:
+an unset phase with an attempt was tried, while an unset phase without one was
+not tried.
 
 The root policy permits one narrowly defined execution adapter for Modal's
 partial Dockerfile implementation. When a task validly uses a named

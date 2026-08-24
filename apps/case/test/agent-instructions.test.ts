@@ -43,6 +43,8 @@ test("the CASE guide permits only the three Modal-backed Harbor checks", async (
   assert.match(guide, /\*\*Nop pass\/fail:\*\*.*score `0`/);
   assert.match(guide, /Modal as the sandbox provider/);
   assert.match(guide, /do not run a separate Environment trial/i);
+  assert.match(guide, /An unset phase with such a record means the check was tried without a conclusive result/);
+  assert.match(guide, /Attempt state is not a fourth check/);
   assert.match(guide, /Do not add.*package-quality/);
   assert.match(guide, /model trials/);
   assert.match(guide, /DeepSeek diagnostics/);

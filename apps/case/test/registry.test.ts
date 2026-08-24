@@ -5,6 +5,7 @@ import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
 import {
   parseAppendTasks,
+  parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
   parseResearcherUpload,
@@ -118,6 +119,26 @@ test("validates exactly three Harbor pass/fail phases and explicit control score
   assert.throws(() => parseHarborCheckResult({ ...base, phase: "environment", score: 1 }), /cannot record a score/);
   assert.throws(() => parseHarborCheckResult({ ...base, phase: "build", score: undefined }), ValidationError);
   assert.throws(() => parseHarborCheckResult({ ...base, phase: "nop", outcome: "pass", score: 1 }), /must match the observed score/);
+});
+
+test("validates non-conclusive Harbor attempts separately from results", () => {
+  const attempt = {
+    id: "attempt:oracle",
+    taskId: "task-harbor",
+    phase: "oracle",
+    status: "blocked",
+    summary: "The evaluation credential was unavailable.",
+    evidenceArtifactId: "artifact:oracle-attempt-evidence",
+    harborVersion: "0.21.0",
+    modalVersion: "1.5.4",
+    command: "case-harbor run --agent oracle --provider modal",
+    startedAt: "2026-08-21T00:00:00.000Z",
+    completedAt: "2026-08-21T00:01:00.000Z",
+  };
+  assert.equal(parseHarborCheckAttempt(attempt).status, "blocked");
+  assert.throws(() => parseHarborCheckAttempt({ ...attempt, status: "not_run" }), ValidationError);
+  assert.throws(() => parseHarborCheckAttempt({ ...attempt, outcome: "fail" }), /unsupported fields/);
+  assert.throws(() => parseHarborCheckAttempt({ ...attempt, completedAt: "2026-08-20T23:59:00.000Z" }), /must not precede/);
 });
 
 test("findings cite one failed Harbor check and have no classification fields", () => {

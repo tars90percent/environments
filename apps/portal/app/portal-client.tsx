@@ -47,6 +47,8 @@ const text = {
     nonHarbor: "Non-Harbor",
     findings: "Findings",
     unset: "—",
+    attempted: "Tried",
+    notAttempted: "Not attempted",
     loading: "Loading CASE records…",
     unavailable: "CASE records are unavailable. The portal does not keep a separate copy.",
     noMatch: "No matching records.",
@@ -80,6 +82,8 @@ const text = {
     nonHarbor: "非 Harbor",
     findings: "发现",
     unset: "—",
+    attempted: "已尝试",
+    notAttempted: "未尝试",
     loading: "正在载入 CASE 记录…",
     unavailable: "CASE 记录暂不可用。小环境不保存另一份副本。",
     noMatch: "没有匹配的记录。",
@@ -229,9 +233,11 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
     <div className="task-checks">
       {task.format === "harbor" ? <div className="checks">{(["environment", "oracle", "nop"] as HarborCheckPhase[]).map((phase) => {
         const check = task.checks[phase];
-        const outcome = check?.outcome ?? "unset";
-        const mark = outcome === "pass" ? "✓" : outcome === "fail" ? "×" : t.unset;
-        return <span aria-label={`${phaseLabels[phase]}: ${outcome}`} className={`check ${outcome}`} key={phase} title={check?.summary}>
+        const attempt = task.attempts?.[phase];
+        const state = check?.outcome ?? (attempt ? "attempted" : "unset");
+        const mark = state === "pass" ? "✓" : state === "fail" ? "×" : state === "attempted" ? t.attempted : t.unset;
+        const accessibleState = check?.outcome ?? attempt?.status ?? t.notAttempted;
+        return <span aria-label={`${phaseLabels[phase]}: ${accessibleState}`} className={`check ${state}`} key={phase} title={check?.summary ?? attempt?.summary ?? t.notAttempted}>
           <span className="check-label">{phaseLabels[phase]}</span>
           <span aria-hidden className="check-mark">{mark}</span>
         </span>;
@@ -272,13 +278,17 @@ const previewSubmission: CatalogSubmission = {
   formats: ["harbor", "non_harbor"],
   sourceEvents: [{ id: "preview-source", channel: "upload", externalRef: "", sender: "Vendor", receivedAt: "2026-08-20T09:30:00.000Z", rawArtifactId: "artifact:preview:raw", items: [{ id: "preview-file", kind: "archive", displayName: "original-payload.zip", locator: null, artifactId: "artifact:preview:raw", contentSha256: null }] }],
   tasks: [
-    { id: "preview-harbor", stableKey: "repair-cache", title: "Repair cache invalidation", summary: null, kind: "task", format: "harbor", sourcePath: "tasks/repair-cache", artifactId: "artifact:preview:task", contentSha256: null, sourceItemIds: ["preview-file"], checks: { environment: previewCheck("environment", "pass"), oracle: previewCheck("oracle", "pass"), nop: previewCheck("nop", "fail") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] },
-    { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, findings: [] },
+    { id: "preview-harbor", stableKey: "repair-cache", title: "Repair cache invalidation", summary: null, kind: "task", format: "harbor", sourcePath: "tasks/repair-cache", artifactId: "artifact:preview:task", contentSha256: null, sourceItemIds: ["preview-file"], checks: { environment: previewCheck("environment", "pass"), nop: previewCheck("nop", "fail") }, attempts: { oracle: previewAttempt("oracle", "inconclusive") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] },
+    { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, attempts: {}, findings: [] },
   ],
 };
 
 function previewCheck(phase: HarborCheckPhase, outcome: "pass" | "fail") {
   return { id: `check:${phase}`, phase, outcome, summary: `${phase} ${outcome}`, score: phase === "oracle" ? 1 : phase === "nop" ? 1 : null, completedAt: "2026-08-20T10:00:00.000Z" };
+}
+
+function previewAttempt(phase: HarborCheckPhase, status: "blocked" | "inconclusive") {
+  return { id: `attempt:${phase}`, phase, status, summary: `${phase} was attempted but did not produce a conclusive result`, completedAt: "2026-08-20T10:00:00.000Z" };
 }
 
 export function LocalDownloadPreview() {

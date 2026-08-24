@@ -27,11 +27,13 @@ import type {
   CheckOutcome,
   CheckResultInput,
   FollowUpInput,
+  HarborCheckAttemptInput,
   HarborCheckPhase,
   HarborCheckResultInput,
   HarborFindingInput,
   OperationsSummary,
   SampleCatalogCheck,
+  SampleCatalogAttempt,
   SampleCatalogFinding,
   SampleCatalogSnapshot,
   SampleCatalogSubmission,
@@ -156,6 +158,14 @@ type SampleCheckRow = {
   outcome: SampleCatalogCheck["outcome"];
   summary: string;
   score: number | null;
+  completed_at: string | Date;
+};
+type SampleAttemptRow = {
+  task_id: string;
+  id: string;
+  phase: HarborCheckPhase;
+  status: SampleCatalogAttempt["status"];
+  summary: string;
   completed_at: string | Date;
 };
 type SampleFindingRow = {
@@ -1323,9 +1333,20 @@ export class PostgresRegistry implements RegistryRepository {
          WHERE task_version_id = ANY($1::text[]) AND artifact_id IS NOT NULL`,
         [removedTaskVersionIds],
       ) : { rows: [] as Array<{ id: string }> };
+      const checkArtifacts = removedTaskVersionIds.length ? await client.query<{ id: string }>(
+        `SELECT evidence_artifact_id AS id
+         FROM registry_check_runs
+         WHERE task_version_id = ANY($1::text[]) AND evidence_artifact_id IS NOT NULL
+         UNION
+         SELECT evidence_artifact_id AS id
+         FROM registry_harbor_check_attempts
+         WHERE task_version_id = ANY($1::text[])`,
+        [removedTaskVersionIds],
+      ) : { rows: [] as Array<{ id: string }> };
       const taskArtifactIds = [
         ...taskVersions.rows.flatMap((row) => row.artifact_id ? [row.artifact_id] : []),
         ...trajectoryArtifacts.rows.map((row) => row.id),
+        ...checkArtifacts.rows.map((row) => row.id),
       ];
 
       const linkedEvents = await client.query<{ id: string }>(
@@ -1491,6 +1512,7 @@ export class PostgresRegistry implements RegistryRepository {
            AND NOT EXISTS (SELECT 1 FROM registry_task_versions tv WHERE tv.artifact_id = a.id)
            AND NOT EXISTS (SELECT 1 FROM registry_trajectories tr WHERE tr.artifact_id = a.id)
            AND NOT EXISTS (SELECT 1 FROM registry_check_runs cr WHERE cr.evidence_artifact_id = a.id)
+           AND NOT EXISTS (SELECT 1 FROM registry_harbor_check_attempts ca WHERE ca.evidence_artifact_id = a.id)
          ORDER BY a.size_bytes DESC NULLS LAST, a.id`,
         [candidateArtifactIds],
       ) : { rows: [] as ArtifactRow[] };
@@ -1672,6 +1694,85 @@ export class PostgresRegistry implements RegistryRepository {
         checkRunId: input.id,
         phase: input.phase,
         outcome: input.outcome,
+      });
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async recordHarborAttempt(input: HarborCheckAttemptInput): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const task = await client.query<{ format_kind: string }>(
+        "SELECT format_kind FROM registry_task_versions WHERE id = $1 FOR UPDATE",
+        [input.taskId],
+      );
+      if (!task.rowCount) throw new RegistryNotFoundError(`Task ${input.taskId} does not exist`);
+      if (task.rows[0]?.format_kind !== "harbor") {
+        throw new RegistryConflictError(`Check attempts are not recorded for non-Harbor task ${input.taskId}`);
+      }
+      const evidence = await client.query<{ kind: string }>(
+        "SELECT kind FROM registry_artifacts WHERE id = $1",
+        [input.evidenceArtifactId],
+      );
+      if (evidence.rows[0]?.kind !== "check_evidence") {
+        throw new RegistryConflictError(`Harbor attempt ${input.id} must reference an immutable check_evidence artifact`);
+      }
+      const existing = await client.query<{
+        task_version_id: string;
+        check_phase: HarborCheckPhase;
+        status: SampleCatalogAttempt["status"];
+        summary: string;
+        evidence_artifact_id: string;
+        harbor_version: string;
+        modal_version: string;
+        command: string;
+        sandbox_ref: string | null;
+        started_at: string | Date;
+        completed_at: string | Date;
+      }>(
+        `SELECT task_version_id, check_phase, status, summary, evidence_artifact_id,
+                harbor_version, modal_version, command, sandbox_ref, started_at, completed_at
+         FROM registry_harbor_check_attempts WHERE id = $1`,
+        [input.id],
+      );
+      if (existing.rows[0]) {
+        const row = existing.rows[0];
+        const matches = row.task_version_id === input.taskId
+          && row.check_phase === input.phase
+          && row.status === input.status
+          && row.summary === input.summary
+          && row.evidence_artifact_id === input.evidenceArtifactId
+          && row.harbor_version === input.harborVersion
+          && row.modal_version === input.modalVersion
+          && row.command === input.command
+          && row.sandbox_ref === (input.sandboxRef ?? null)
+          && new Date(row.started_at).toISOString() === input.startedAt
+          && new Date(row.completed_at).toISOString() === input.completedAt;
+        if (!matches) throw new RegistryConflictError(`Harbor attempt ${input.id} already exists with different immutable contents`);
+        await client.query("COMMIT");
+        return;
+      }
+      await client.query(
+        `INSERT INTO registry_harbor_check_attempts(
+           id, task_version_id, check_phase, status, summary, evidence_artifact_id,
+           harbor_version, modal_version, command, sandbox_ref, started_at, completed_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          input.id, input.taskId, input.phase, input.status, input.summary, input.evidenceArtifactId,
+          input.harborVersion, input.modalVersion, input.command, input.sandboxRef ?? null,
+          input.startedAt, input.completedAt,
+        ],
+      );
+      await this.insertStatusEvent(client, "task", input.taskId, "harbor_check.attempted", "CASE", {
+        attemptId: input.id,
+        phase: input.phase,
+        status: input.status,
       });
       await client.query("COMMIT");
     } catch (error) {
@@ -1956,6 +2057,7 @@ export class PostgresRegistry implements RegistryRepository {
            UNION ALL SELECT 1 FROM registry_task_versions WHERE artifact_id = $1
            UNION ALL SELECT 1 FROM registry_trajectories WHERE artifact_id = $1
            UNION ALL SELECT 1 FROM registry_check_runs WHERE evidence_artifact_id = $1
+           UNION ALL SELECT 1 FROM registry_harbor_check_attempts WHERE evidence_artifact_id = $1
          ) AS referenced`,
         [id],
       );
@@ -2330,7 +2432,7 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot> {
-    const [vendorsResult, submissionsResult, tasksResult, checksResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
+    const [vendorsResult, submissionsResult, tasksResult, checksResult, attemptsResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
       this.pool.query<VendorRow>(
         `SELECT id, name, short, description
          FROM registry_vendors
@@ -2359,6 +2461,12 @@ export class PostgresRegistry implements RegistryRepository {
                 task_id, id, phase, outcome, summary, score, completed_at
          FROM registry_harbor_check_results
          ORDER BY task_id, phase, completed_at DESC, id DESC`,
+      ),
+      this.pool.query<SampleAttemptRow>(
+        `SELECT DISTINCT ON (task_version_id, check_phase)
+                task_version_id AS task_id, id, check_phase AS phase, status, summary, completed_at
+         FROM registry_harbor_check_attempts
+         ORDER BY task_version_id, check_phase, completed_at DESC, created_at DESC, id DESC`,
       ),
       this.pool.query<SampleFindingRow>(
         `WITH latest_checks AS (
@@ -2406,6 +2514,7 @@ export class PostgresRegistry implements RegistryRepository {
     ]);
 
     const checksByTask = group(checksResult.rows, (row) => row.task_id);
+    const attemptsByTask = group(attemptsResult.rows, (row) => row.task_id);
     const findingsByTask = group(findingsResult.rows, (row) => row.task_id);
     const sourcesByTask = group(taskSourcesResult.rows, (row) => row.task_version_id);
     const tasksBySubmission = new Map<string, SampleCatalogTask[]>();
@@ -2419,6 +2528,16 @@ export class PostgresRegistry implements RegistryRepository {
           summary: check.summary,
           score: check.score,
           completedAt: new Date(check.completed_at).toISOString(),
+        };
+      }
+      const attempts: Partial<Record<HarborCheckPhase, SampleCatalogAttempt>> = {};
+      for (const attempt of attemptsByTask.get(row.id) ?? []) {
+        attempts[attempt.phase] = {
+          id: attempt.id,
+          phase: attempt.phase,
+          status: attempt.status,
+          summary: attempt.summary,
+          completedAt: new Date(attempt.completed_at).toISOString(),
         };
       }
       const findings: SampleCatalogFinding[] = (findingsByTask.get(row.id) ?? []).map((finding) => ({
@@ -2439,6 +2558,7 @@ export class PostgresRegistry implements RegistryRepository {
         contentSha256: row.content_sha256,
         sourceItemIds: (sourcesByTask.get(row.id) ?? []).map((source) => source.source_item_id),
         checks,
+        attempts,
         findings,
       });
     }
