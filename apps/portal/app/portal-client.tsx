@@ -33,7 +33,6 @@ const text = {
     newest: "Newest first",
     latest: "Latest submission",
     taskRecords: "tasks",
-    noSubmissions: "No submissions recorded.",
     noTasks: "No individual tasks or traces were clearly identified in this submission.",
     sources: "Original delivery",
     arrived: "Arrived",
@@ -67,7 +66,6 @@ const text = {
     newest: "最新在前",
     latest: "最新提交",
     taskRecords: "个任务",
-    noSubmissions: "尚无提交记录。",
     noTasks: "这次提交中没有明确识别出的独立任务或轨迹。",
     sources: "原始交付",
     arrived: "到达时间",
@@ -101,7 +99,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog ? "ready" : "loading");
   const [language, setLanguage] = useState<Language>("zh");
   const [query, setQuery] = useState("");
-  const [selectedVendorId, setSelectedVendorId] = useState(initialCatalog?.vendors.find((vendor) => vendor.submissions.length)?.id ?? initialCatalog?.vendors[0]?.id ?? "");
+  const [selectedVendorId, setSelectedVendorId] = useState(initialCatalog?.vendors.find((vendor) => vendor.submissions.length > 0)?.id ?? "");
   const t = text[language];
 
   useEffect(() => {
@@ -119,16 +117,17 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       .then((snapshot) => {
         if (!active) return;
         setCatalog(snapshot);
-        setSelectedVendorId((current) => snapshot.vendors.some((vendor) => vendor.id === current)
+        const visibleVendors = snapshot.vendors.filter((vendor) => vendor.submissions.length > 0);
+        setSelectedVendorId((current) => visibleVendors.some((vendor) => vendor.id === current)
           ? current
-          : snapshot.vendors.find((vendor) => vendor.submissions.length)?.id ?? snapshot.vendors[0]?.id ?? "");
+          : visibleVendors[0]?.id ?? "");
         setState("ready");
       })
       .catch(() => { if (active) setState("unavailable"); });
     return () => { active = false; };
   }, [initialCatalog]);
 
-  const vendors = useMemo(() => catalog?.vendors ?? [], [catalog]);
+  const vendors = useMemo(() => (catalog?.vendors ?? []).filter((vendor) => vendor.submissions.length > 0), [catalog]);
   const matchingVendors = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return vendors;
@@ -152,7 +151,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       <div className="eyebrow">{t.eyebrow}</div>
       <h1>{t.title}</h1>
       <div className="registry-stats">
-        <Stat label={t.vendors} value={catalog?.totals.vendors} />
+        <Stat label={t.vendors} value={catalog ? vendors.length : undefined} />
         <Stat label={t.submissions} value={catalog?.totals.submissions} />
         <Stat label={t.tasks} value={catalog?.totals.tasks} />
         <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
@@ -171,7 +170,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       <section className="vendor-main">
         <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h2>{selectedVendor.name}</h2><div className="vendor-meta"><span>{selectedVendor.submissions.length} {t.submissions.toLowerCase()}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></div></header>
         <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
-        {selectedVendor.submissions.length === 0 && <div className="submission-empty">{t.noSubmissions}</div>}
         <div className="batch-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>
       </section>
     </div>}

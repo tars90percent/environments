@@ -45,6 +45,8 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /check-mark/);
   assert.match(source, /task\.findings\.length > 0/);
   assert.match(source, /fetch\("\/api\/catalog"/);
+  assert.match(source, /filter\(\(vendor\) => vendor\.submissions\.length > 0\)/);
+  assert.match(source, /value=\{catalog \? vendors\.length : undefined\}/);
   assert.doesNotMatch(source, /Upload submission|上传提交|\/api\/uploads|x-case-upload/i);
   assert.doesNotMatch(source, /procurement|research demand|category|runtimeVerification|representationPath|normalizationOutcome|needs_vendor_fix|ready_for_research|reviewer/i);
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);

@@ -85,7 +85,6 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .section-title p { max-width: 680px; margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .section-title > span { padding-top: 7px; color: var(--faint); font-size: 10px; }
 .batch-list { display: grid; gap: 14px; }
-.submission-empty { padding: 28px; border: 1px solid rgba(125,31,42,.08); border-radius: 18px; background: var(--surface); color: var(--muted); font-size: 11px; line-height: 1.6; }
 
 .batch-card { border: 1px solid rgba(125,31,42,.07); border-radius: 22px; background: var(--surface); box-shadow: 0 12px 34px rgba(88,37,42,.05); overflow: hidden; }
 .batch-summary { min-height: 92px; padding: 15px 20px; display: grid; grid-template-columns: 150px minmax(190px, 1fr) minmax(150px, auto) 24px; align-items: center; gap: 16px; cursor: pointer; list-style: none; }
