@@ -10,6 +10,8 @@ import type {
   HarborCheckResultInput,
   HarborFindingInput,
   OperationsSummary,
+  ReconcileSubmissionSourceItemsInput,
+  ReconcileSubmissionSourceItemsResult,
   SampleCatalogSnapshot,
   SampleCatalogSubmission,
   SampleCatalogTask,
@@ -30,6 +32,7 @@ export interface RegistryRepository {
   initialize(): Promise<void>;
   close(): Promise<void>;
   captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
+  reconcileSubmissionSourceItems(input: ReconcileSubmissionSourceItemsInput): Promise<ReconcileSubmissionSourceItemsResult>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
   appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;
   classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;

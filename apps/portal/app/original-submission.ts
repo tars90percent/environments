@@ -49,6 +49,11 @@ function inboundSubmissionArtifacts(submission: CatalogSubmission): OriginalSubm
 
     for (const item of event.items) {
       if (!item.artifactId) continue;
+      if (item.submissionRoles?.includes("original_vendor_file")) {
+        originalFiles.push(artifactFromItem(item));
+        continue;
+      }
+      if (item.submissionRoles?.includes("provenance")) continue;
       if (isSourceRecord(item)) continue;
       if (isInboundFile(item, event, taskSourceItemIds)) {
         originalFiles.push(artifactFromItem(item));

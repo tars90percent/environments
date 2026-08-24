@@ -9,6 +9,7 @@ import type {
   HarborCheckAttemptInput,
   HarborCheckResultInput,
   HarborFindingInput,
+  ReconcileSubmissionSourceItemsInput,
   ResearcherUploadInput,
   SourceEnvelopeInput,
   StatusUpdateInput,
@@ -56,6 +57,7 @@ const CHECK_EXECUTION_SCOPES = new Set<CheckExecutionScope>(["static", "remote_s
 const TASK_KINDS = new Set(["task", "trace"] as const);
 const TASK_FORMATS = new Set(["harbor", "non_harbor"] as const);
 const HARBOR_PHASES = new Set(["environment", "oracle", "nop"] as const);
+const SUBMISSION_SOURCE_ITEM_ROLES = new Set(["original_vendor_file", "provenance"] as const);
 const HARBOR_OUTCOMES = new Set(["pass", "fail"] as const);
 const HARBOR_ATTEMPT_STATUSES = new Set(["blocked", "inconclusive"] as const);
 
@@ -446,6 +448,30 @@ export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {
     batchLinks,
     taskLinks,
   } as SourceEnvelopeInput;
+}
+
+export function parseReconcileSubmissionSourceItems(value: unknown): ReconcileSubmissionSourceItemsInput {
+  const input = object(value, "submission source-item reconciliation");
+  onlyKeys(input, new Set(["submissionId", "sourceEventId", "items", "reason", "actor"]), "submission source-item reconciliation");
+  const items = array(input.items, "items").map((value, index) => {
+    const item = object(value, `items[${index}]`);
+    onlyKeys(item, new Set(["sourceItemId", "role"]), `items[${index}]`);
+    return {
+      sourceItemId: identifier(item.sourceItemId, `items[${index}].sourceItemId`),
+      role: enumValue(item.role, SUBMISSION_SOURCE_ITEM_ROLES, `items[${index}].role`),
+    };
+  });
+  if (!items.length) throw new ValidationError("items must contain at least one source item");
+  if (new Set(items.map((item) => item.sourceItemId)).size !== items.length) {
+    throw new ValidationError("items must use unique sourceItemId values");
+  }
+  return {
+    submissionId: identifier(input.submissionId, "submissionId"),
+    sourceEventId: identifier(input.sourceEventId, "sourceEventId"),
+    items,
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
 }
 
 export function parseVendorEvent(value: unknown): VendorEventInput {

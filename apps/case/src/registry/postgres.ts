@@ -32,6 +32,8 @@ import type {
   HarborCheckResultInput,
   HarborFindingInput,
   OperationsSummary,
+  ReconcileSubmissionSourceItemsInput,
+  ReconcileSubmissionSourceItemsResult,
   SampleCatalogCheck,
   SampleCatalogAttempt,
   SampleCatalogFinding,
@@ -59,6 +61,14 @@ import type {
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
+
+const ORIGINAL_VENDOR_SOURCE_ITEM_KINDS = new Set<CatalogSourceItem["kind"]>([
+  "attachment",
+  "pdf",
+  "archive",
+  "file",
+  "task_package",
+]);
 
 type VendorRow = { id: string; name: string; short: string; description: string };
 type ResearchDemandRow = {
@@ -208,7 +218,11 @@ type SourceItemRow = {
   captured_at: string | Date | null;
   metadata: Record<string, unknown>;
 };
-type SampleSourceItemRow = SourceItemRow & {
+type BatchSourceItemRow = SourceItemRow & {
+  batch_id: string;
+  submission_roles: string[];
+};
+type SampleSourceItemRow = BatchSourceItemRow & {
   artifact_kind: ArtifactInput["kind"] | null;
 };
 type SourceRelationRow = {
@@ -304,7 +318,11 @@ export class PostgresRegistry implements RegistryRepository {
       await this.upsertVendor(client, input.vendor);
       for (const artifact of input.artifacts) await this.registerArtifactWithClient(client, artifact);
 
-      const sourceLinks: Array<{ sourceEventId: string; sourceItemIds: string[] }> = [];
+      const artifactKinds = new Map(input.artifacts.map((artifact) => [artifact.id, artifact.kind]));
+      const sourceLinks: Array<{
+        sourceEventId: string;
+        items: Array<{ id: string; role: "original_vendor_file" | "provenance" }>;
+      }> = [];
       const seenSourceEvents = new Set<string>();
       for (const source of input.sources) {
         if ("sourceEvent" in source) {
@@ -313,11 +331,12 @@ export class PostgresRegistry implements RegistryRepository {
           seenSourceEvents.add(source.sourceEvent.id);
           for (const item of source.items) {
             if (!item.artifactId) continue;
-            const artifact = await client.query<{ sha256: string }>(
-              "SELECT sha256 FROM registry_artifacts WHERE id = $1",
+            const artifact = await client.query<{ sha256: string; kind: ArtifactInput["kind"] }>(
+              "SELECT sha256, kind FROM registry_artifacts WHERE id = $1",
               [item.artifactId],
             );
             if (!artifact.rows[0]) throw new RegistryConflictError(`Source item ${item.id} references missing artifact ${item.artifactId}`);
+            artifactKinds.set(item.artifactId, artifact.rows[0].kind);
             if (item.contentSha256 && artifact.rows[0].sha256 !== item.contentSha256) {
               throw new RegistryConflictError(`Source item ${item.id} content hash does not match its artifact`);
             }
@@ -328,7 +347,13 @@ export class PostgresRegistry implements RegistryRepository {
             items: source.items,
             relations: source.relations,
           }, input.actor);
-          sourceLinks.push({ sourceEventId: source.sourceEvent.id, sourceItemIds: source.items.map((item) => item.id) });
+          sourceLinks.push({
+            sourceEventId: source.sourceEvent.id,
+            items: source.items.map((item) => ({
+              id: item.id,
+              role: defaultSubmissionSourceItemRole(item.kind, item.artifactId, item.artifactId ? artifactKinds.get(item.artifactId) : undefined),
+            })),
+          });
           continue;
         }
 
@@ -342,17 +367,30 @@ export class PostgresRegistry implements RegistryRepository {
         if (event.rows[0].vendor_id !== input.vendor.id) {
           throw new RegistryConflictError(`Source event ${source.sourceEventId} does not belong to vendor ${input.vendor.id}`);
         }
-        const items = await client.query<{ id: string }>(
-          `SELECT id FROM registry_source_items
-           WHERE source_event_id = $1
-             AND ($2::text[] IS NULL OR id = ANY($2::text[]))
-           ORDER BY created_at, id`,
+        const items = await client.query<{
+          id: string;
+          kind: CatalogSourceItem["kind"];
+          artifact_id: string | null;
+          artifact_kind: ArtifactInput["kind"] | null;
+        }>(
+          `SELECT si.id, si.kind, si.artifact_id, artifact.kind AS artifact_kind
+           FROM registry_source_items si
+           LEFT JOIN registry_artifacts artifact ON artifact.id = si.artifact_id
+           WHERE si.source_event_id = $1
+             AND ($2::text[] IS NULL OR si.id = ANY($2::text[]))
+           ORDER BY si.created_at, si.id`,
           [source.sourceEventId, source.sourceItemIds ?? null],
         );
         if (source.sourceItemIds && items.rowCount !== source.sourceItemIds.length) {
           throw new RegistryConflictError(`One or more source items do not belong to source event ${source.sourceEventId}`);
         }
-        sourceLinks.push({ sourceEventId: source.sourceEventId, sourceItemIds: items.rows.map((item) => item.id) });
+        sourceLinks.push({
+          sourceEventId: source.sourceEventId,
+          items: items.rows.map((item) => ({
+            id: item.id,
+            role: defaultSubmissionSourceItemRole(item.kind, item.artifact_id ?? undefined, item.artifact_kind ?? undefined),
+          })),
+        });
       }
 
       const existing = await client.query<{
@@ -400,7 +438,7 @@ export class PostgresRegistry implements RegistryRepository {
                      $8, $9::jsonb, $10::jsonb, $11, 'sample_evaluation')`,
           [input.submission.id, input.vendor.id, primary.sourceEventId, input.submission.date,
             input.submission.label, input.submission.sourceLabel, json(formats), input.submission.revisesSubmissionId ?? null,
-            json({ added: 0, removed: 0, changedFiles: sourceLinks.reduce((sum, source) => sum + source.sourceItemIds.length, 0), note: "Original delivery preserved before parsing." }),
+            json({ added: 0, removed: 0, changedFiles: sourceLinks.reduce((sum, source) => sum + source.items.length, 0), note: "Original delivery preserved before parsing." }),
             json(metadata), manifestSha256],
         );
       }
@@ -419,12 +457,12 @@ export class PostgresRegistry implements RegistryRepository {
              role = CASE WHEN registry_batch_source_events.role = 'primary' THEN 'primary' ELSE EXCLUDED.role END`,
           [input.submission.id, source.sourceEventId, role],
         );
-        for (const sourceItemId of source.sourceItemIds) {
+        for (const item of source.items) {
           await client.query(
             `INSERT INTO registry_batch_source_items(batch_id, source_item_id, role)
              VALUES ($1, $2, $3)
              ON CONFLICT(batch_id, source_item_id, role) DO NOTHING`,
-            [input.submission.id, sourceItemId, role],
+            [input.submission.id, item.id, item.role],
           );
         }
         primaryAssigned = true;
@@ -444,6 +482,124 @@ export class PostgresRegistry implements RegistryRepository {
         submissionId: input.submission.id,
         created,
         sourceEventIds: sourceLinks.map((source) => source.sourceEventId),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async reconcileSubmissionSourceItems(
+    input: ReconcileSubmissionSourceItemsInput,
+  ): Promise<ReconcileSubmissionSourceItemsResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const linkedEvent = await client.query<{ vendor_id: string }>(
+        `SELECT b.vendor_id
+         FROM registry_submission_batches b
+         JOIN registry_batch_source_events bse ON bse.batch_id = b.id
+         JOIN registry_source_events se ON se.id = bse.source_event_id AND se.vendor_id = b.vendor_id
+         WHERE b.id = $1 AND se.id = $2
+         FOR UPDATE OF b`,
+        [input.submissionId, input.sourceEventId],
+      );
+      if (!linkedEvent.rows[0]) {
+        throw new RegistryConflictError(
+          `Source event ${input.sourceEventId} is not linked to submission ${input.submissionId}`,
+        );
+      }
+
+      const requestedIds = input.items.map((item) => item.sourceItemId);
+      const sourceItems = await client.query<{ id: string }>(
+        `SELECT id
+         FROM registry_source_items
+         WHERE source_event_id = $1 AND id = ANY($2::text[])
+         ORDER BY id`,
+        [input.sourceEventId, requestedIds],
+      );
+      if (sourceItems.rowCount !== requestedIds.length) {
+        throw new RegistryConflictError(
+          `Every reconciled source item must belong to source event ${input.sourceEventId}`,
+        );
+      }
+
+      const requiredTaskSources = await client.query<{ source_item_id: string }>(
+        `SELECT DISTINCT tsi.source_item_id
+         FROM registry_task_source_items tsi
+         JOIN registry_task_versions tv ON tv.id = tsi.task_version_id
+         JOIN registry_source_items si ON si.id = tsi.source_item_id
+         WHERE tv.batch_id = $1 AND si.source_event_id = $2
+         ORDER BY tsi.source_item_id`,
+        [input.submissionId, input.sourceEventId],
+      );
+      const requested = new Set(requestedIds);
+      const missingTaskSources = requiredTaskSources.rows
+        .map((row) => row.source_item_id)
+        .filter((sourceItemId) => !requested.has(sourceItemId));
+      if (missingTaskSources.length) {
+        throw new RegistryConflictError(
+          `Reconciliation cannot remove task source items: ${missingTaskSources.join(", ")}`,
+        );
+      }
+
+      const previous = await client.query<{ source_item_id: string; role: string }>(
+        `SELECT bsi.source_item_id, bsi.role
+         FROM registry_batch_source_items bsi
+         JOIN registry_source_items si ON si.id = bsi.source_item_id
+         WHERE bsi.batch_id = $1 AND si.source_event_id = $2
+         ORDER BY bsi.source_item_id, bsi.role`,
+        [input.submissionId, input.sourceEventId],
+      );
+      const next = [...input.items].sort((a, b) =>
+        a.sourceItemId.localeCompare(b.sourceItemId) || a.role.localeCompare(b.role));
+      const previousLinks = previous.rows.map((row) => ({ sourceItemId: row.source_item_id, role: row.role }));
+      const changed = hashValue(previousLinks) !== hashValue(next);
+
+      if (changed) {
+        await client.query(
+          `DELETE FROM registry_batch_source_items bsi
+           USING registry_source_items si
+           WHERE bsi.source_item_id = si.id
+             AND bsi.batch_id = $1
+             AND si.source_event_id = $2`,
+          [input.submissionId, input.sourceEventId],
+        );
+        for (const item of next) {
+          await client.query(
+            `INSERT INTO registry_batch_source_items(batch_id, source_item_id, role)
+             VALUES ($1, $2, $3)`,
+            [input.submissionId, item.sourceItemId, item.role],
+          );
+        }
+        await client.query(
+          "UPDATE registry_submission_batches SET updated_at = now() WHERE id = $1",
+          [input.submissionId],
+        );
+        await this.insertStatusEvent(
+          client,
+          "submission_batch",
+          input.submissionId,
+          "submission.source_items_reconciled",
+          input.actor,
+          {
+            sourceEventId: input.sourceEventId,
+            reason: input.reason,
+            previous: previousLinks,
+            current: next,
+          },
+        );
+      }
+
+      await client.query("COMMIT");
+      return {
+        submissionId: input.submissionId,
+        sourceEventId: input.sourceEventId,
+        previousItemCount: new Set(previous.rows.map((row) => row.source_item_id)).size,
+        itemCount: input.items.length,
+        changed,
       };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -2297,16 +2453,33 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY se.received_at, se.created_at`,
         [visibility],
       ),
-      this.pool.query<SourceItemRow>(
-        `SELECT DISTINCT si.source_event_id, si.id, si.kind, si.display_name, si.locator,
+      this.pool.query<BatchSourceItemRow>(
+        `SELECT bse.batch_id, si.source_event_id, si.id, si.kind, si.display_name, si.locator,
                 si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
                 si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata,
-                si.created_at
-         FROM registry_source_items si
-         JOIN registry_batch_source_events bse ON bse.source_event_id = si.source_event_id
+                si.created_at,
+                array_remove(array_agg(DISTINCT bsi.role), NULL) AS submission_roles
+         FROM registry_batch_source_events bse
          JOIN registry_submission_batches b ON b.id = bse.batch_id
+         JOIN registry_source_items si ON si.source_event_id = bse.source_event_id
+         LEFT JOIN registry_batch_source_items bsi
+           ON bsi.batch_id = bse.batch_id AND bsi.source_item_id = si.id
          WHERE b.catalog_visibility = ANY($1::text[])
-         ORDER BY si.created_at, si.id`,
+           AND (
+             bsi.source_item_id IS NOT NULL
+             OR NOT EXISTS (
+               SELECT 1
+               FROM registry_batch_source_items explicit_link
+               JOIN registry_source_items explicit_item ON explicit_item.id = explicit_link.source_item_id
+               WHERE explicit_link.batch_id = bse.batch_id
+                 AND explicit_item.source_event_id = bse.source_event_id
+             )
+           )
+         GROUP BY bse.batch_id, si.source_event_id, si.id, si.kind, si.display_name, si.locator,
+                  si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
+                  si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata,
+                  si.created_at
+         ORDER BY bse.batch_id, si.created_at, si.id`,
         [visibility],
       ),
       this.pool.query<SourceRelationRow>(
@@ -2370,7 +2543,7 @@ export class PostgresRegistry implements RegistryRepository {
       });
     }
 
-    const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => row.source_event_id);
+    const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => `${row.batch_id}\u0000${row.source_event_id}`);
     const sourceRelationsByEvent = group(sourceRelationsResult.rows, (row) => row.source_event_id);
     const sourceEventsByBatch = new Map<string, CatalogSourceEvent[]>();
     for (const row of sourceEventsResult.rows) {
@@ -2382,7 +2555,7 @@ export class PostgresRegistry implements RegistryRepository {
         sender: row.sender,
         receivedAt: new Date(row.received_at).toISOString(),
         rawArtifactId: row.raw_artifact_id,
-        items: (sourceItemsByEvent.get(row.id) ?? []).map(sourceItemFromRow),
+        items: (sourceItemsByEvent.get(`${row.batch_id}\u0000${row.id}`) ?? []).map(sourceItemFromRow),
         relations: (sourceRelationsByEvent.get(row.id) ?? []).map(sourceRelationFromRow),
       });
     }
@@ -2517,16 +2690,33 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY se.received_at, se.created_at, se.id`,
       ),
       this.pool.query<SampleSourceItemRow>(
-        `SELECT DISTINCT si.source_event_id, si.id, si.kind, si.display_name, si.locator,
+        `SELECT bse.batch_id, si.source_event_id, si.id, si.kind, si.display_name, si.locator,
                 si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
                 si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata,
-                si.created_at, artifact.kind AS artifact_kind
-         FROM registry_source_items si
-         JOIN registry_batch_source_events bse ON bse.source_event_id = si.source_event_id
+                si.created_at, artifact.kind AS artifact_kind,
+                array_remove(array_agg(DISTINCT bsi.role), NULL) AS submission_roles
+         FROM registry_batch_source_events bse
          JOIN registry_submission_batches b ON b.id = bse.batch_id
+         JOIN registry_source_items si ON si.source_event_id = bse.source_event_id
+         LEFT JOIN registry_batch_source_items bsi
+           ON bsi.batch_id = bse.batch_id AND bsi.source_item_id = si.id
          LEFT JOIN registry_artifacts artifact ON artifact.id = si.artifact_id
          WHERE b.catalog_visibility IN ('featured', 'available', 'log_only')
-         ORDER BY si.source_event_id, si.created_at, si.id`,
+           AND (
+             bsi.source_item_id IS NOT NULL
+             OR NOT EXISTS (
+               SELECT 1
+               FROM registry_batch_source_items explicit_link
+               JOIN registry_source_items explicit_item ON explicit_item.id = explicit_link.source_item_id
+               WHERE explicit_link.batch_id = bse.batch_id
+                 AND explicit_item.source_event_id = bse.source_event_id
+             )
+           )
+         GROUP BY bse.batch_id, si.source_event_id, si.id, si.kind, si.display_name, si.locator,
+                  si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
+                  si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata,
+                  si.created_at, artifact.kind
+         ORDER BY bse.batch_id, si.source_event_id, si.created_at, si.id`,
       ),
     ]);
 
@@ -2580,7 +2770,7 @@ export class PostgresRegistry implements RegistryRepository {
       });
     }
 
-    const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => row.source_event_id);
+    const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => `${row.batch_id}\u0000${row.source_event_id}`);
     const sourceEventsBySubmission = new Map<string, SampleCatalogSubmission["sourceEvents"]>();
     for (const row of sourceEventsResult.rows) {
       append(sourceEventsBySubmission, row.batch_id, {
@@ -2598,7 +2788,7 @@ export class PostgresRegistry implements RegistryRepository {
           contentType: row.raw_artifact_content_type,
           originalName: row.raw_artifact_original_name,
         } : null,
-        items: (sourceItemsByEvent.get(row.id) ?? []).map((item) => ({
+        items: (sourceItemsByEvent.get(`${row.batch_id}\u0000${row.id}`) ?? []).map((item) => ({
           id: item.id,
           kind: item.kind,
           displayName: item.display_name,
@@ -2608,6 +2798,7 @@ export class PostgresRegistry implements RegistryRepository {
           artifactKind: item.artifact_kind,
           contentSha256: item.content_sha256,
           sizeBytes: item.size_bytes === null ? null : Number(item.size_bytes),
+          submissionRoles: item.submission_roles,
         })),
       });
     }
@@ -2839,12 +3030,33 @@ export class PostgresRegistry implements RegistryRepository {
            role = CASE WHEN registry_batch_source_events.role = 'primary' THEN 'primary' ELSE EXCLUDED.role END`,
         [link.batchId, envelope.sourceEvent.id, link.role],
       );
-      for (const itemId of link.sourceItemIds ?? []) {
+      const linkedItems = await client.query<{
+        id: string;
+        kind: CatalogSourceItem["kind"];
+        artifact_id: string | null;
+        artifact_kind: ArtifactInput["kind"] | null;
+      }>(
+        `SELECT si.id, si.kind, si.artifact_id, artifact.kind AS artifact_kind
+         FROM registry_source_items si
+         LEFT JOIN registry_artifacts artifact ON artifact.id = si.artifact_id
+         WHERE si.source_event_id = $1 AND si.id = ANY($2::text[])
+         ORDER BY si.created_at, si.id`,
+        [envelope.sourceEvent.id, link.sourceItemIds ?? []],
+      );
+      for (const item of linkedItems.rows) {
         await client.query(
           `INSERT INTO registry_batch_source_items(batch_id, source_item_id, role)
            VALUES ($1, $2, $3)
            ON CONFLICT(batch_id, source_item_id, role) DO NOTHING`,
-          [link.batchId, itemId, link.role],
+          [
+            link.batchId,
+            item.id,
+            defaultSubmissionSourceItemRole(
+              item.kind,
+              item.artifact_id ?? undefined,
+              item.artifact_kind ?? undefined,
+            ),
+          ],
         );
       }
     }
@@ -3049,6 +3261,21 @@ function hashSourceEnvelope(envelope: SourceEnvelopeInput): string {
 
 function hashValue(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+
+function defaultSubmissionSourceItemRole(
+  itemKind: CatalogSourceItem["kind"],
+  artifactId: string | undefined,
+  artifactKind: ArtifactInput["kind"] | undefined,
+): "original_vendor_file" | "provenance" {
+  if (!artifactId) return "provenance";
+  if (artifactKind === "source_snapshot"
+    || artifactKind === "submission_manifest"
+    || artifactKind === "check_evidence"
+    || artifactKind === "extracted_text") {
+    return "provenance";
+  }
+  return ORIGINAL_VENDOR_SOURCE_ITEM_KINDS.has(itemKind) ? "original_vendor_file" : "provenance";
 }
 
 function canonical(value: unknown): unknown {

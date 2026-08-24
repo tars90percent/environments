@@ -160,6 +160,14 @@ deliveries move to a downstream pipeline and must not be registered as samples
 in CASE. Catalog task totals count only registered task versions;
 vendor-declared quantities and raw file counts remain separate.
 
+Each submission links to the exact source items that belong to it. Downloadable
+vendor files use the contextual `original_vendor_file` link role; messages,
+folders, URLs, receipts, and other arrival evidence use `provenance`. The role
+lives on the submission-to-source-item relationship because one immutable
+artifact can participate in different provenance contexts. Use the audited
+`case-registry reconcile-submission-source-items` operation to repair legacy
+links without changing source records or stored object bytes.
+
 小环境 is read-only and does not expose submission uploads. New sample
 submissions currently enter CASE only through the reviewed Feishu message/file
 or Feishu Mail message/attachment capture paths.

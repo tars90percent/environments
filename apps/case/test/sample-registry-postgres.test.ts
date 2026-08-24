@@ -29,10 +29,18 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       sources: [{
         sourceEvent: { id: "source-one", channel: "email", externalRef: "mail://source-one", sender: "Vendor One", receivedAt: "2026-08-21T00:00:00.000Z" },
         items: [
+          { id: "source-message", kind: "message", displayName: "Inbound message", locator: "email://source-one", fetchStatus: "snapshotted", parseStatus: "parsed", mutable: false },
           { id: "source-task", kind: "task_package", displayName: "task.tar.gz", artifactId: `artifact:sha256:${taskSha}`, contentSha256: taskSha, fetchStatus: "snapshotted", parseStatus: "parsed", mutable: false },
           { id: "source-trace", kind: "file", displayName: "trace.jsonl", artifactId: `artifact:sha256:${traceSha}`, contentSha256: traceSha, fetchStatus: "snapshotted", parseStatus: "parsed", mutable: false },
         ],
       }],
+      actor: "CASE",
+    });
+    await repository.captureSubmission({
+      vendor,
+      submission: { id: "submission-two", date: "2026-08-20", label: "Second sample", sourceLabel: "Email", formats: [] },
+      artifacts: [],
+      sources: [{ sourceEventId: "source-one", sourceItemIds: ["source-task"] }],
       actor: "CASE",
     });
     await repository.registerArtifact({ id: `artifact:sha256:${evidenceSha}`, kind: "check_evidence", storageKey: `objects/${evidenceSha}`, sha256: evidenceSha });
@@ -51,8 +59,15 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     await repository.recordHarborFinding({ id: "finding-environment", taskId: "task-one", checkRunId: "check-environment", finding: "Harbor could not prepare the task environment." });
 
     const catalog = await repository.sampleCatalogSnapshot();
-    const submission = catalog.vendors[0]?.submissions[0];
-    assert.deepEqual(submission?.sourceEvents[0]?.items.map((item) => item.artifactKind), ["source_payload", "source_payload"]);
+    const submission = catalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-one");
+    const secondSubmission = catalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-two");
+    assert.deepEqual(submission?.sourceEvents[0]?.items.map((item) => item.artifactKind), [null, "source_payload", "source_payload"]);
+    assert.deepEqual(submission?.sourceEvents[0]?.items.map((item) => item.submissionRoles), [
+      ["provenance"],
+      ["original_vendor_file"],
+      ["original_vendor_file"],
+    ]);
+    assert.deepEqual(secondSubmission?.sourceEvents[0]?.items.map((item) => item.id), ["source-task"]);
     assert.deepEqual(submission?.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
     assert.equal(submission?.tasks[0]?.checks.environment?.outcome, "fail");
     assert.equal(submission?.tasks[0]?.checks.oracle, undefined);
@@ -60,6 +75,27 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.equal(submission?.tasks[0]?.findings[0]?.phase, "environment");
     assert.deepEqual(submission?.tasks[1]?.checks, {});
     assert.deepEqual(submission?.tasks[1]?.attempts, {});
+
+    const reconciliation = await repository.reconcileSubmissionSourceItems({
+      submissionId: "submission-one",
+      sourceEventId: "source-one",
+      items: [
+        { sourceItemId: "source-task", role: "original_vendor_file" },
+        { sourceItemId: "source-trace", role: "original_vendor_file" },
+      ],
+      reason: "Remove the message record from the submission's downloadable source material.",
+      actor: "TARS",
+    });
+    assert.deepEqual(reconciliation, {
+      submissionId: "submission-one",
+      sourceEventId: "source-one",
+      previousItemCount: 3,
+      itemCount: 2,
+      changed: true,
+    });
+    const reconciledCatalog = await repository.sampleCatalogSnapshot();
+    const reconciledSubmission = reconciledCatalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-one");
+    assert.deepEqual(reconciledSubmission?.sourceEvents[0]?.items.map((item) => item.id), ["source-task", "source-trace"]);
 
     await repository.recordHarborCheck({
       ...check("task-one", evidenceSha),

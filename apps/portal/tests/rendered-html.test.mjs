@@ -223,8 +223,9 @@ test("bundles only inbound vendor files and leaves receipts and derived task pac
       items: [
         sourceItem("item-one", "original-one.zip", "artifact:one", "source_payload", 12),
         sourceItem("item-two", "original-two.zip", "artifact:two", "source_payload", 12),
-        sourceItem("item-receipt", "receipt.json", "artifact:receipt", "source_snapshot", 20),
-        sourceItem("item-task", "derived-task.tar.gz", "artifact:task", "task_package", 30),
+        sourceItem("item-pdf", "vendor-description.pdf", "artifact:pdf", "source_snapshot", 10, "pdf", "application/pdf", ["original_vendor_file"]),
+        sourceItem("item-receipt", "receipt.json", "artifact:receipt", "source_snapshot", 20, "file", "application/json", ["provenance"]),
+        sourceItem("item-task", "derived-task.tar.gz", "artifact:task", "task_package", 30, "task_package", "application/gzip", ["provenance"]),
       ],
     }],
     tasks: [],
@@ -232,6 +233,7 @@ test("bundles only inbound vendor files and leaves receipts and derived task pac
   const artifactBytes = new Map([
     ["artifact:one", new TextEncoder().encode("first source")],
     ["artifact:two", new TextEncoder().encode("secondsource")],
+    ["artifact:pdf", new TextEncoder().encode("vendor pdf")],
   ]);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -257,11 +259,12 @@ test("bundles only inbound vendor files and leaves receipts and derived task pac
     );
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("content-type"), "application/zip");
-    assert.equal(response.headers.get("x-case-original-file-count"), "2");
+    assert.equal(response.headers.get("x-case-original-file-count"), "3");
     const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
-    assert.deepEqual(Object.keys(entries), ["original-one.zip", "original-two.zip"]);
+    assert.deepEqual(Object.keys(entries), ["original-one.zip", "original-two.zip", "vendor-description.pdf"]);
     assert.equal(strFromU8(entries["original-one.zip"]), "first source");
     assert.equal(strFromU8(entries["original-two.zip"]), "secondsource");
+    assert.equal(strFromU8(entries["vendor-description.pdf"]), "vendor pdf");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -358,8 +361,8 @@ function task(id, stableKey, kind, format, artifactId) {
   return { id, stableKey, title: stableKey, summary: null, kind, format, sourcePath: `${kind}s/${stableKey}`, artifactId, contentSha256: "a".repeat(64), checks: {}, attempts: {}, findings: [] };
 }
 
-function sourceItem(id, displayName, artifactId, artifactKind, sizeBytes, kind = artifactKind === "task_package" ? "task_package" : "archive", mediaType = "application/zip") {
-  return { id, kind, displayName, locator: null, mediaType, artifactId, artifactKind, contentSha256: "a".repeat(64), sizeBytes };
+function sourceItem(id, displayName, artifactId, artifactKind, sizeBytes, kind = artifactKind === "task_package" ? "task_package" : "archive", mediaType = "application/zip", submissionRoles) {
+  return { id, kind, displayName, locator: null, mediaType, artifactId, artifactKind, contentSha256: "a".repeat(64), sizeBytes, ...(submissionRoles ? { submissionRoles } : {}) };
 }
 
 function sessionCookie() {

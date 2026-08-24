@@ -30,7 +30,7 @@ operating policy; CASE remains the canonical registry and check orchestrator.
 
 - Browse vendors that have at least one recorded submission.
 - Open dated submissions without replacing earlier observations.
-- Inspect each original submission as one compact block. It links to a safe external source when one exists and offers either the single inbound vendor file or one ZIP containing all conclusively identified inbound vendor files. Message captures, receipts, screenshots, and source snapshots are listed separately as provenance records. Derived task packages remain in CASE rather than appearing as original vendor downloads.
+- Inspect each original submission as one compact block. It links to a safe external source when one exists and offers either the single inbound vendor file or one ZIP containing all source items explicitly linked as original vendor files. Message captures, receipts, screenshots, folders, and URLs remain in CASE as provenance but are not presented as downloads.
 - Inspect tasks or traces. Non-Harbor tasks have no checks. Harbor tasks show only Environment, Oracle, and Nop: pass/fail when conclusive, a distinct tried marker when a result was blocked or inconclusive, and a dash when not attempted. Directly supported findings remain separate.
 
 ## Prerequisites

@@ -54,6 +54,7 @@ export type CatalogSourceItem = {
   artifactKind: string | null;
   contentSha256: string | null;
   sizeBytes: number | null;
+  submissionRoles?: string[];
 };
 
 export type CatalogRawArtifact = {

@@ -8,6 +8,7 @@ import {
   parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
+  parseReconcileSubmissionSourceItems,
   parseResearcherUpload,
   parseSourceEnvelope,
   parseSubmissionIntakeClassification,
@@ -79,6 +80,25 @@ test("validates recursive source provenance", () => {
   };
   assert.equal(parseSourceEnvelope(envelope).sourceEvent.sender, "Vendor One");
   assert.throws(() => parseSourceEnvelope({ ...envelope, relations: [{ fromItemId: "source-message", toItemId: "missing", relation: "contains" }] }), ValidationError);
+});
+
+test("validates audited submission source-item reconciliation", () => {
+  const input = {
+    submissionId: "submission-one",
+    sourceEventId: "source-one",
+    items: [
+      { sourceItemId: "source-pdf", role: "original_vendor_file" },
+      { sourceItemId: "source-message", role: "provenance" },
+    ],
+    reason: "Attach each delivered file only to its relevant submission.",
+    actor: "TARS",
+  };
+  assert.deepEqual(parseReconcileSubmissionSourceItems(input), input);
+  assert.throws(() => parseReconcileSubmissionSourceItems({ ...input, items: [] }), ValidationError);
+  assert.throws(() => parseReconcileSubmissionSourceItems({
+    ...input,
+    items: [{ sourceItemId: "source-pdf", role: "primary" }],
+  }), ValidationError);
 });
 
 test("registers only clearly identified tasks or traces with two formats", () => {

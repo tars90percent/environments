@@ -266,6 +266,27 @@ export type CaptureSubmissionResult = {
   sourceEventIds: string[];
 };
 
+export type SubmissionSourceItemRole = "original_vendor_file" | "provenance";
+
+export type ReconcileSubmissionSourceItemsInput = {
+  submissionId: string;
+  sourceEventId: string;
+  items: Array<{
+    sourceItemId: string;
+    role: SubmissionSourceItemRole;
+  }>;
+  reason: string;
+  actor: string;
+};
+
+export type ReconcileSubmissionSourceItemsResult = {
+  submissionId: string;
+  sourceEventId: string;
+  previousItemCount: number;
+  itemCount: number;
+  changed: boolean;
+};
+
 export type TaskSourceLinksInput = {
   links: Array<{
     taskVersionId: string;
@@ -812,6 +833,7 @@ export type SampleCatalogSourceItem = {
   artifactKind: ArtifactInput["kind"] | null;
   contentSha256: string | null;
   sizeBytes: number | null;
+  submissionRoles: string[];
 };
 
 export type SampleCatalogRawArtifact = {

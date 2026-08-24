@@ -16,6 +16,7 @@ import {
   parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
+  parseReconcileSubmissionSourceItems,
   parseSourceEnvelope,
   parseSubmissionIntakeClassification,
   parseSubmissionManifest,
@@ -77,6 +78,9 @@ if (command === "operations") {
       case "import-source":
         output(await repository.ingestSourceEnvelope(parseSourceEnvelope(await jsonFile(argument))));
         break;
+      case "reconcile-submission-source-items":
+        output(await repository.reconcileSubmissionSourceItems(parseReconcileSubmissionSourceItems(await jsonFile(argument))));
+        break;
       case "append-tasks":
         output(await repository.appendTasks(parseAppendTasks(await jsonFile(argument))));
         break;
@@ -128,7 +132,7 @@ if (command === "operations") {
         output({ updated: true });
         break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|import|import-source|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|import|import-source|reconcile-submission-source-items|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
     }
   } finally {
     await repository.close();
@@ -202,6 +206,11 @@ async function sha256File(path: string): Promise<string> {
 
 async function jsonFile(path: string | undefined): Promise<unknown> {
   if (!path) fail("A JSON file path is required");
+  if (path === "-") {
+    let payload = "";
+    for await (const chunk of process.stdin) payload += String(chunk);
+    return JSON.parse(payload);
+  }
   return JSON.parse(await readFile(path, "utf8"));
 }
 
@@ -236,6 +245,12 @@ function operationSchemas() {
     "source-event": { arguments: ["<source-event-id>"] },
     import: { arguments: ["<submission-manifest.json>"], compatibility: "Prefer case-intake or case-mail-intake for Feishu capture." },
     "import-source": { arguments: ["<source-envelope.json>"], compatibility: "Registers standalone provenance evidence." },
+    "reconcile-submission-source-items": {
+      arguments: ["<reconciliation.json>"],
+      fields: ["submissionId", "sourceEventId", "items[{sourceItemId,role}]", "reason", "actor"],
+      roles: ["original_vendor_file", "provenance"],
+      note: "Replaces only this submission's item links for one already-linked source event; source records and artifacts are not changed.",
+    },
     "append-tasks": { arguments: ["<tasks.json>"], fields: ["submissionId", "tasks", "actor"] },
     "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },
