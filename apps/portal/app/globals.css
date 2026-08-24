@@ -39,8 +39,6 @@ code { font-family: var(--font-geist-mono, ui-monospace), SFMono-Regular, Consol
 .global-search span { font-size: 18px; transform: rotate(-18deg); }
 .global-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 12px; }
 .global-search input::placeholder { color: var(--faint); }
-.upload-trigger { min-width: 108px; height: 38px; padding: 0 15px; border: 0; border-radius: 12px; background: var(--burgundy); color: var(--ivory); font-size: 11px; font-weight: 620; }
-.upload-trigger:hover { background: var(--burgundy-deep); }
 .language-switch { width: 40px; height: 38px; border: 1px solid rgba(125,31,42,.08); border-radius: 12px; background: rgba(255,250,246,.58); color: var(--burgundy); font-size: 12px; font-weight: 620; }
 .language-switch:hover { background: var(--card); color: var(--burgundy-deep); }
 .avatar { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid rgba(125,31,42,.12); border-radius: 50%; background: var(--burgundy); color: var(--ivory); font-size: 12px; font-weight: 650; cursor: pointer; list-style: none; overflow: hidden; }
@@ -162,25 +160,6 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .source-item .source-actions a { background: var(--burgundy-soft); }
 
 .state-card { max-width: 760px; min-height: 180px; padding: 38px; border-radius: 24px; background: var(--surface); color: var(--muted); line-height: 1.65; }
-.upload-backdrop { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px; background: rgba(55,7,14,.45); backdrop-filter: blur(8px); }
-.upload-dialog { width: min(620px, 100%); max-height: calc(100vh - 48px); border: 1px solid rgba(125,31,42,.14); border-radius: 22px; background: var(--card); box-shadow: 0 30px 90px rgba(55,7,14,.28); overflow: auto; }
-.upload-dialog > header { padding: 24px 26px 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); }
-.upload-dialog h2 { margin: 0; font-size: 22px; font-weight: 560; letter-spacing: -.025em; }
-.upload-dialog p { margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
-.upload-dialog header button { border: 0; background: transparent; color: var(--muted); font-size: 24px; }
-.upload-dialog form { padding: 22px 26px 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.upload-dialog label { display: grid; gap: 7px; }
-.upload-dialog label:nth-child(3), .upload-dialog label:nth-child(4), .upload-dialog footer { grid-column: 1 / -1; }
-.upload-dialog label > span { color: var(--ink); font-size: 10px; font-weight: 620; }
-.upload-dialog input:not([type=file]), .upload-dialog select, .upload-dialog textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; outline: 0; background: #fffdf9; color: var(--ink); font-size: 11px; }
-.upload-dialog input:focus, .upload-dialog select:focus, .upload-dialog textarea:focus { border-color: var(--burgundy); }
-.upload-dialog small { color: var(--muted); font-size: 9px; }
-.upload-dialog footer { display: flex; align-items: center; gap: 12px; }
-.upload-dialog footer button { min-height: 34px; padding: 7px 13px; border: 0; border-radius: 9px; background: var(--burgundy); color: var(--ivory); font-size: 10px; font-weight: 620; }
-.upload-dialog footer button:disabled { cursor: wait; opacity: .55; }
-.upload-dialog footer span { font-size: 9px; }
-.upload-dialog footer .error { color: var(--red); }
-.upload-dialog footer .saved { color: var(--green); }
 .preview-page { width: min(1100px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0; }
 
 @media (max-width: 980px) {
@@ -201,8 +180,6 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .wordmark img { width: 36px; height: 36px; }
   .header-tools { width: calc(100% - 48px); }
   .global-search { flex: 1; width: auto; }
-  .upload-trigger { min-width: 40px; width: 40px; padding: 0; font-size: 0; }
-  .upload-trigger::after { content: "+"; font-size: 18px; }
   main { padding-top: 68px; }
   .registry-header { padding: 44px 0 38px; }
   .registry-stats { gap: 18px; overflow-x: auto; }
@@ -231,6 +208,4 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .vendor-profile h2, .section-title h3 { font-size: 26px; }
   .batch-body { margin: 0 7px 7px; padding: 16px; }
   .dataset-metrics { flex-wrap: wrap; }
-  .upload-dialog form { grid-template-columns: 1fr; }
-  .upload-dialog label, .upload-dialog label:nth-child(3), .upload-dialog label:nth-child(4), .upload-dialog footer { grid-column: 1; }
 }

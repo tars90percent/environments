@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CatalogSnapshot,
   CatalogSourceEvent,
@@ -23,7 +23,6 @@ const text = {
     eyebrow: "CASE registry",
     title: "Environment & Task Samples",
     search: "Search vendors, submissions, or tasks",
-    upload: "Upload submission",
     vendors: "Vendors",
     submissions: "Submissions",
     tasks: "Tasks",
@@ -53,29 +52,11 @@ const text = {
     unavailable: "CASE records are unavailable. The portal does not keep a separate copy.",
     noMatch: "No matching records.",
     signOut: "Sign out",
-    uploadForm: {
-      title: "Upload a vendor submission",
-      note: "The original file and arrival details will be preserved in CASE.",
-      vendor: "Vendor",
-      label: "Submission label",
-      file: "Original file",
-      comment: "Arrival note (optional)",
-      commentPlaceholder: "Where this came from or any capture context",
-      choose: "Choose a file or archive, up to 250 MB",
-      submit: "Preserve submission",
-      hashing: "Checking file…",
-      uploading: "Preserving submission…",
-      saved: "Submission preserved.",
-      error: "The submission could not be preserved.",
-      required: "Choose a vendor, label, and file.",
-      close: "Close",
-    },
   },
   zh: {
     eyebrow: "CASE 样本库",
     title: "环境与任务样本",
     search: "搜索供应商、提交记录或任务",
-    upload: "上传提交",
     vendors: "供应商",
     submissions: "提交记录",
     tasks: "任务",
@@ -105,23 +86,6 @@ const text = {
     unavailable: "CASE 记录暂不可用。小环境不保存另一份副本。",
     noMatch: "没有匹配的记录。",
     signOut: "退出登录",
-    uploadForm: {
-      title: "上传供应商提交",
-      note: "原始文件及其到达信息会原样保存在 CASE。",
-      vendor: "供应商",
-      label: "提交名称",
-      file: "原始文件",
-      comment: "到达说明（可选）",
-      commentPlaceholder: "来源或与接收有关的背景",
-      choose: "选择文件或压缩包，最大 250 MB",
-      submit: "保存提交",
-      hashing: "正在校验文件…",
-      uploading: "正在保存提交…",
-      saved: "提交已保存。",
-      error: "暂时无法保存这次提交。",
-      required: "请选择供应商、填写名称并选择文件。",
-      close: "关闭",
-    },
   },
 } as const;
 
@@ -138,8 +102,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [language, setLanguage] = useState<Language>("zh");
   const [query, setQuery] = useState("");
   const [selectedVendorId, setSelectedVendorId] = useState(initialCatalog?.vendors.find((vendor) => vendor.submissions.length)?.id ?? initialCatalog?.vendors[0]?.id ?? "");
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [revision, setRevision] = useState(0);
   const t = text[language];
 
   useEffect(() => {
@@ -164,7 +126,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       })
       .catch(() => { if (active) setState("unavailable"); });
     return () => { active = false; };
-  }, [initialCatalog, revision]);
+  }, [initialCatalog]);
 
   const vendors = useMemo(() => catalog?.vendors ?? [], [catalog]);
   const matchingVendors = useMemo(() => {
@@ -180,7 +142,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       <nav className="market-switch"><button className="active" type="button">{t.title}</button></nav>
       <div className="header-tools">
         <label className="global-search"><span aria-hidden>⌕</span><input aria-label={t.search} onChange={(event) => setQuery(event.target.value)} placeholder={t.search} value={query} /></label>
-        <button className="upload-trigger" onClick={() => setUploadOpen(true)} type="button">{t.upload}</button>
         <button className="language-switch" onClick={() => setLanguage(language === "zh" ? "en" : "zh")} type="button">{language === "zh" ? "EN" : "中"}</button>
         <details className="account-menu"><summary className="avatar">{user.avatarUrl ? <Image alt="" height={38} src={user.avatarUrl} unoptimized width={38} /> : user.name.slice(0, 1).toUpperCase()}</summary><div className="account-popover"><strong>{user.name}</strong><a href="/auth/logout">{t.signOut}</a></div></details>
       </div>
@@ -217,7 +178,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     </div>
     </main>
 
-    {uploadOpen && <UploadDialog onClose={() => setUploadOpen(false)} onUploaded={(vendorId) => { setSelectedVendorId(vendorId); setRevision((value) => value + 1); }} t={t} vendors={vendors} />}
   </div>;
 }
 
@@ -286,60 +246,6 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
   </article>;
 }
 
-function UploadDialog({ vendors, onClose, onUploaded, t }: { vendors: CatalogVendor[]; onClose(): void; onUploaded(vendorId: string): void; t: typeof text.en | typeof text.zh }) {
-  const [vendorId, setVendorId] = useState(vendors[0]?.id ?? "");
-  const [label, setLabel] = useState("");
-  const [note, setNote] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<"idle" | "hashing" | "uploading" | "saved" | "error">("idle");
-  const [message, setMessage] = useState("");
-  const busy = status === "hashing" || status === "uploading";
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!vendorId || !label.trim() || !file) { setStatus("error"); setMessage(t.uploadForm.required); return; }
-    if (file.size > 250 * 1024 * 1024) { setStatus("error"); setMessage(t.uploadForm.choose); return; }
-    try {
-      setStatus("hashing"); setMessage(t.uploadForm.hashing);
-      const sha256 = await sha256File(file);
-      setStatus("uploading"); setMessage(t.uploadForm.uploading);
-      const response = await fetch("/api/uploads", {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": file.type || "application/octet-stream",
-          "x-case-upload-id": crypto.randomUUID(),
-          "x-case-vendor-id": vendorId,
-          "x-case-upload-label": encodeURIComponent(label.trim()),
-          ...(note.trim() ? { "x-case-upload-note": encodeURIComponent(note.trim()) } : {}),
-          "x-case-file-name": encodeURIComponent(file.name),
-          "x-case-file-size": String(file.size),
-          "x-case-file-sha256": sha256,
-        },
-        body: file,
-      });
-      if (!response.ok) throw new Error(t.uploadForm.error);
-      setStatus("saved"); setMessage(t.uploadForm.saved); onUploaded(vendorId);
-    } catch { setStatus("error"); setMessage(t.uploadForm.error); }
-  }
-
-  return <div className="upload-backdrop"><section aria-modal="true" className="upload-dialog" role="dialog">
-    <header><div><h2>{t.uploadForm.title}</h2><p>{t.uploadForm.note}</p></div><button aria-label={t.uploadForm.close} onClick={onClose} type="button">×</button></header>
-    <form onSubmit={submit}>
-      <label><span>{t.uploadForm.vendor}</span><select disabled={busy} onChange={(event) => setVendorId(event.target.value)} value={vendorId}>{vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></label>
-      <label><span>{t.uploadForm.label}</span><input disabled={busy} maxLength={300} onChange={(event) => setLabel(event.target.value)} value={label} /></label>
-      <label><span>{t.uploadForm.file}</span><input disabled={busy} onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /><small>{file ? `${file.name} · ${formatBytes(file.size)}` : t.uploadForm.choose}</small></label>
-      <label><span>{t.uploadForm.comment}</span><textarea disabled={busy} maxLength={5000} onChange={(event) => setNote(event.target.value)} placeholder={t.uploadForm.commentPlaceholder} rows={3} value={note} /></label>
-      <footer><button className="primary" disabled={busy || status === "saved" || !vendors.length} type="submit">{busy ? t.uploadForm.uploading : t.uploadForm.submit}</button>{message && <span className={status}>{message}</span>}</footer>
-    </form>
-  </section></div>;
-}
-
-async function sha256File(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 function vendorSearchText(vendor: CatalogVendor): string {
   return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.sourcePath ?? ""])])].join(" ").toLowerCase();
 }
@@ -359,10 +265,6 @@ function formatTimestamp(value: string, language: Language): string {
     timeStyle: "short",
     timeZone: "Asia/Shanghai",
   }).format(new Date(value));
-}
-
-function formatBytes(value: number): string {
-  return value < 1024 * 1024 ? `${Math.max(1, Math.round(value / 1024))} KB` : `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const previewSubmission: CatalogSubmission = {

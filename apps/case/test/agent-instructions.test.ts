@@ -62,7 +62,8 @@ test("the CASE guide keeps registry mechanics self-describing", async () => {
   const guide = await readFile(rootGuide, "utf8");
 
   assert.match(guide, /Use the `case-registry` CLI (?:rather than|instead of) raw database writes/);
-  assert.match(guide, /HTTP API is only the portal-facing catalog and researcher-upload adapter/);
+  assert.match(guide, /HTTP API serves the portal-facing catalog/);
+  assert.match(guide, /Researcher upload through 小环境 is disabled/);
   assert.match(guide, /Inspect the existing record first/);
   assert.match(guide, /run `case-registry operations` for the current command schemas/);
 });

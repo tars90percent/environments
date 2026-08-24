@@ -1,7 +1,7 @@
 # CASE
 
-TARS's always-on Feishu colleague for environment and task sample operations,
-powered by Codex.
+TARS's always-on Feishu colleague for vendor task-sample operations, powered by
+Codex.
 
 CASE owns the canonical sample registry used by its own tools and 小环境.
 PostgreSQL holds vendors, original source graphs, dated submissions, parsed
@@ -12,6 +12,10 @@ and check evidence.
 The workflow is deliberately narrow: preserve a submission, identify clear tasks
 or traces, label each task `harbor` or `non_harbor`, and run Build, Boot, Oracle,
 and Nop only for Harbor tasks.
+
+This README describes the CASE application and its runtime. The monorepo's root
+[`AGENTS.md`](../../AGENTS.md) is the sole authoritative operating policy for
+submission capture, parsing, classification, Harbor checks, and findings.
 
 The service currently has a deliberately narrow chat-transport boundary:
 
@@ -46,9 +50,18 @@ instructions; do not hand-edit the runtime copy.
 
 ```sh
 cd apps/case
-npm install
+npm ci
 cp .env.example .env
 npm run check
+npm run dev
+```
+
+Before messaging the local bot, set `ALLOWED_USER_IDS` in the ignored `.env` to
+the Feishu `open_id` values allowed to use it. For a production-style local run,
+build first and then start the compiled service:
+
+```sh
+npm run build
 npm start
 ```
 
@@ -57,10 +70,11 @@ The vendor-archival repository/API integration test creates and drops an isolate
 Then send the bot a direct message in Feishu. Stop the service with Ctrl-C.
 
 When the registry variables in `.env.example` are configured, the same process
-also serves the portal-facing catalog and researcher-upload API on `PORT`. It
-runs built-in migrations at startup. Trusted local CASE commands use the
-registry library directly with `DATABASE_URL` and the CASE object-store
-credentials; there is no internal write API or admin token.
+also serves the portal-facing catalog on `PORT`. It runs built-in migrations at
+startup. Trusted local CASE commands use the registry library directly with
+`DATABASE_URL` and the CASE object-store credentials; there is no internal write
+API or admin token. CASE retains a dormant researcher-upload adapter for
+compatibility, but 小环境 does not expose it and it is not a current capture path.
 
 The installed `case-registry` command gives CASE and Codex the same operations:
 
@@ -118,12 +132,9 @@ deliveries move to a downstream pipeline and must not be registered as samples
 in CASE. Catalog task totals count only registered task versions;
 vendor-declared quantities and raw file counts remain separate.
 
-小环境 uses a separate upload-only registry role to request a content-addressed
-object URL and register an authenticated researcher's file as a submission for
-an existing vendor. That operation preserves the
-original filename, hash, size, upload event, and verified researcher identity;
-it establishes the first durable registration checkpoint and does not by itself
-imply that task discovery or runtime evidence is complete.
+小环境 is read-only and does not expose submission uploads. New sample
+submissions currently enter CASE only through the reviewed Feishu message/file
+or Feishu Mail message/attachment capture paths.
 
 Send `/new` as a message, or select the app's native `/new` slash command, to
 disconnect that Feishu chat from its current Codex thread. The next ordinary
@@ -155,8 +166,9 @@ the login survives image rebuilds and service restarts. The outer harness only
 handles message transport and `/new`; phrases such as `authorize`,
 `authorization complete`, and `auth status` are passed directly to Codex.
 
-The checked-in example is safe by default. The local ignored `.env` currently
-allowlists only the developer's Feishu `open_id`; group messages remain disabled.
+The checked-in `.env.example` is safe by default: group chats and broad user
+access are disabled. A local ignored `.env` must explicitly set
+`ALLOWED_USER_IDS` before the bot accepts pilot users.
 
 ## Agent permissions
 

@@ -45,14 +45,13 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /check-mark/);
   assert.match(source, /task\.findings\.length > 0/);
   assert.match(source, /fetch\("\/api\/catalog"/);
-  assert.match(source, /x-case-upload-label/);
+  assert.doesNotMatch(source, /Upload submission|上传提交|\/api\/uploads|x-case-upload/i);
   assert.doesNotMatch(source, /procurement|research demand|category|runtimeVerification|representationPath|normalizationOutcome|needs_vendor_fix|ready_for_research|reviewer/i);
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
   assert.doesNotMatch(source, /FormatBadge|format-badge|kind-badge|submission-formats/);
 
   assert.match(workerSource, /CASE_REGISTRY_CATALOG_TOKEN/);
-  assert.match(workerSource, /CASE_REGISTRY_UPLOAD_TOKEN/);
-  assert.doesNotMatch(workerSource, /CASE_REGISTRY_REVIEW_TOKEN|\/reviews|categoryIds|x-case-upload-category/);
+  assert.doesNotMatch(workerSource, /CASE_REGISTRY_UPLOAD_TOKEN|CASE_REGISTRY_REVIEW_TOKEN|\/api\/uploads|\/researcher-uploads|x-case-upload|\/reviews|categoryIds/);
   assert.doesNotMatch(workerSource, /method:\s*["']PATCH|method:\s*["']DELETE/i);
 });
 

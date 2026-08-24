@@ -82,13 +82,13 @@ CASE owns the canonical registry and sample artifacts:
 - Railway PostgreSQL stores vendors, source graphs, dated submissions, parsed tasks or traces, exact task versions, the four Harbor check results, findings, and supporting operational records.
 - Railway S3-compatible object storage stores immutable original payloads, snapshots, task packages, traces, and check evidence. It must not retain full purchased deliveries.
 - The durable queue may schedule capture, parsing, and Harbor-check work. A queued item does not prove that a worker ran it.
-- Use the `case-registry` CLI rather than raw database writes. It calls the canonical registry library directly. Inspect the existing record first, choose the narrowest operation, and run `case-registry operations` for the current command schemas instead of guessing fields. The HTTP API is only the portal-facing catalog and researcher-upload adapter.
+- Use the `case-registry` CLI rather than raw database writes. It calls the canonical registry library directly. Inspect the existing record first, choose the narrowest operation, and run `case-registry operations` for the current command schemas instead of guessing fields. The HTTP API serves the portal-facing catalog. A dormant researcher-upload adapter may remain for compatibility, but it is not an active capture path.
 
 Trusted CASE capture commands call the same registry library directly with CASE's database and object-store credentials so that artifact, source, submission, and link records are committed through one canonical transaction. This is not permission for ad hoc SQL; humans and agents still use the supported commands.
 
-小环境 is a researcher-facing view over CASE, not a second database or control plane. It exposes submissions, source links, parsed material, downloads, the four Harbor tags, and findings. It has no procurement, research-demand, category, status, scoring, recommendation, or review workflow.
+小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, source links, parsed material, downloads, the four Harbor tags, and findings. It has no submission upload, procurement, research-demand, category, status, scoring, recommendation, or review workflow.
 
-The current dedicated capture paths are reviewed Feishu message/file plans, reviewed Feishu Mail message/attachment plans, and authenticated researcher upload through 小环境. They preserve payloads and register submissions; they do not imply universal discovery or parsing. Check live authentication, scopes, ACLs, and transport configuration before claiming a source is monitored or accessible.
+The current dedicated capture paths are reviewed Feishu message/file plans and reviewed Feishu Mail message/attachment plans. They preserve payloads and register submissions; they do not imply universal discovery or parsing. Researcher upload through 小环境 is disabled. Check live authentication, scopes, ACLs, and transport configuration before claiming a source is monitored or accessible.
 
 After purchase, the full delivery belongs to a separate downstream pipeline. CASE retains only the minimal dated handoff fact needed to prevent accidental re-registration and must remove purchased delivery payloads and packages from sample storage.
 
