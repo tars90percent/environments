@@ -10,6 +10,7 @@ import type {
   HarborCheckPhase,
 } from "./catalog";
 import { originalSubmissionArtifacts } from "./original-submission";
+import { displayArchivePath } from "./archive-path";
 
 type Language = "zh" | "en";
 
@@ -243,7 +244,7 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
       <div className="task-meta">
         <span>{task.format === "harbor" ? "Harbor" : t.nonHarbor}</span>
         {task.kind === "trace" && <span>{t.trace}</span>}
-        {task.sourcePath && <code>{task.sourcePath}</code>}
+        {task.sourcePath && <code>{displayArchivePath(task.sourcePath)}</code>}
       </div>
       {task.summary && <p>{task.summary}</p>}
     </div>
@@ -267,7 +268,7 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
 }
 
 function vendorSearchText(vendor: CatalogVendor): string {
-  return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.sourcePath ?? ""])])].join(" ").toLowerCase();
+  return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
 }
 
 function safeExternalUrl(value: string | null): string | null {

@@ -23,7 +23,7 @@ import zipfile
 
 
 TOOL_NAME = "case-task-package"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.0.1"
 DEFAULT_MAX_ENTRIES = 20_000
 DEFAULT_MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024
 DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024 * 1024
@@ -53,7 +53,7 @@ def safe_zip_entries(
     entries: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
     total_bytes = 0
     for info in infos:
-        name = info.filename
+        name = decoded_zip_name(info)
         if not name or "\\" in name or "\x00" in name:
             raise UnsafeArchiveError(f"unsafe ZIP entry name: {name!r}")
         path = PurePosixPath(name)
@@ -90,6 +90,27 @@ def safe_zip_entries(
             raise UnsafeArchiveError(f"ZIP file has a directory mode: {name!r}")
         entries.append((info, path))
     return entries, total_bytes
+
+
+def decoded_zip_name(info: zipfile.ZipInfo) -> str:
+    name = info.filename
+    if info.flag_bits & 0x800:
+        return name
+    try:
+        candidate = name.encode("cp437").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return name
+    return candidate if candidate != name and contains_cjk(candidate) else name
+
+
+def contains_cjk(value: str) -> bool:
+    return any(
+        "\u3040" <= character <= "\u30ff"
+        or "\u3400" <= character <= "\u9fff"
+        or "\uf900" <= character <= "\ufaff"
+        or "\uac00" <= character <= "\ud7af"
+        for character in value
+    )
 
 
 def inspect_zip(path: Path, limits: argparse.Namespace) -> dict[str, object]:

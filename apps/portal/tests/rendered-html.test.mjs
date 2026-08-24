@@ -41,6 +41,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /originalSubmissionArtifacts/);
   assert.match(source, /original-download/);
   assert.match(source, /Number\.isFinite\(size\)/);
+  assert.match(source, /displayArchivePath\(task\.sourcePath\)/);
   assert.match(source, /Tasks/);
   assert.match(source, /Environment/);
   assert.match(source, /Oracle/);
@@ -159,6 +160,7 @@ test("downloads every available task artifact", async () => {
       task("task-trace", "native-trace", "trace", "non_harbor", "artifact:trace"),
     ],
   };
+  submission.tasks[0].sourcePath = "benchmarkµá╖Σ╛ïµò░µì«-σ«₧τÄ░τ╜æ-Callµò░σñºΣ║Ä100/packages/task_01";
   const artifactBytes = new Map([
     ["artifact:harbor", new TextEncoder().encode("harbor package")],
     ["artifact:trace", new TextEncoder().encode("trace payload")],
@@ -192,6 +194,7 @@ test("downloads every available task artifact", async () => {
     assert.deepEqual([...entries.keys()], ["README.md", "manifest.json", "tasks/0001-harbor-task.artifact", "tasks/0002-native-trace.artifact"]);
     const manifest = JSON.parse(new TextDecoder().decode(entries.get("manifest.json")));
     assert.equal(manifest.schemaVersion, "case.tasks.v1");
+    assert.equal(manifest.tasks[0].sourcePath, "benchmark样例数据-实现网-Call数大于100/packages/task_01");
     assert.deepEqual(manifest.tasks.map((entry) => [entry.kind, entry.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
   } finally {
     globalThis.fetch = originalFetch;

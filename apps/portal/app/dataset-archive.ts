@@ -1,4 +1,5 @@
 import type { CatalogSourceEvent } from "./catalog";
+import { displayArchivePath } from "./archive-path";
 
 export type DatasetSubmission = {
   id: string;
@@ -150,7 +151,7 @@ function datasetPackages(submission: DatasetSubmission): DatasetPackage[] {
         title: task.title,
         kind: task.kind,
         format: task.format,
-        sourcePath: task.sourcePath,
+        sourcePath: task.sourcePath ? displayArchivePath(task.sourcePath) : null,
         artifactId: task.artifactId,
         contentSha256: task.contentSha256,
         checks: task.checks,
