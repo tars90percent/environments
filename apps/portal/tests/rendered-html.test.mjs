@@ -39,6 +39,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Original vendor files/);
   assert.match(source, /Source records/);
   assert.match(source, /Direct CASE import/);
+  assert.doesNotMatch(source, /Open source|打开来源|safeExternalUrl/);
   assert.match(source, /originalSubmissionArtifacts/);
   assert.match(source, /original-download/);
   assert.match(source, /Number\.isFinite\(size\)/);

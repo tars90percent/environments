@@ -41,7 +41,6 @@ const text = {
     sourceRecordNote: "Provenance captures such as messages, receipts, screenshots, and source snapshots. These are not presented as task payloads.",
     arrived: "Received",
     sender: "Sender",
-    open: "Open source",
     downloadOne: "Download original file",
     downloadMany: "Download original files (.zip)",
     showFiles: "Show vendor filenames",
@@ -85,7 +84,6 @@ const text = {
     sourceRecordNote: "消息、回执、截图和来源快照等溯源材料，不作为任务原始数据展示。",
     arrived: "接收时间",
     sender: "发送人",
-    open: "打开来源",
     downloadOne: "下载原始文件",
     downloadMany: "下载原始文件（ZIP）",
     showFiles: "查看供应商文件名",
@@ -239,7 +237,7 @@ function OriginalSubmissionPanel({ submission, language }: { submission: Catalog
     : `/api/submissions/${encodeURIComponent(submission.id)}/original-download`;
   return <section className="original-submission"><div className="batch-section-head"><h4>{t.sources}</h4><span>{artifacts.length}</span></div><div className="original-card">
     <div className="original-copy"><strong>{fileCount(artifacts.length, language)}{size ? ` · ${size}` : ""}</strong><p>{t.originalNote}</p><div className="original-provenance">{submission.sourceEvents.map((event) => <span key={event.id}>{friendlyChannel(event.channel, language)} · {formatTimestamp(event.receivedAt, language)}{event.sender ? ` · ${event.sender}` : ""}</span>)}</div></div>
-    <div className="original-actions">{submission.sourceEvents.map((event) => safeExternalUrl(event.externalRef) && <a href={safeExternalUrl(event.externalRef)!} key={event.id} rel="noreferrer" target="_blank">{t.open}</a>)}{artifacts.length > 0 && <a className="primary" href={downloadHref}>{artifacts.length === 1 ? t.downloadOne : t.downloadMany}</a>}</div>
+    <div className="original-actions">{artifacts.length > 0 && <a className="primary" href={downloadHref}>{artifacts.length === 1 ? t.downloadOne : t.downloadMany}</a>}</div>
     {artifacts.length > 0 ? <details className="original-files"><summary>{t.showFiles} ({artifacts.length})</summary><ul>{artifacts.map((artifact) => <li key={artifact.artifactId}><span>{artifact.displayName}</span>{artifact.sizeBytes !== null && <small>{formatBytes(artifact.sizeBytes, language)}</small>}</li>)}</ul></details> : <p className="original-empty">{t.noOriginalFile}</p>}
     {sourceRecords.length > 0 && <details className="original-files source-record-files"><summary>{t.showSourceRecords} ({sourceRecords.length})</summary><p>{t.sourceRecordNote}</p><ul>{sourceRecords.map((artifact) => <li key={artifact.artifactId}><span>{artifact.displayName}</span><span className="source-record-meta">{artifact.sizeBytes !== null && <small>{formatBytes(artifact.sizeBytes, language)}</small>}<a href={`/api/artifacts/${encodeURIComponent(artifact.artifactId)}/download`}>{t.sourceRecordDownload}</a></span></li>)}</ul></details>}
   </div></section>;
@@ -279,11 +277,6 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
 
 function vendorSearchText(vendor: CatalogVendor): string {
   return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
-}
-
-function safeExternalUrl(value: string | null): string | null {
-  if (!value) return null;
-  try { const url = new URL(value); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; } catch { return null; }
 }
 
 function friendlySubmissionSource(submission: CatalogSubmission, language: Language): string {
