@@ -67,10 +67,12 @@ Harbor exposes image construction, environment startup, and any declared
 healthcheck as one environment-setup operation. Do not parse provider error text
 into separate Build and Boot results and do not run a redundant startup trial.
 A passing historical Oracle or Nop result is sufficient to infer Environment
-pass. Passing latest historical Build and Boot results are also sufficient. An
-older failed control is not, and a failed or unset latest Build or Boot result
-does not support inference, because older failures may not distinguish setup
-failure from an unexpected score.
+pass. Otherwise, passing latest historical Build and Boot results infer
+Environment pass, while an explicit failure in either latest legacy setup
+result infers Environment fail even if the other result is absent. Setup
+evidence stays unset only when it contains no failure and is insufficient to
+prove both steps passed. A failed control alone does not determine Environment
+because it may reflect an unexpected score rather than setup failure.
 
 Use no-network execution as the baseline when the provider and task support it. Grant only the minimum phase-scoped hosts required for dependency installation or model access. A successful process exit, sandbox completion, or image build is evidence for that step only; none is a quality endorsement.
 

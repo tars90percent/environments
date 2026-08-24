@@ -116,8 +116,12 @@ environment startup, and any declared healthcheck. Oracle and Nop must include
 the observed score, which must agree with the outcome. A passing historical
 Oracle or Nop result supplies an inferred Environment pass because Harbor could
 not have produced that score before preparing the environment. Passing latest
-historical Build and Boot results also supply an inferred Environment pass. A
-Harbor finding is immutable and must cite a failed check for the same task.
+historical Build and Boot results also supply an inferred Environment pass;
+otherwise, an explicit failure in either latest legacy setup result supplies an
+Environment fail even if the other setup result is absent. Setup evidence stays
+unset only when it contains no failure and is insufficient to prove both steps
+passed. A Harbor finding is immutable and must cite a failed check for the same
+task.
 
 If CASE created a submission record in error, `remove-submission` can hard-remove
 it with the explicit `erroneous_registration` disposition, an actor, and a

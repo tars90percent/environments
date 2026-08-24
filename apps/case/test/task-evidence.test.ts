@@ -12,6 +12,12 @@ test("infers Environment pass from a passing historical control", () => {
   assert.equal(result.runtimeVerified, false);
 });
 
+test("gives a passing historical control precedence over a setup failure", () => {
+  const result = deriveRuntimeVerification([fact("boot", "fail"), fact("negative_control", "pass")], 0);
+  assert.equal(result.phases.environment.outcome, "pass");
+  assert.match(result.phases.environment.checkRunId ?? "", /negative_control/);
+});
+
 test("requires Environment, Oracle, and Nop passes for a verified summary", () => {
   const result = deriveRuntimeVerification([
     fact("environment", "pass"),
@@ -43,11 +49,15 @@ test("infers Environment from passing historical Build and Boot results", () => 
   assert.match(result.phases.environment.checkRunId ?? "", /boot/);
 });
 
-test("does not infer Environment unless both historical setup results pass", () => {
+test("infers Environment fail from either historical setup failure", () => {
   assert.equal(
     deriveRuntimeVerification([fact("build", "pass"), fact("boot", "fail")], 0).phases.environment.outcome,
-    null,
+    "fail",
   );
+  assert.equal(deriveRuntimeVerification([fact("build", "fail")], 0).phases.environment.outcome, "fail");
+});
+
+test("leaves Environment unset when historical setup evidence is incomplete", () => {
   assert.equal(deriveRuntimeVerification([fact("build", "pass")], 0).phases.environment.outcome, null);
 });
 

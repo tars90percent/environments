@@ -1267,6 +1267,117 @@ const migrations: Migration[] = [
         'Active CASE check abstraction: Environment, Oracle, or Nop pass/fail only.';
     `,
   },
+  {
+    id: "016_unify_legacy_environment_failures",
+    sql: `
+      -- Complete the legacy Build/Boot migration. Migration 015 already gives
+      -- passing controls precedence and handles a fully passing setup pair.
+      -- When no Environment result exists, either latest setup failure is a
+      -- conclusive Environment failure; incomplete setup evidence stays unset.
+      WITH latest_legacy_phases AS (
+        SELECT DISTINCT ON (task_version_id, check_phase)
+               id, task_version_id, evidence_artifact_id, harbor_version,
+               modal_version, command, sandbox_ref, started_at, completed_at,
+               check_phase, outcome
+        FROM registry_check_runs
+        WHERE check_phase IN ('build', 'boot')
+          AND outcome IN ('pass', 'fail')
+        ORDER BY task_version_id, check_phase, completed_at DESC, created_at DESC, id DESC
+      ),
+      failed_legacy_setup AS (
+        SELECT DISTINCT ON (task_version_id)
+               id, task_version_id, evidence_artifact_id, harbor_version,
+               modal_version, command, sandbox_ref, started_at, completed_at,
+               check_phase
+        FROM latest_legacy_phases
+        WHERE outcome = 'fail'
+        ORDER BY task_version_id, completed_at DESC, id DESC
+      )
+      INSERT INTO registry_check_runs(
+        id, task_version_id, definition_id, definition_version, outcome, summary,
+        runner, evidence, started_at, completed_at, execution_scope, check_phase,
+        evidence_artifact_id, harbor_version, modal_version, command, sandbox_ref, score
+      )
+      SELECT 'case:environment-inferred-failure-from:' || failure.id,
+             failure.task_version_id,
+             'case.harbor.environment',
+             1,
+             'fail',
+             'Environment failure inferred from failed historical ' || initcap(failure.check_phase) || ' evidence.',
+             jsonb_build_object(
+               'inferred', true,
+               'basis', 'failed_legacy_setup',
+               'sourceCheckRunId', failure.id
+             ),
+             jsonb_build_object(
+               'inferred', true,
+               'basis', 'failed_legacy_setup',
+               'sourceCheckRunId', failure.id
+             ),
+             failure.started_at,
+             failure.completed_at,
+             'remote_sandbox',
+             'environment',
+             failure.evidence_artifact_id,
+             failure.harbor_version,
+             failure.modal_version,
+             failure.command,
+             failure.sandbox_ref,
+             NULL
+      FROM failed_legacy_setup failure
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM registry_check_runs existing
+        WHERE existing.task_version_id = failure.task_version_id
+          AND existing.check_phase = 'environment'
+          AND existing.outcome IN ('pass', 'fail')
+      )
+      ON CONFLICT(id) DO NOTHING;
+
+      -- Keep the original Build/Boot findings for provenance, and add immutable
+      -- Environment-phase copies for the latest legacy setup failures so the
+      -- active three-check catalog continues to expose those factual findings.
+      WITH latest_legacy_phases AS (
+        SELECT DISTINCT ON (task_version_id, check_phase)
+               id, task_version_id, check_phase, outcome, completed_at
+        FROM registry_check_runs
+        WHERE check_phase IN ('build', 'boot')
+          AND outcome IN ('pass', 'fail')
+        ORDER BY task_version_id, check_phase, completed_at DESC, created_at DESC, id DESC
+      ),
+      failed_legacy_setup AS (
+        SELECT DISTINCT ON (task_version_id)
+               id, task_version_id, completed_at
+        FROM latest_legacy_phases
+        WHERE outcome = 'fail'
+        ORDER BY task_version_id, completed_at DESC, id DESC
+      )
+      INSERT INTO registry_task_findings(
+        id, task_version_id, finding, visibility, created_at, updated_at,
+        check_run_id, check_phase
+      )
+      SELECT 'case:environment-finding-from:' || finding.id,
+             finding.task_version_id,
+             finding.finding,
+             finding.visibility,
+             finding.created_at,
+             finding.updated_at,
+             environment.id,
+             'environment'
+      FROM latest_legacy_phases legacy
+      JOIN failed_legacy_setup failure
+        ON failure.task_version_id = legacy.task_version_id
+      JOIN registry_task_findings finding
+        ON finding.check_run_id = legacy.id
+      JOIN registry_check_runs environment
+        ON environment.id = 'case:environment-inferred-failure-from:' || failure.id
+       AND environment.task_version_id = failure.task_version_id
+       AND environment.check_phase = 'environment'
+       AND environment.outcome = 'fail'
+      WHERE legacy.outcome = 'fail'
+      ON CONFLICT(id) DO NOTHING;
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

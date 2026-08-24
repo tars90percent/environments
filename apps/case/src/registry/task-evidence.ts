@@ -58,6 +58,17 @@ export function deriveRuntimeVerification(
         checkRunId: legacyBoot.id,
         completedAt: [legacyBuild.completedAt, legacyBoot.completedAt].sort().at(-1) ?? legacyBoot.completedAt,
       };
+    } else {
+      const failedSetup = [legacyBuild, legacyBoot]
+        .filter((fact): fact is RuntimeCheckFact => fact?.outcome === "fail")
+        .sort((left, right) => right.completedAt.localeCompare(left.completedAt))[0];
+      if (failedSetup) {
+        phases.environment = {
+          outcome: "fail",
+          checkRunId: failedSetup.id,
+          completedAt: failedSetup.completedAt,
+        };
+      }
     }
   }
 

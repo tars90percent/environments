@@ -98,7 +98,7 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
               representation: { path: "already_harbor", normalizationOutcome: "already_harbor" },
               runtimeVerification: { phases: {
                 build: { outcome: "pass", checkRunId: "check-build", completedAt: "2026-08-20T01:00:00.000Z" },
-                boot: { outcome: "pass", checkRunId: "check-boot", completedAt: "2026-08-20T01:30:00.000Z" },
+                boot: { outcome: "fail", checkRunId: "check-boot", completedAt: "2026-08-20T01:30:00.000Z" },
                 positiveControl: { outcome: "fail", checkRunId: "check-oracle", completedAt: "2026-08-20T02:00:00.000Z" },
                 negativeControl: { outcome: "blocked", checkRunId: "check-nop", completedAt: "2026-08-20T03:00:00.000Z" },
               } },
@@ -130,8 +130,8 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
     assert.equal(submission.tasks[0].kind, "task");
     assert.equal(submission.tasks[0].format, "harbor");
     assert.deepEqual(Object.keys(submission.tasks[0].checks), ["oracle", "environment"]);
-    assert.equal(submission.tasks[0].checks.environment.outcome, "pass");
-    assert.match(submission.tasks[0].checks.environment.summary, /inferred from passing Build and Boot evidence/i);
+    assert.equal(submission.tasks[0].checks.environment.outcome, "fail");
+    assert.match(submission.tasks[0].checks.environment.summary, /inferred from failed Build or Boot evidence/i);
     assert.deepEqual(submission.tasks[0].findings, []);
   } finally {
     globalThis.fetch = originalFetch;

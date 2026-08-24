@@ -27,7 +27,7 @@ const LEGACY_PHASES: Array<[string, HarborCheckPhase]> = [
 ];
 
 /**
- * Temporary deployment bridge. It can be removed after CASE migration 015 has
+ * Temporary deployment bridge. It can be removed after CASE migration 016 has
  * deployed and the portal no longer needs to consume the former catalog shape.
  */
 export function normalizeCaseCatalog(value: unknown): CatalogSnapshot {
@@ -187,6 +187,20 @@ function legacyChecks(runtimeVerification: JsonRecord | null): Partial<Record<Ha
           score: null,
           completedAt: [build.completedAt, boot.completedAt].sort().at(-1) ?? boot.completedAt,
         };
+      } else {
+        const failedSetup = [build, boot]
+          .filter((check): check is CatalogCheck => check?.outcome === "fail")
+          .sort((left, right) => right.completedAt.localeCompare(left.completedAt))[0];
+        if (failedSetup) {
+          checks.environment = {
+            id: `inferred-environment:${failedSetup.id}`,
+            phase: "environment",
+            outcome: "fail",
+            summary: "Environment failure inferred from failed Build or Boot evidence.",
+            score: null,
+            completedAt: failedSetup.completedAt,
+          };
+        }
       }
     }
   }
