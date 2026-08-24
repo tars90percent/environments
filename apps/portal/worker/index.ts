@@ -63,7 +63,7 @@ const worker = {
         });
         if (!upstream.ok) return registryErrorResponse(upstream, "original_submission_unavailable");
         const submission = normalizeCaseSubmission(await upstream.json());
-        const artifacts = originalSubmissionArtifacts(submission.sourceEvents ?? []);
+        const artifacts = originalSubmissionArtifacts(submission);
         if (!artifacts.length) return Response.json({ error: "original_submission_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
         const archive = originalSubmissionArchive(artifacts, (artifact) => fetchOriginalArtifact(artifact, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
         return new Response(archive, {

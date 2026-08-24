@@ -36,7 +36,8 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
   assert.match(source, /Environment & Task Samples/);
-  assert.match(source, /Original submission/);
+  assert.match(source, /Original vendor files/);
+  assert.match(source, /Source records/);
   assert.match(source, /Direct CASE import/);
   assert.match(source, /originalSubmissionArtifacts/);
   assert.match(source, /original-download/);
@@ -201,7 +202,7 @@ test("downloads every available task artifact", async () => {
   }
 });
 
-test("bundles only original payload artifacts and leaves receipts and task packages out", async () => {
+test("bundles only inbound vendor files and leaves receipts and derived task packages out", async () => {
   const app = await worker();
   const submission = {
     id: "submission-1",
@@ -264,12 +265,99 @@ test("bundles only original payload artifacts and leaves receipts and task packa
   }
 });
 
+test("recovers legacy inbound task packages without bundling messages, screenshots, or normalized tasks", async () => {
+  const app = await worker();
+  const submission = {
+    id: "submission-legacy",
+    date: "2026-08-20",
+    label: "Vendor legacy sample",
+    source: "Feishu attachment",
+    formats: ["harbor"],
+    sourceEvents: [
+      {
+        id: "event-screenshot",
+        channel: "feishu",
+        externalRef: "feishu-message://screenshot",
+        sender: "Vendor",
+        receivedAt: "2026-08-20T00:00:00.000Z",
+        rawArtifactId: "artifact:screenshot",
+        rawArtifact: { id: "artifact:screenshot", kind: "source_snapshot", contentSha256: "a".repeat(64), sizeBytes: 10, contentType: "image/png", originalName: "delivery.png" },
+        items: [sourceItem("item-screenshot", "delivery.png", "artifact:screenshot", "source_snapshot", 10, "file", "image/png")],
+      },
+      {
+        id: "event-message",
+        channel: "feishu",
+        externalRef: "https://example.com/message",
+        sender: "Vendor",
+        receivedAt: "2026-08-20T00:01:00.000Z",
+        rawArtifactId: "artifact:message",
+        rawArtifact: { id: "artifact:message", kind: "source_payload", contentSha256: "b".repeat(64), sizeBytes: 11, contentType: "application/json", originalName: "message-snapshot.json" },
+        items: [sourceItem("item-message", "message-snapshot.json", "artifact:message", "source_payload", 11, "message", "application/json")],
+      },
+      {
+        id: "event-capture",
+        channel: "other",
+        externalRef: "case-capture://feishu/message/file",
+        sender: "Vendor",
+        receivedAt: "2026-08-20T00:02:00.000Z",
+        rawArtifactId: "artifact:vendor-zip",
+        rawArtifact: { id: "artifact:vendor-zip", kind: "task_package", contentSha256: "c".repeat(64), sizeBytes: 15, contentType: "application/zip", originalName: "vendor-original.zip" },
+        items: [sourceItem("item-vendor", "vendor-original.zip", "artifact:vendor-zip", "task_package", 15, "archive", "application/zip")],
+      },
+      {
+        id: "normalization:submission-legacy:task-packages:v1",
+        channel: "workspace",
+        externalRef: "case-normalization://submission-legacy",
+        sender: null,
+        receivedAt: "2026-08-20T00:03:00.000Z",
+        rawArtifactId: null,
+        rawArtifact: null,
+        items: [sourceItem("item-normalized", "normalized-task.tar.gz", "artifact:normalized", "task_package", 16, "task_package", "application/gzip")],
+      },
+    ],
+    tasks: [task("task-one", "task-one", "task", "harbor", "artifact:normalized")],
+  };
+  submission.tasks[0].sourceItemIds = ["item-vendor", "item-normalized"];
+  const vendorBytes = new TextEncoder().encode("vendor-original");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(target);
+    if (url.href === "https://case.example/v1/batches/submission-legacy") return Response.json(submission);
+    const signed = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);
+    if (url.origin === "https://case.example" && signed?.[1]) {
+      assert.equal(decodeURIComponent(signed[1]), "artifact:vendor-zip");
+      return Response.json({ url: "https://objects.example/vendor-original" });
+    }
+    if (url.href === "https://objects.example/vendor-original") {
+      return new Response(vendorBytes, { headers: { "content-length": String(vendorBytes.length) } });
+    }
+    throw new Error(`Unexpected fetch: ${url.href}`);
+  };
+
+  try {
+    const response = await app.fetch(
+      new Request("http://localhost/api/submissions/submission-legacy/original-download", { headers: { cookie: sessionCookie() } }),
+      { ...authEnv, CASE_REGISTRY_URL: "https://case.example", CASE_REGISTRY_CATALOG_TOKEN: "catalog-test", ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+      { waitUntil() {}, passThroughOnException() {} },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-case-original-file-count"), "1");
+    assert.match(response.headers.get("content-disposition"), /original-vendor-files\.zip/);
+    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    assert.deepEqual(Object.keys(entries), ["vendor-original.zip"]);
+    assert.equal(strFromU8(entries["vendor-original.zip"]), "vendor-original");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function task(id, stableKey, kind, format, artifactId) {
   return { id, stableKey, title: stableKey, summary: null, kind, format, sourcePath: `${kind}s/${stableKey}`, artifactId, contentSha256: "a".repeat(64), checks: {}, attempts: {}, findings: [] };
 }
 
-function sourceItem(id, displayName, artifactId, artifactKind, sizeBytes) {
-  return { id, kind: artifactKind === "task_package" ? "task_package" : "archive", displayName, locator: null, mediaType: "application/zip", artifactId, artifactKind, contentSha256: "a".repeat(64), sizeBytes };
+function sourceItem(id, displayName, artifactId, artifactKind, sizeBytes, kind = artifactKind === "task_package" ? "task_package" : "archive", mediaType = "application/zip") {
+  return { id, kind, displayName, locator: null, mediaType, artifactId, artifactKind, contentSha256: "a".repeat(64), sizeBytes };
 }
 
 function sessionCookie() {

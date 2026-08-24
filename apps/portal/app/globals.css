@@ -160,6 +160,9 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .original-files li:first-child { border-top: 0; }
 .original-files li span { overflow-wrap: anywhere; }
 .original-files li small { flex: 0 0 auto; color: var(--muted); font: inherit; }
+.original-files > p { margin: 8px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.source-record-meta { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+.source-record-meta a { color: var(--burgundy); font: 620 9px/1.4 var(--font-geist, ui-sans-serif), sans-serif; text-decoration: none; }
 .original-empty { grid-column: 1 / -1; margin: 0; padding-top: 11px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; }
 
 .state-card { max-width: 760px; min-height: 180px; padding: 38px; border-radius: 24px; background: var(--surface); color: var(--muted); line-height: 1.65; }

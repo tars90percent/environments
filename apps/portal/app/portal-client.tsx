@@ -9,7 +9,7 @@ import type {
   CatalogVendor,
   HarborCheckPhase,
 } from "./catalog";
-import { originalSubmissionArtifacts } from "./original-submission";
+import { originalSubmissionArtifacts, submissionSourceRecordArtifacts } from "./original-submission";
 import { displayArchivePath } from "./archive-path";
 
 type Language = "zh" | "en";
@@ -35,15 +35,19 @@ const text = {
     latest: "Latest submission",
     taskRecords: "tasks",
     noTasks: "No individual tasks or traces were clearly identified in this submission.",
-    sources: "Original submission",
-    originalNote: "Original files retained exactly as captured.",
+    sources: "Original vendor files",
+    originalNote: "Exact inbound files retained before parsing. Messages, receipts, and snapshots are listed separately.",
+    sourceRecords: "Source records",
+    sourceRecordNote: "Provenance captures such as messages, receipts, screenshots, and source snapshots. These are not presented as task payloads.",
     arrived: "Received",
     sender: "Sender",
     open: "Open source",
     downloadOne: "Download original file",
     downloadMany: "Download original files (.zip)",
-    showFiles: "Show filenames",
-    noOriginalFile: "No captured original file is available.",
+    showFiles: "Show vendor filenames",
+    showSourceRecords: "Show source records",
+    sourceRecordDownload: "Download",
+    noOriginalFile: "No inbound vendor file can be identified conclusively from the retained provenance.",
     directCaseImport: "Direct CASE import",
     dataset: "Download tasks",
     datasetNote: "Download the exact task or trace artifacts retained for this submission.",
@@ -75,15 +79,19 @@ const text = {
     latest: "最新提交",
     taskRecords: "个任务",
     noTasks: "这次提交中没有明确识别出的独立任务或轨迹。",
-    sources: "原始提交",
-    originalNote: "原始文件已按接收时内容原样保留。",
+    sources: "供应商原始文件",
+    originalNote: "解析前留存的原始传入文件。消息、回执和快照单独列出。",
+    sourceRecords: "来源记录",
+    sourceRecordNote: "消息、回执、截图和来源快照等溯源材料，不作为任务原始数据展示。",
     arrived: "接收时间",
     sender: "发送人",
     open: "打开来源",
     downloadOne: "下载原始文件",
     downloadMany: "下载原始文件（ZIP）",
-    showFiles: "查看文件名",
-    noOriginalFile: "没有可下载的原始文件。",
+    showFiles: "查看供应商文件名",
+    showSourceRecords: "查看来源记录",
+    sourceRecordDownload: "下载",
+    noOriginalFile: "现有溯源信息不足以明确识别原始传入的供应商文件。",
     directCaseImport: "直接导入 CASE",
     dataset: "下载任务",
     datasetNote: "下载这次提交中保留的精确任务或轨迹文件。",
@@ -222,7 +230,8 @@ function SubmissionCard({ submission, open, latest, language, datasetHref }: { s
 
 function OriginalSubmissionPanel({ submission, language }: { submission: CatalogSubmission; language: Language }) {
   const t = text[language];
-  const artifacts = originalSubmissionArtifacts(submission.sourceEvents);
+  const artifacts = originalSubmissionArtifacts(submission);
+  const sourceRecords = submissionSourceRecordArtifacts(submission);
   const knownBytes = artifacts.map((artifact) => artifact.sizeBytes).filter((size): size is number => typeof size === "number" && Number.isFinite(size) && size >= 0);
   const size = knownBytes.length === artifacts.length && artifacts.length ? formatBytes(knownBytes.reduce((sum, value) => sum + value), language) : null;
   const downloadHref = artifacts.length === 1
@@ -232,6 +241,7 @@ function OriginalSubmissionPanel({ submission, language }: { submission: Catalog
     <div className="original-copy"><strong>{fileCount(artifacts.length, language)}{size ? ` · ${size}` : ""}</strong><p>{t.originalNote}</p><div className="original-provenance">{submission.sourceEvents.map((event) => <span key={event.id}>{friendlyChannel(event.channel, language)} · {formatTimestamp(event.receivedAt, language)}{event.sender ? ` · ${event.sender}` : ""}</span>)}</div></div>
     <div className="original-actions">{submission.sourceEvents.map((event) => safeExternalUrl(event.externalRef) && <a href={safeExternalUrl(event.externalRef)!} key={event.id} rel="noreferrer" target="_blank">{t.open}</a>)}{artifacts.length > 0 && <a className="primary" href={downloadHref}>{artifacts.length === 1 ? t.downloadOne : t.downloadMany}</a>}</div>
     {artifacts.length > 0 ? <details className="original-files"><summary>{t.showFiles} ({artifacts.length})</summary><ul>{artifacts.map((artifact) => <li key={artifact.artifactId}><span>{artifact.displayName}</span>{artifact.sizeBytes !== null && <small>{formatBytes(artifact.sizeBytes, language)}</small>}</li>)}</ul></details> : <p className="original-empty">{t.noOriginalFile}</p>}
+    {sourceRecords.length > 0 && <details className="original-files source-record-files"><summary>{t.showSourceRecords} ({sourceRecords.length})</summary><p>{t.sourceRecordNote}</p><ul>{sourceRecords.map((artifact) => <li key={artifact.artifactId}><span>{artifact.displayName}</span><span className="source-record-meta">{artifact.sizeBytes !== null && <small>{formatBytes(artifact.sizeBytes, language)}</small>}<a href={`/api/artifacts/${encodeURIComponent(artifact.artifactId)}/download`}>{t.sourceRecordDownload}</a></span></li>)}</ul></details>}
   </div></section>;
 }
 
