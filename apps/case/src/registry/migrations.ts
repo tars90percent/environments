@@ -1405,6 +1405,64 @@ const migrations: Migration[] = [
         'Append-only operational records for Harbor phases that were attempted without a conclusive pass/fail result.';
     `,
   },
+  {
+    id: "018_task_benchmark_directions",
+    sql: `
+      CREATE TABLE registry_benchmarks (
+        id text PRIMARY KEY,
+        display_name text NOT NULL,
+        aliases jsonb NOT NULL DEFAULT '[]'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      INSERT INTO registry_benchmarks(id, display_name, aliases)
+      VALUES
+        ('frontier-cs', 'Frontier-CS', '["frontiercs", "frontier_cs"]'::jsonb),
+        ('image-math', 'Image Math', '["image_math"]'::jsonb),
+        ('terminal-bench', 'Terminal-Bench', '["terminal_bench", "terminalbench"]'::jsonb),
+        ('zero-bench', 'ZeroBench', '["zerobench", "zero_bench"]'::jsonb),
+        ('unspecified', 'Unspecified', '[]'::jsonb)
+      ON CONFLICT(id) DO NOTHING;
+
+      ALTER TABLE registry_task_versions
+        ADD COLUMN benchmark_id text REFERENCES registry_benchmarks(id);
+
+      UPDATE registry_task_versions
+      SET benchmark_id = 'unspecified'
+      WHERE benchmark_id IS NULL;
+
+      ALTER TABLE registry_task_versions
+        ALTER COLUMN benchmark_id SET DEFAULT 'unspecified',
+        ALTER COLUMN benchmark_id SET NOT NULL;
+
+      CREATE INDEX registry_task_versions_benchmark_idx
+        ON registry_task_versions(benchmark_id, batch_id, id);
+
+      CREATE OR REPLACE VIEW registry_sample_tasks AS
+      SELECT tv.id,
+             tv.batch_id AS submission_id,
+             t.vendor_id,
+             tv.task_stable_key AS stable_key,
+             tv.task_title AS title,
+             tv.task_summary AS summary,
+             tv.task_kind,
+             tv.format_kind,
+             tv.benchmark_id,
+             benchmark.display_name AS benchmark_name,
+             tv.source_path,
+             tv.artifact_id,
+             tv.content_sha256,
+             tv.created_at
+      FROM registry_task_versions tv
+      JOIN registry_tasks t ON t.id = tv.task_id
+      JOIN registry_benchmarks benchmark ON benchmark.id = tv.benchmark_id;
+
+      COMMENT ON TABLE registry_benchmarks IS
+        'Managed general benchmark directions available to exact task versions.';
+      COMMENT ON COLUMN registry_task_versions.benchmark_id IS
+        'General benchmark direction only; benchmark versions are intentionally not tracked.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

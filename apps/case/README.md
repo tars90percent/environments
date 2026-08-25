@@ -5,14 +5,15 @@ Codex.
 
 CASE owns the canonical sample registry used by its own tools and 小环境.
 PostgreSQL holds vendors, original source graphs, dated submissions, parsed
-tasks or traces, three Harbor check phases, non-conclusive check attempts,
-findings, and operational work.
+tasks or traces, their general benchmark directions, three Harbor check phases,
+non-conclusive check attempts, findings, and operational work.
 S3-compatible object storage holds immutable payloads, task artifacts,
 and check evidence.
 
 The workflow is deliberately narrow: preserve a submission, identify clear tasks
-or traces, label each task `harbor` or `non_harbor`, and run Environment, Oracle,
-and Nop only for Harbor tasks.
+or traces, assign each one a registered general benchmark direction, label each
+task `harbor` or `non_harbor`, and run Environment, Oracle, and Nop only for
+Harbor tasks.
 
 This README describes the CASE application and its runtime. The monorepo's root
 [`AGENTS.md`](../../AGENTS.md) is the sole authoritative operating policy for
@@ -83,6 +84,8 @@ The installed `case-registry` command gives CASE and Codex the same operations:
 case-registry operations
 case-registry summary
 case-registry catalog
+case-registry benchmarks
+case-registry register-benchmark /absolute/path/benchmark.json
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
 case-registry append-tasks /absolute/path/tasks.json
@@ -100,8 +103,12 @@ case-mail-intake capture-mail-plan /absolute/path/plan.json
 
 Registration preserves an immutable submission checkpoint and queues parsing.
 `append-tasks` adds only clearly bounded tasks or traces, each with an exact
-artifact, source path, source-item links, task kind, and one of the two format
-labels. Non-Harbor tasks stop there.
+artifact, source path, source-item links, task kind, registered general benchmark
+direction, and one of the two format labels. Source-item benchmark assignments
+provide a bulk default for every supplied task linked to that item; a task-level
+benchmark ID is available for a mixed package. Benchmark versions are not
+tracked. Historical task versions are assigned `unspecified` rather than being
+inferred from filenames. Non-Harbor tasks stop there.
 
 `case-registry`, `case-intake`, and `case-mail-intake` do not call the registry
 HTTP API. The capture commands
@@ -110,7 +117,8 @@ database transaction to register artifact records, source events and items, the
 dated submission, and every source link. A capture plan contains the vendor,
 submission ID/date/label, attachments, and an optional explicit `harbor` or
 `non_harbor` classification. File extensions are never treated as formats, and
-categories are not part of capture.
+categories and benchmark directions are not part of capture; benchmark direction
+is assigned only when parsed tasks or traces are registered.
 
 `record-harbor-check` accepts only Environment, Oracle, or Nop pass/fail evidence
 for Harbor tasks. Environment covers Harbor's clean image construction,

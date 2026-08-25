@@ -8,6 +8,7 @@ import {
   parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
+  parseRegisterBenchmark,
   parseReconcileSubmissionSourceItems,
   parseResearcherUpload,
   parseSourceEnvelope,
@@ -106,6 +107,7 @@ test("registers only clearly identified tasks or traces with two formats", () =>
   const input = {
     submissionId: manifest.batch.id,
     actor: "CASE",
+    benchmarkAssignments: [{ sourceItemId: "source-archive", benchmarkId: "terminal-bench" }],
     tasks: [
       { id: "task-harbor", stableKey: "task-one", title: "Task one", kind: "task", format: "harbor", sourcePath: "tasks/task-one", artifactId: `artifact:sha256:${sha}`, contentSha256: sha, sourceItemIds: ["source-archive"] },
       { id: "task-trace", stableKey: "trace-one", title: "Trace one", kind: "trace", format: "non_harbor", sourcePath: "traces/one.jsonl", artifactId: `artifact:sha256:${sha}`, contentSha256: sha, sourceItemIds: ["source-archive"] },
@@ -113,8 +115,27 @@ test("registers only clearly identified tasks or traces with two formats", () =>
   };
   const parsed = parseAppendTasks(input);
   assert.deepEqual(parsed.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
+  assert.deepEqual(parsed.tasks.map((task) => task.benchmarkId), ["terminal-bench", "terminal-bench"]);
   assert.throws(() => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[0], format: "native" }] }), ValidationError);
   assert.throws(() => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[0], sourceItemIds: [] }] }), ValidationError);
+  assert.throws(() => parseAppendTasks({ ...input, benchmarkAssignments: [] }), /must have a benchmarkId/);
+  assert.equal(parseAppendTasks({
+    ...input,
+    benchmarkAssignments: [],
+    tasks: [{ ...input.tasks[0], benchmarkId: "frontier-cs" }],
+  }).tasks[0]?.benchmarkId, "frontier-cs");
+});
+
+test("validates managed benchmark directions", () => {
+  const parsed = parseRegisterBenchmark({
+    id: "terminal-bench",
+    displayName: "Terminal-Bench",
+    aliases: ["terminal_bench", "TerminalBench"],
+    actor: "TARS",
+  });
+  assert.equal(parsed.id, "terminal-bench");
+  assert.deepEqual(parsed.aliases, ["terminal_bench", "TerminalBench"].sort((a, b) => a.localeCompare(b)));
+  assert.throws(() => parseRegisterBenchmark({ ...parsed, aliases: ["Terminal Bench", "terminal_bench"] }), /unique ignoring case/);
 });
 
 test("validates exactly three Harbor pass/fail phases and explicit control scores", () => {

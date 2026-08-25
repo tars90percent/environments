@@ -9,6 +9,7 @@ import type {
   HarborCheckAttemptInput,
   HarborCheckResultInput,
   HarborFindingInput,
+  RegisterBenchmarkInput,
   ReconcileSubmissionSourceItemsInput,
   ResearcherUploadInput,
   SourceEnvelopeInput,
@@ -244,11 +245,24 @@ export function parseAppendNormalizedTasks(value: unknown): AppendNormalizedTask
 
 export function parseAppendTasks(value: unknown): AppendTasksInput {
   const input = object(value, "task registration");
-  onlyKeys(input, new Set(["submissionId", "tasks", "actor"]), "task registration");
+  onlyKeys(input, new Set(["submissionId", "benchmarkAssignments", "tasks", "actor"]), "task registration");
+  const benchmarkAssignments = input.benchmarkAssignments === undefined
+    ? []
+    : array(input.benchmarkAssignments, "benchmarkAssignments").map((value, index) => {
+      const assignment = object(value, `benchmarkAssignments[${index}]`);
+      onlyKeys(assignment, new Set(["sourceItemId", "benchmarkId"]), `benchmarkAssignments[${index}]`);
+      return {
+        sourceItemId: identifier(assignment.sourceItemId, `benchmarkAssignments[${index}].sourceItemId`),
+        benchmarkId: identifier(assignment.benchmarkId, `benchmarkAssignments[${index}].benchmarkId`),
+      };
+    });
+  if (new Set(benchmarkAssignments.map((assignment) => assignment.sourceItemId)).size !== benchmarkAssignments.length) {
+    throw new ValidationError("benchmarkAssignments must assign each source item at most once");
+  }
   const tasks = array(input.tasks, "tasks").map((value, index) => {
     const task = object(value, `tasks[${index}]`);
     onlyKeys(task, new Set([
-      "id", "stableKey", "title", "summary", "kind", "format", "sourcePath",
+      "id", "stableKey", "title", "summary", "kind", "format", "benchmarkId", "sourcePath",
       "artifactId", "contentSha256", "sourceItemIds",
     ]), `tasks[${index}]`);
     const artifactId = identifier(task.artifactId, `tasks[${index}].artifactId`);
@@ -258,6 +272,18 @@ export function parseAppendTasks(value: unknown): AppendTasksInput {
     }
     const sourceItemIds = uniqueIdentifiers(task.sourceItemIds, `tasks[${index}].sourceItemIds`);
     if (!sourceItemIds.length) throw new ValidationError(`tasks[${index}].sourceItemIds must not be empty`);
+    const assignedBenchmarkIds = [...new Set(benchmarkAssignments
+      .filter((assignment) => sourceItemIds.includes(assignment.sourceItemId))
+      .map((assignment) => assignment.benchmarkId))];
+    const explicitBenchmarkId = task.benchmarkId === undefined
+      ? undefined
+      : identifier(task.benchmarkId, `tasks[${index}].benchmarkId`);
+    if (!explicitBenchmarkId && assignedBenchmarkIds.length === 0) {
+      throw new ValidationError(`tasks[${index}] must have a benchmarkId or inherit one from benchmarkAssignments`);
+    }
+    if (!explicitBenchmarkId && assignedBenchmarkIds.length > 1) {
+      throw new ValidationError(`tasks[${index}] inherits conflicting benchmark assignments`);
+    }
     return {
       id: identifier(task.id, `tasks[${index}].id`),
       stableKey: boundedString(task.stableKey, `tasks[${index}].stableKey`, 1_000),
@@ -265,6 +291,7 @@ export function parseAppendTasks(value: unknown): AppendTasksInput {
       summary: optionalString(task.summary, `tasks[${index}].summary`),
       kind: enumValue(task.kind, TASK_KINDS, `tasks[${index}].kind`),
       format: enumValue(task.format, TASK_FORMATS, `tasks[${index}].format`),
+      benchmarkId: explicitBenchmarkId ?? assignedBenchmarkIds[0]!,
       sourcePath: boundedString(task.sourcePath, `tasks[${index}].sourcePath`, 2_000),
       artifactId,
       contentSha256,
@@ -276,9 +303,33 @@ export function parseAppendTasks(value: unknown): AppendTasksInput {
   if (new Set(tasks.map((task) => task.stableKey)).size !== tasks.length) {
     throw new ValidationError("tasks must use unique stable keys within one registration");
   }
+  const usedSourceItemIds = new Set(tasks.flatMap((task) => task.sourceItemIds));
+  for (const assignment of benchmarkAssignments) {
+    if (!usedSourceItemIds.has(assignment.sourceItemId)) {
+      throw new ValidationError(`benchmark assignment source item ${assignment.sourceItemId} is not linked to a supplied task`);
+    }
+  }
   return {
     submissionId: identifier(input.submissionId, "submissionId"),
+    benchmarkAssignments,
     tasks,
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseRegisterBenchmark(value: unknown): RegisterBenchmarkInput {
+  const input = object(value, "benchmark registration");
+  onlyKeys(input, new Set(["id", "displayName", "aliases", "actor"]), "benchmark registration");
+  const aliases = (optionalStringArray(input.aliases, "aliases") ?? [])
+    .map((alias) => boundedString(alias, "aliases[]", 300))
+    .sort((a, b) => a.localeCompare(b));
+  if (new Set(aliases.map((alias) => alias.normalize("NFKC").trim().toLowerCase().replace(/[\s_-]+/g, "-"))).size !== aliases.length) {
+    throw new ValidationError("benchmark aliases must be unique ignoring case");
+  }
+  return {
+    id: identifier(input.id, "id"),
+    displayName: boundedString(input.displayName, "displayName", 300),
+    aliases,
     actor: boundedString(input.actor, "actor", 500),
   };
 }

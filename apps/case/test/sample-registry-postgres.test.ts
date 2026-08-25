@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { Pool } from "pg";
 import { PostgresRegistry, RegistryConflictError } from "../src/registry/postgres.js";
+import { parseAppendTasks } from "../src/registry/validation.js";
 
 const testDatabaseUrl = process.env.CASE_REGISTRY_TEST_DATABASE_URL;
 
@@ -44,14 +45,31 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       actor: "CASE",
     });
     await repository.registerArtifact({ id: `artifact:sha256:${evidenceSha}`, kind: "check_evidence", storageKey: `objects/${evidenceSha}`, sha256: evidenceSha });
-    await repository.appendTasks({
+    const registeredBenchmark = await repository.registerBenchmark({
+      id: "science-bench",
+      displayName: "Science Bench",
+      aliases: ["science_bench"],
+      actor: "TARS",
+    });
+    assert.equal(registeredBenchmark.created, true);
+    assert.equal((await repository.registerBenchmark({
+      id: "science-bench",
+      displayName: "Science Bench",
+      aliases: ["science_bench"],
+      actor: "TARS",
+    })).created, false);
+    await repository.appendTasks(parseAppendTasks({
       submissionId: "submission-one",
       actor: "CASE",
+      benchmarkAssignments: [
+        { sourceItemId: "source-task", benchmarkId: "terminal-bench" },
+        { sourceItemId: "source-trace", benchmarkId: "unspecified" },
+      ],
       tasks: [
         { id: "task-one", stableKey: "task-one", title: "Task one", kind: "task", format: "harbor", sourcePath: "tasks/one", artifactId: `artifact:sha256:${taskSha}`, contentSha256: taskSha, sourceItemIds: ["source-task"] },
         { id: "task-trace", stableKey: "trace-one", title: "Trace one", kind: "trace", format: "non_harbor", sourcePath: "traces/one.jsonl", artifactId: `artifact:sha256:${traceSha}`, contentSha256: traceSha, sourceItemIds: ["source-trace"] },
       ],
-    });
+    }));
     await assert.rejects(() => repository!.recordHarborAttempt(attempt("task-trace", evidenceSha)), RegistryConflictError);
     await repository.recordHarborAttempt(attempt("task-one", evidenceSha));
     await assert.rejects(() => repository!.recordHarborCheck(check("task-trace", evidenceSha)), RegistryConflictError);
@@ -69,6 +87,10 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     ]);
     assert.deepEqual(secondSubmission?.sourceEvents[0]?.items.map((item) => item.id), ["source-task"]);
     assert.deepEqual(submission?.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
+    assert.deepEqual(submission?.tasks.map((task) => task.benchmark), [
+      { id: "terminal-bench", displayName: "Terminal-Bench" },
+      { id: "unspecified", displayName: "Unspecified" },
+    ]);
     assert.equal(submission?.tasks[0]?.checks.environment?.outcome, "fail");
     assert.equal(submission?.tasks[0]?.checks.oracle, undefined);
     assert.equal(submission?.tasks[0]?.attempts.oracle?.status, "blocked");

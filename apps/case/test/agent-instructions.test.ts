@@ -29,6 +29,10 @@ test("the CASE guide defines the narrow submission-processing workflow", async (
   const guide = await readFile(rootGuide, "utf8");
 
   assert.match(guide, /preserve each original submission and its arrival provenance/);
+  assert.match(guide, /Assign each parsed task or trace one registered general benchmark direction/);
+  assert.match(guide, /Do not track benchmark versions/);
+  assert.match(guide, /use `unspecified` when the direction is not clear/);
+  assert.match(guide, /assign them in bulk from that source item/);
   assert.match(guide, /exactly one of `harbor` or `non_harbor`/);
   assert.match(guide, /For `non_harbor`, record the task and stop\. Do not check it/);
   assert.match(guide, /exactly three results: Environment, Oracle, and Nop/);

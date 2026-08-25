@@ -12,6 +12,9 @@ import type {
   OperationsSummary,
   ReconcileSubmissionSourceItemsInput,
   ReconcileSubmissionSourceItemsResult,
+  RegisterBenchmarkInput,
+  RegisterBenchmarkResult,
+  RegistryBenchmark,
   SampleCatalogSnapshot,
   SampleCatalogSubmission,
   SampleCatalogTask,
@@ -34,6 +37,8 @@ export interface RegistryRepository {
   captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
   reconcileSubmissionSourceItems(input: ReconcileSubmissionSourceItemsInput): Promise<ReconcileSubmissionSourceItemsResult>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
+  listBenchmarks(): Promise<RegistryBenchmark[]>;
+  registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
   appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;
   classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;

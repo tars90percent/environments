@@ -378,7 +378,31 @@ export type AppendNormalizedTasksResult = {
   taskVersionIds: string[];
 };
 
-/** Active task-registration contract. Categories and normalization states are deliberately absent. */
+export type RegistryBenchmark = {
+  id: string;
+  displayName: string;
+  aliases: string[];
+  createdAt: string;
+};
+
+export type RegisterBenchmarkInput = {
+  id: string;
+  displayName: string;
+  aliases?: string[];
+  actor: string;
+};
+
+export type RegisterBenchmarkResult = {
+  benchmark: RegistryBenchmark;
+  created: boolean;
+};
+
+export type SourceBenchmarkAssignmentInput = {
+  sourceItemId: string;
+  benchmarkId: string;
+};
+
+/** Active task-registration contract. Benchmark direction is required; categories and normalization states remain absent. */
 export type TaskRegistrationInput = {
   id: string;
   stableKey: string;
@@ -386,6 +410,7 @@ export type TaskRegistrationInput = {
   summary?: string;
   kind: SampleTaskKind;
   format: SampleTaskFormat;
+  benchmarkId: string;
   sourcePath: string;
   artifactId: string;
   contentSha256: string;
@@ -394,6 +419,7 @@ export type TaskRegistrationInput = {
 
 export type AppendTasksInput = {
   submissionId: string;
+  benchmarkAssignments: SourceBenchmarkAssignmentInput[];
   tasks: TaskRegistrationInput[];
   actor: string;
 };
@@ -814,6 +840,10 @@ export type SampleCatalogTask = {
   summary: string | null;
   kind: SampleTaskKind;
   format: SampleTaskFormat;
+  benchmark: {
+    id: string;
+    displayName: string;
+  };
   sourcePath: string | null;
   artifactId: string | null;
   contentSha256: string | null;

@@ -34,6 +34,9 @@ import type {
   OperationsSummary,
   ReconcileSubmissionSourceItemsInput,
   ReconcileSubmissionSourceItemsResult,
+  RegisterBenchmarkInput,
+  RegisterBenchmarkResult,
+  RegistryBenchmark,
   SampleCatalogCheck,
   SampleCatalogAttempt,
   SampleCatalogFinding,
@@ -71,6 +74,12 @@ const ORIGINAL_VENDOR_SOURCE_ITEM_KINDS = new Set<CatalogSourceItem["kind"]>([
 ]);
 
 type VendorRow = { id: string; name: string; short: string; description: string };
+type BenchmarkRow = {
+  id: string;
+  display_name: string;
+  aliases: string[];
+  created_at: string | Date;
+};
 type ResearchDemandRow = {
   id: string;
   domain_en: string;
@@ -157,6 +166,8 @@ type SampleTaskRow = {
   summary: string | null;
   task_kind: SampleCatalogTask["kind"];
   format_kind: SampleCatalogTask["format"];
+  benchmark_id: string;
+  benchmark_name: string;
   source_path: string | null;
   artifact_id: string | null;
   content_sha256: string | null;
@@ -1012,6 +1023,62 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
+  async listBenchmarks(): Promise<RegistryBenchmark[]> {
+    const result = await this.pool.query<BenchmarkRow>(
+      "SELECT id, display_name, aliases, created_at FROM registry_benchmarks ORDER BY display_name, id",
+    );
+    return result.rows.map(benchmarkFromRow);
+  }
+
+  async registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("LOCK TABLE registry_benchmarks IN SHARE ROW EXCLUSIVE MODE");
+      const existingResult = await client.query<BenchmarkRow>(
+        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks WHERE id = $1",
+        [input.id],
+      );
+      const existing = existingResult.rows[0];
+      if (existing) {
+        if (existing.display_name !== input.displayName || hashValue(existing.aliases) !== hashValue(input.aliases ?? [])) {
+          throw new RegistryConflictError(`Benchmark ${input.id} already exists with different contents`);
+        }
+        await client.query("COMMIT");
+        return { benchmark: benchmarkFromRow(existing), created: false };
+      }
+
+      const requestedLabels = new Set([input.id, input.displayName, ...(input.aliases ?? [])].map(normalizedBenchmarkLabel));
+      const allBenchmarks = await client.query<BenchmarkRow>(
+        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks",
+      );
+      for (const benchmark of allBenchmarks.rows) {
+        const registeredLabels = [benchmark.id, benchmark.display_name, ...benchmark.aliases].map(normalizedBenchmarkLabel);
+        if (registeredLabels.some((label) => requestedLabels.has(label))) {
+          throw new RegistryConflictError(`Benchmark ${input.id} conflicts with registered benchmark ${benchmark.id}`);
+        }
+      }
+
+      const inserted = await client.query<BenchmarkRow>(
+        `INSERT INTO registry_benchmarks(id, display_name, aliases)
+         VALUES ($1, $2, $3::jsonb)
+         RETURNING id, display_name, aliases, created_at`,
+        [input.id, input.displayName, json(input.aliases ?? [])],
+      );
+      await this.insertStatusEvent(client, "benchmark", input.id, "benchmark.registered", input.actor, {
+        displayName: input.displayName,
+        aliases: input.aliases ?? [],
+      });
+      await client.query("COMMIT");
+      return { benchmark: benchmarkFromRow(inserted.rows[0]!), created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async appendTasks(input: AppendTasksInput): Promise<AppendTasksResult> {
     const client = await this.pool.connect();
     try {
@@ -1070,6 +1137,18 @@ export class PostgresRegistry implements RegistryRepository {
         }
       }
 
+      const benchmarkIds = [...new Set(input.tasks.map((task) => task.benchmarkId))];
+      const benchmarkResult = await client.query<{ id: string }>(
+        "SELECT id FROM registry_benchmarks WHERE id = ANY($1::text[])",
+        [benchmarkIds],
+      );
+      const registeredBenchmarkIds = new Set(benchmarkResult.rows.map((row) => row.id));
+      for (const benchmarkId of benchmarkIds) {
+        if (!registeredBenchmarkIds.has(benchmarkId)) {
+          throw new RegistryNotFoundError(`Benchmark ${benchmarkId} is not registered`);
+        }
+      }
+
       const compatibilityCategoryId = "case:tasks";
       await client.query(
         `INSERT INTO registry_categories(id, name, description)
@@ -1102,11 +1181,12 @@ export class PostgresRegistry implements RegistryRepository {
           task_summary: string | null;
           task_kind: string;
           format_kind: string;
+          benchmark_id: string;
           source_path: string | null;
           artifact_id: string | null;
           content_sha256: string | null;
         }>(
-          `SELECT id, batch_id, task_stable_key, task_title, task_summary, task_kind, format_kind,
+          `SELECT id, batch_id, task_stable_key, task_title, task_summary, task_kind, format_kind, benchmark_id,
                   source_path, artifact_id, content_sha256
            FROM registry_task_versions
            WHERE id = $1 OR (batch_id = $2 AND task_id = $3)
@@ -1122,6 +1202,7 @@ export class PostgresRegistry implements RegistryRepository {
             && current.task_summary === (task.summary ?? null)
             && current.task_kind === task.kind
             && current.format_kind === task.format
+            && current.benchmark_id === task.benchmarkId
             && current.source_path === task.sourcePath
             && current.artifact_id === task.artifactId
             && current.content_sha256 === task.contentSha256;
@@ -1132,14 +1213,14 @@ export class PostgresRegistry implements RegistryRepository {
                id, task_id, batch_id, category_id, source_path, format, artifact_id, content_sha256,
                workflow_status, catalog_visibility, metadata, representation_kind, representation_path,
                normalization_outcome, representation_basis, task_kind, format_kind,
-               task_stable_key, task_title, task_summary
+               task_stable_key, task_title, task_summary, benchmark_id
              ) VALUES (
                $1, $2, $3, $4, $5, $6, $7, $8,
-               $9, $10, '{}'::jsonb, 'unknown', NULL, NULL, 'unknown', $11, $12, $13, $14, $15
+               $9, $10, '{}'::jsonb, 'unknown', NULL, NULL, 'unknown', $11, $12, $13, $14, $15, $16
              )`,
             [task.id, taskId, input.submissionId, compatibilityCategoryId, task.sourcePath, task.format,
               task.artifactId, task.contentSha256, batch.workflow_status, batch.catalog_visibility,
-              task.kind, task.format, task.stableKey, task.title, task.summary ?? null],
+              task.kind, task.format, task.stableKey, task.title, task.summary ?? null, task.benchmarkId],
           );
           tasksAdded += 1;
           if (task.format === "harbor") {
@@ -2631,7 +2712,8 @@ export class PostgresRegistry implements RegistryRepository {
       ),
       this.pool.query<SampleTaskRow>(
         `SELECT st.submission_id, st.id, st.stable_key, st.title, st.summary,
-                st.task_kind, st.format_kind, st.source_path, st.artifact_id, st.content_sha256
+                st.task_kind, st.format_kind, st.benchmark_id, st.benchmark_name,
+                st.source_path, st.artifact_id, st.content_sha256
          FROM registry_sample_tasks st
          JOIN registry_task_versions tv ON tv.id = st.id
          JOIN registry_submission_batches b ON b.id = st.submission_id
@@ -2760,6 +2842,7 @@ export class PostgresRegistry implements RegistryRepository {
         summary: row.summary,
         kind: row.task_kind,
         format: row.format_kind,
+        benchmark: { id: row.benchmark_id, displayName: row.benchmark_name },
         sourcePath: row.source_path,
         artifactId: row.artifact_id,
         contentSha256: row.content_sha256,
@@ -3367,6 +3450,19 @@ function artifactFromRow(row: ArtifactRow): ArtifactRecord {
     metadata: row.metadata,
     createdAt: new Date(row.created_at).toISOString(),
   };
+}
+
+function benchmarkFromRow(row: BenchmarkRow): RegistryBenchmark {
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    aliases: row.aliases,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}
+
+function normalizedBenchmarkLabel(value: string): string {
+  return value.normalize("NFKC").trim().toLowerCase().replace(/[\s_-]+/g, "-");
 }
 
 function sourceRelationFromRow(row: SourceRelationRow): CatalogSourceRelation {

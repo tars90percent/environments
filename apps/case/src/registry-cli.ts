@@ -16,6 +16,7 @@ import {
   parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
+  parseRegisterBenchmark,
   parseReconcileSubmissionSourceItems,
   parseSourceEnvelope,
   parseSubmissionIntakeClassification,
@@ -72,6 +73,12 @@ if (command === "operations") {
         output(sourceEvent);
         break;
       }
+      case "benchmarks":
+        output(await repository.listBenchmarks());
+        break;
+      case "register-benchmark":
+        output(await repository.registerBenchmark(parseRegisterBenchmark(await jsonFile(argument))));
+        break;
       case "import":
         output(await repository.ingestSubmission(parseSubmissionManifest(await jsonFile(argument))));
         break;
@@ -132,7 +139,7 @@ if (command === "operations") {
         output({ updated: true });
         break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|import|import-source|reconcile-submission-source-items|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|import|import-source|reconcile-submission-source-items|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
     }
   } finally {
     await repository.close();
@@ -243,6 +250,8 @@ function operationSchemas() {
     batch: { arguments: ["<submission-id>"] },
     task: { arguments: ["<task-id>"] },
     "source-event": { arguments: ["<source-event-id>"] },
+    benchmarks: { arguments: [], result: "registered general benchmark directions" },
+    "register-benchmark": { arguments: ["<benchmark.json>"], fields: ["id", "displayName", "aliases?", "actor"] },
     import: { arguments: ["<submission-manifest.json>"], compatibility: "Prefer case-intake or case-mail-intake for Feishu capture." },
     "import-source": { arguments: ["<source-envelope.json>"], compatibility: "Registers standalone provenance evidence." },
     "reconcile-submission-source-items": {
@@ -251,7 +260,11 @@ function operationSchemas() {
       roles: ["original_vendor_file", "provenance"],
       note: "Replaces only this submission's item links for one already-linked source event; source records and artifacts are not changed.",
     },
-    "append-tasks": { arguments: ["<tasks.json>"], fields: ["submissionId", "tasks", "actor"] },
+    "append-tasks": {
+      arguments: ["<tasks.json>"],
+      fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "actor"],
+      note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override.",
+    },
     "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },
     "restore-vendor": { arguments: ["<restore.json>"], fields: ["vendorId", "reason", "actor"] },
