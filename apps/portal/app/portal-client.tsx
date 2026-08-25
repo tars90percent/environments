@@ -163,7 +163,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       <div className="registry-stats">
         <Stat label={t.vendors} value={catalog ? vendors.length : undefined} />
         <Stat label={t.submissions} value={catalog?.totals.submissions} />
-        <Stat label={t.tasks} value={catalog?.totals.tasks} />
         <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
       </div>
     </section>
