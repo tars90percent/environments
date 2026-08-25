@@ -238,7 +238,7 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
     <div className="task-main">
       <h5>{task.title}</h5>
       <div className="task-meta">
-        <span>{task.benchmark.displayName}</span>
+        {task.benchmark.id !== "unspecified" && <span>{task.benchmark.displayName}</span>}
         <span>{task.format === "harbor" ? "Harbor" : t.nonHarbor}</span>
         {task.kind === "trace" && <span>{t.trace}</span>}
         {task.sourcePath && <code>{displayArchivePath(task.sourcePath)}</code>}

@@ -51,6 +51,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Nop/);
   assert.match(source, /task\.format === "harbor"/);
   assert.match(source, /task\.benchmark\.displayName/);
+  assert.match(source, /task\.benchmark\.id !== "unspecified"/);
   assert.match(source, /check-mark/);
   assert.match(source, /task\.attempts\?\.\[phase\]/);
   assert.match(source, /attempted: "Tried"/);
