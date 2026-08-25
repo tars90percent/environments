@@ -1463,6 +1463,69 @@ const migrations: Migration[] = [
         'General benchmark direction only; benchmark versions are intentionally not tracked.';
     `,
   },
+  {
+    id: "019_append_only_task_reconciliation",
+    sql: `
+      ALTER TABLE registry_task_versions
+        ADD COLUMN superseded_at timestamptz,
+        ADD COLUMN superseded_by_task_version_id text REFERENCES registry_task_versions(id);
+
+      ALTER TABLE registry_task_versions
+        DROP CONSTRAINT registry_task_versions_batch_id_task_id_key;
+
+      CREATE UNIQUE INDEX registry_task_versions_active_batch_task_idx
+        ON registry_task_versions(batch_id, task_id)
+        WHERE superseded_at IS NULL;
+
+      CREATE INDEX registry_task_versions_superseded_idx
+        ON registry_task_versions(batch_id, superseded_at, id);
+
+      CREATE OR REPLACE VIEW registry_sample_tasks AS
+      SELECT tv.id,
+             tv.batch_id AS submission_id,
+             t.vendor_id,
+             tv.task_stable_key AS stable_key,
+             tv.task_title AS title,
+             tv.task_summary AS summary,
+             tv.task_kind,
+             tv.format_kind,
+             tv.source_path,
+             tv.artifact_id,
+             tv.content_sha256,
+             tv.created_at,
+             tv.benchmark_id,
+             benchmark.display_name AS benchmark_name
+      FROM registry_task_versions tv
+      JOIN registry_tasks t ON t.id = tv.task_id
+      JOIN registry_benchmarks benchmark ON benchmark.id = tv.benchmark_id
+      WHERE tv.superseded_at IS NULL;
+
+      CREATE OR REPLACE VIEW registry_harbor_check_results AS
+      SELECT cr.id,
+             cr.task_version_id AS task_id,
+             cr.check_phase AS phase,
+             cr.outcome,
+             cr.summary,
+             cr.evidence_artifact_id,
+             cr.harbor_version,
+             cr.modal_version,
+             cr.command,
+             cr.sandbox_ref,
+             cr.score,
+             cr.started_at,
+             cr.completed_at
+      FROM registry_check_runs cr
+      JOIN registry_task_versions tv ON tv.id = cr.task_version_id
+      WHERE tv.superseded_at IS NULL
+        AND cr.check_phase IN ('environment', 'oracle', 'nop')
+        AND cr.outcome IN ('pass', 'fail');
+
+      COMMENT ON COLUMN registry_task_versions.superseded_at IS
+        'When set, this immutable historical version is excluded from the active catalog.';
+      COMMENT ON COLUMN registry_task_versions.superseded_by_task_version_id IS
+        'Replacement task version for an audited correction; null means the parsed object was retired without replacement.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

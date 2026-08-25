@@ -119,6 +119,67 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     const reconciledSubmission = reconciledCatalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-one");
     assert.deepEqual(reconciledSubmission?.sourceEvents[0]?.items.map((item) => item.id), ["source-task", "source-trace"]);
 
+    await repository.appendTasks(parseAppendTasks({
+      submissionId: "submission-one",
+      actor: "CASE",
+      benchmarkAssignments: [],
+      tasks: [{
+        id: "source-only-record",
+        stableKey: "source-only-record",
+        title: "Source-only record",
+        kind: "task",
+        format: "non_harbor",
+        benchmarkId: "unspecified",
+        sourcePath: "source-only/video.mp4",
+        artifactId: `artifact:sha256:${traceSha}`,
+        contentSha256: traceSha,
+        sourceItemIds: ["source-trace"],
+      }],
+    }));
+    const reconciliationResult = await repository.reconcileSubmissionTasks({
+      submissionId: "submission-one",
+      actor: "TARS",
+      reason: "Correct the parsed object kinds and retire source-only material.",
+      benchmarkAssignments: [],
+      tasks: [
+        {
+          id: "task-one",
+          stableKey: "task-one",
+          title: "Task one",
+          kind: "task",
+          format: "harbor",
+          benchmarkId: "terminal-bench",
+          sourcePath: "tasks/one",
+          artifactId: `artifact:sha256:${taskSha}`,
+          contentSha256: taskSha,
+          sourceItemIds: ["source-task"],
+        },
+        {
+          id: "task-trace-v2",
+          stableKey: "trace-one",
+          title: "Trace one",
+          kind: "trace",
+          format: "non_harbor",
+          benchmarkId: "unspecified",
+          sourcePath: "traces/one.jsonl",
+          artifactId: `artifact:sha256:${traceSha}`,
+          contentSha256: traceSha,
+          sourceItemIds: ["source-trace"],
+        },
+      ],
+    });
+    assert.equal(reconciliationResult.taskVersionsAdded, 1);
+    assert.equal(reconciliationResult.taskVersionsUnchanged, 1);
+    assert.deepEqual(reconciliationResult.retiredTaskVersionIds, ["source-only-record"]);
+    assert.deepEqual(reconciliationResult.supersededTaskVersionIds.sort(), ["source-only-record", "task-trace"]);
+    const reclassifiedSubmission = await repository.getSampleSubmission("submission-one");
+    assert.deepEqual(reclassifiedSubmission?.tasks.map((task) => [task.id, task.kind]), [
+      ["task-one", "task"],
+      ["task-trace-v2", "trace"],
+    ]);
+    assert.equal(await repository.getSampleTask("task-trace"), null);
+    assert.equal(await repository.getSampleTask("source-only-record"), null);
+
     await repository.recordHarborCheck({
       ...check("task-one", evidenceSha),
       id: "check-environment-pass",

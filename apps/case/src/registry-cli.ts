@@ -18,6 +18,7 @@ import {
   parseHarborFinding,
   parseRegisterBenchmark,
   parseReconcileSubmissionSourceItems,
+  parseReconcileSubmissionTasks,
   parseSourceEnvelope,
   parseSubmissionIntakeClassification,
   parseSubmissionManifest,
@@ -91,6 +92,9 @@ if (command === "operations") {
       case "append-tasks":
         output(await repository.appendTasks(parseAppendTasks(await jsonFile(argument))));
         break;
+      case "reconcile-submission-tasks":
+        output(await repository.reconcileSubmissionTasks(parseReconcileSubmissionTasks(await jsonFile(argument))));
+        break;
       case "classify-submission":
         output(await repository.classifySubmissionIntake(parseSubmissionIntakeClassification(await jsonFile(argument))));
         break;
@@ -139,7 +143,7 @@ if (command === "operations") {
         output({ updated: true });
         break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|import|import-source|reconcile-submission-source-items|append-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
     }
   } finally {
     await repository.close();
@@ -264,6 +268,11 @@ function operationSchemas() {
       arguments: ["<tasks.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "actor"],
       note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override.",
+    },
+    "reconcile-submission-tasks": {
+      arguments: ["<reconciliation.json>"],
+      fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "reason", "actor"],
+      note: "Atomically replaces the active parsed task/trace set while preserving prior task versions as superseded history.",
     },
     "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },

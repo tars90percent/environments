@@ -10,6 +10,7 @@ import {
   parseHarborFinding,
   parseRegisterBenchmark,
   parseReconcileSubmissionSourceItems,
+  parseReconcileSubmissionTasks,
   parseResearcherUpload,
   parseSourceEnvelope,
   parseSubmissionIntakeClassification,
@@ -124,6 +125,33 @@ test("registers only clearly identified tasks or traces with two formats", () =>
     benchmarkAssignments: [],
     tasks: [{ ...input.tasks[0], benchmarkId: "frontier-cs" }],
   }).tasks[0]?.benchmarkId, "frontier-cs");
+});
+
+test("validates complete audited task reconciliations", () => {
+  const sha = "b".repeat(64);
+  const input = {
+    submissionId: manifest.batch.id,
+    actor: "TARS",
+    reason: "Correct trace classifications while preserving prior task versions.",
+    benchmarkAssignments: [],
+    tasks: [{
+      id: "trace-v2",
+      stableKey: "reasoning-record-one",
+      title: "Reasoning record one",
+      kind: "trace",
+      format: "non_harbor",
+      benchmarkId: "image-math",
+      sourcePath: "reasoning/samples.json#/0",
+      artifactId: `artifact:sha256:${sha}`,
+      contentSha256: sha,
+      sourceItemIds: ["source-archive"],
+    }],
+  };
+  const parsed = parseReconcileSubmissionTasks(input);
+  assert.equal(parsed.reason, input.reason);
+  assert.deepEqual(parsed.tasks.map((task) => [task.id, task.kind]), [["trace-v2", "trace"]]);
+  assert.throws(() => parseReconcileSubmissionTasks({ ...input, reason: "" }), ValidationError);
+  assert.throws(() => parseReconcileSubmissionTasks({ ...input, tasks: [] }), ValidationError);
 });
 
 test("validates managed benchmark directions", () => {

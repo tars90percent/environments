@@ -34,6 +34,8 @@ import type {
   OperationsSummary,
   ReconcileSubmissionSourceItemsInput,
   ReconcileSubmissionSourceItemsResult,
+  ReconcileSubmissionTasksInput,
+  ReconcileSubmissionTasksResult,
   RegisterBenchmarkInput,
   RegisterBenchmarkResult,
   RegistryBenchmark,
@@ -1189,7 +1191,8 @@ export class PostgresRegistry implements RegistryRepository {
           `SELECT id, batch_id, task_stable_key, task_title, task_summary, task_kind, format_kind, benchmark_id,
                   source_path, artifact_id, content_sha256
            FROM registry_task_versions
-           WHERE id = $1 OR (batch_id = $2 AND task_id = $3)
+           WHERE superseded_at IS NULL
+             AND (id = $1 OR (batch_id = $2 AND task_id = $3))
            FOR UPDATE`,
           [task.id, input.submissionId, taskId],
         );
@@ -1247,7 +1250,10 @@ export class PostgresRegistry implements RegistryRepository {
         );
         await client.query(
           `UPDATE registry_batch_categories
-           SET declared_count = (SELECT COUNT(*) FROM registry_task_versions WHERE batch_id = $1)
+           SET declared_count = (
+             SELECT COUNT(*) FROM registry_task_versions
+             WHERE batch_id = $1 AND superseded_at IS NULL
+           )
            WHERE batch_id = $1 AND category_id = $2`,
           [input.submissionId, compatibilityCategoryId],
         );
@@ -1257,6 +1263,301 @@ export class PostgresRegistry implements RegistryRepository {
       }
       await client.query("COMMIT");
       return { submissionId: input.submissionId, tasksAdded, taskIds: input.tasks.map((task) => task.id) };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async reconcileSubmissionTasks(input: ReconcileSubmissionTasksInput): Promise<ReconcileSubmissionTasksResult> {
+    const requestSha256 = hashValue(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const batchResult = await client.query<{
+        vendor_id: string;
+        workflow_status: string;
+        catalog_visibility: string;
+        intake_purpose: string | null;
+      }>(
+        `SELECT vendor_id, workflow_status, catalog_visibility,
+                COALESCE(intake_purpose, metadata->>'intakePurpose') AS intake_purpose
+         FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
+        [input.submissionId],
+      );
+      const batch = batchResult.rows[0];
+      if (!batch) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (batch.intake_purpose !== "sample_evaluation") {
+        throw new RegistryConflictError(`Submission ${input.submissionId} is not a sample submission`);
+      }
+
+      const artifactIds = [...new Set(input.tasks.map((task) => task.artifactId))];
+      const artifactResult = await client.query<{ id: string; sha256: string }>(
+        "SELECT id, sha256 FROM registry_artifacts WHERE id = ANY($1::text[])",
+        [artifactIds],
+      );
+      const artifacts = new Map(artifactResult.rows.map((artifact) => [artifact.id, artifact.sha256]));
+      for (const task of input.tasks) {
+        if (artifacts.get(task.artifactId) !== task.contentSha256) {
+          throw new RegistryConflictError(`Task ${task.id} must reference its exact immutable artifact`);
+        }
+      }
+
+      const sourceItemIds = [...new Set(input.tasks.flatMap((task) => task.sourceItemIds))];
+      const sourceResult = await client.query<{ id: string }>(
+        `SELECT DISTINCT si.id
+         FROM registry_source_items si
+         WHERE si.id = ANY($1::text[])
+           AND (
+             EXISTS (
+               SELECT 1 FROM registry_batch_source_items bsi
+               WHERE bsi.batch_id = $2 AND bsi.source_item_id = si.id
+             )
+             OR EXISTS (
+               SELECT 1 FROM registry_batch_source_events bse
+               WHERE bse.batch_id = $2 AND bse.source_event_id = si.source_event_id
+             )
+           )`,
+        [sourceItemIds, input.submissionId],
+      );
+      const linkedSourceIds = new Set(sourceResult.rows.map((row) => row.id));
+      for (const sourceItemId of sourceItemIds) {
+        if (!linkedSourceIds.has(sourceItemId)) {
+          throw new RegistryConflictError(`Source item ${sourceItemId} is not linked to submission ${input.submissionId}`);
+        }
+      }
+
+      const benchmarkIds = [...new Set(input.tasks.map((task) => task.benchmarkId))];
+      const benchmarkResult = await client.query<{ id: string }>(
+        "SELECT id FROM registry_benchmarks WHERE id = ANY($1::text[])",
+        [benchmarkIds],
+      );
+      const registeredBenchmarkIds = new Set(benchmarkResult.rows.map((row) => row.id));
+      for (const benchmarkId of benchmarkIds) {
+        if (!registeredBenchmarkIds.has(benchmarkId)) {
+          throw new RegistryNotFoundError(`Benchmark ${benchmarkId} is not registered`);
+        }
+      }
+
+      const compatibilityCategoryId = "case:tasks";
+      await client.query(
+        `INSERT INTO registry_categories(id, name, description)
+         VALUES ($1, 'Tasks', 'Compatibility row for the active task-registration schema.')
+         ON CONFLICT(id) DO NOTHING`,
+        [compatibilityCategoryId],
+      );
+      await client.query(
+        `INSERT INTO registry_batch_categories(batch_id, category_id, declared_count, examples)
+         VALUES ($1, $2, 0, '[]'::jsonb)
+         ON CONFLICT(batch_id, category_id) DO NOTHING`,
+        [input.submissionId, compatibilityCategoryId],
+      );
+
+      type ActiveTaskVersionRow = {
+        id: string;
+        task_id: string;
+        category_id: string;
+        task_stable_key: string;
+        task_title: string;
+        task_summary: string | null;
+        task_kind: string;
+        format_kind: string;
+        benchmark_id: string;
+        source_path: string | null;
+        artifact_id: string | null;
+        content_sha256: string | null;
+      };
+      const activeResult = await client.query<ActiveTaskVersionRow>(
+        `SELECT id, task_id, category_id, task_stable_key, task_title, task_summary,
+                task_kind, format_kind, benchmark_id, source_path, artifact_id, content_sha256
+         FROM registry_task_versions
+         WHERE batch_id = $1 AND superseded_at IS NULL
+         FOR UPDATE`,
+        [input.submissionId],
+      );
+      const activeByTaskId = new Map(activeResult.rows.map((row) => [row.task_id, row]));
+      const activeIds = activeResult.rows.map((row) => row.id);
+      const activeSourceResult = activeIds.length
+        ? await client.query<{ task_version_id: string; source_item_id: string }>(
+          `SELECT DISTINCT task_version_id, source_item_id
+           FROM registry_task_source_items
+           WHERE task_version_id = ANY($1::text[])
+           ORDER BY source_item_id`,
+          [activeIds],
+        )
+        : { rows: [] as Array<{ task_version_id: string; source_item_id: string }> };
+      const activeSourceIds = new Map<string, string[]>();
+      for (const row of activeSourceResult.rows) {
+        const values = activeSourceIds.get(row.task_version_id) ?? [];
+        values.push(row.source_item_id);
+        activeSourceIds.set(row.task_version_id, values);
+      }
+
+      const desiredTaskIds = new Set<string>();
+      const activeTaskVersionIds: string[] = [];
+      const supersededTaskVersionIds: string[] = [];
+      const retiredTaskVersionIds: string[] = [];
+      let taskVersionsAdded = 0;
+      let taskVersionsUnchanged = 0;
+
+      for (const task of input.tasks) {
+        const taskId = stableTaskId(batch.vendor_id, task.stableKey);
+        if (desiredTaskIds.has(taskId)) {
+          throw new RegistryConflictError(`Task stable key ${task.stableKey} is repeated`);
+        }
+        desiredTaskIds.add(taskId);
+        activeTaskVersionIds.push(task.id);
+
+        await client.query(
+          `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT(vendor_id, stable_key) DO NOTHING`,
+          [taskId, batch.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
+        );
+
+        const current = activeByTaskId.get(taskId);
+        const sourceIds = [...task.sourceItemIds].sort();
+        const currentSourceIds = current ? [...(activeSourceIds.get(current.id) ?? [])].sort() : [];
+        const matches = current
+          && current.id === task.id
+          && current.task_stable_key === task.stableKey
+          && current.task_title === task.title
+          && current.task_summary === (task.summary ?? null)
+          && current.task_kind === task.kind
+          && current.format_kind === task.format
+          && current.benchmark_id === task.benchmarkId
+          && current.source_path === task.sourcePath
+          && current.artifact_id === task.artifactId
+          && current.content_sha256 === task.contentSha256
+          && hashValue(currentSourceIds) === hashValue(sourceIds);
+        if (matches) {
+          taskVersionsUnchanged += 1;
+          continue;
+        }
+
+        if (current) {
+          await client.query(
+            `UPDATE registry_task_versions
+             SET superseded_at = now(), updated_at = now()
+             WHERE id = $1 AND superseded_at IS NULL`,
+            [current.id],
+          );
+          supersededTaskVersionIds.push(current.id);
+        }
+
+        const conflictingId = await client.query<{ id: string }>(
+          "SELECT id FROM registry_task_versions WHERE id = $1",
+          [task.id],
+        );
+        if (conflictingId.rows[0]) {
+          throw new RegistryConflictError(`Task version ${task.id} already exists`);
+        }
+
+        await client.query(
+          `INSERT INTO registry_task_versions(
+             id, task_id, batch_id, category_id, source_path, format, artifact_id, content_sha256,
+             workflow_status, catalog_visibility, metadata, representation_kind, representation_path,
+             normalization_outcome, representation_basis, task_kind, format_kind,
+             task_stable_key, task_title, task_summary, benchmark_id
+           ) VALUES (
+             $1, $2, $3, $4, $5, $6, $7, $8,
+             $9, $10, $11::jsonb, 'unknown', NULL,
+             NULL, 'recorded', $12, $13,
+             $14, $15, $16, $17
+           )`,
+          [task.id, taskId, input.submissionId, current?.category_id ?? compatibilityCategoryId,
+            task.sourcePath, task.format, task.artifactId, task.contentSha256,
+            batch.workflow_status, batch.catalog_visibility,
+            json({ reconciliationRequestSha256: requestSha256, reconciliationReason: input.reason }),
+            task.kind, task.format, task.stableKey, task.title, task.summary ?? null, task.benchmarkId],
+        );
+        for (const sourceItemId of task.sourceItemIds) {
+          await client.query(
+            `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
+             VALUES ($1, $2, 'discovered_in')`,
+            [task.id, sourceItemId],
+          );
+        }
+        if (current) {
+          await client.query(
+            "UPDATE registry_task_versions SET superseded_by_task_version_id = $2 WHERE id = $1",
+            [current.id, task.id],
+          );
+        } else if (task.format === "harbor" && task.kind === "task") {
+          await this.enqueueWork(client, "harbor_checks", "task", task.id, {
+            phases: ["environment", "oracle", "nop"],
+          });
+        }
+        taskVersionsAdded += 1;
+      }
+
+      for (const current of activeResult.rows) {
+        if (desiredTaskIds.has(current.task_id)) continue;
+        await client.query(
+          `UPDATE registry_task_versions
+           SET superseded_at = now(), updated_at = now()
+           WHERE id = $1 AND superseded_at IS NULL`,
+          [current.id],
+        );
+        supersededTaskVersionIds.push(current.id);
+        retiredTaskVersionIds.push(current.id);
+      }
+
+      await client.query(
+        `UPDATE registry_batch_categories bc
+         SET declared_count = (
+           SELECT COUNT(*)
+           FROM registry_task_versions tv
+           WHERE tv.batch_id = bc.batch_id
+             AND tv.category_id = bc.category_id
+             AND tv.superseded_at IS NULL
+         )
+         WHERE bc.batch_id = $1`,
+        [input.submissionId],
+      );
+      await client.query(
+        `UPDATE registry_submission_batches
+         SET formats = COALESCE((
+           SELECT jsonb_agg(format_kind ORDER BY format_kind)
+           FROM (
+             SELECT DISTINCT format_kind
+             FROM registry_task_versions
+             WHERE batch_id = $1 AND superseded_at IS NULL
+           ) active_formats
+         ), '[]'::jsonb),
+             updated_at = now()
+         WHERE id = $1`,
+        [input.submissionId],
+      );
+      await this.insertStatusEvent(
+        client,
+        "submission_batch",
+        input.submissionId,
+        "parsing.tasks_reconciled",
+        input.actor,
+        {
+          reason: input.reason,
+          requestSha256,
+          activeTaskVersionIds,
+          taskVersionsAdded,
+          taskVersionsUnchanged,
+          supersededTaskVersionIds,
+          retiredTaskVersionIds,
+        },
+      );
+
+      await client.query("COMMIT");
+      return {
+        submissionId: input.submissionId,
+        activeTaskVersionIds,
+        taskVersionsAdded,
+        taskVersionsUnchanged,
+        taskVersionsSuperseded: supersededTaskVersionIds.length,
+        supersededTaskVersionIds,
+        retiredTaskVersionIds,
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1404,7 +1705,8 @@ export class PostgresRegistry implements RegistryRepository {
                   representation_kind, representation_path, normalization_outcome, representation_basis,
                   artifact_id, content_sha256, workflow_status, catalog_visibility, metadata
            FROM registry_task_versions
-           WHERE id = $1 OR (batch_id = $2 AND task_id = $3)
+           WHERE superseded_at IS NULL
+             AND (id = $1 OR (batch_id = $2 AND task_id = $3))
            FOR UPDATE`,
           [task.id, input.batchId, taskId],
         );
@@ -1837,7 +2139,7 @@ export class PostgresRegistry implements RegistryRepository {
     try {
       await client.query("BEGIN");
       const task = await client.query<{ format_kind: string }>(
-        "SELECT format_kind FROM registry_task_versions WHERE id = $1 FOR UPDATE",
+        "SELECT format_kind FROM registry_task_versions WHERE id = $1 AND superseded_at IS NULL FOR UPDATE",
         [input.taskId],
       );
       if (!task.rowCount) throw new RegistryNotFoundError(`Task ${input.taskId} does not exist`);
@@ -1956,7 +2258,7 @@ export class PostgresRegistry implements RegistryRepository {
     try {
       await client.query("BEGIN");
       const task = await client.query<{ format_kind: string }>(
-        "SELECT format_kind FROM registry_task_versions WHERE id = $1 FOR UPDATE",
+        "SELECT format_kind FROM registry_task_versions WHERE id = $1 AND superseded_at IS NULL FOR UPDATE",
         [input.taskId],
       );
       if (!task.rowCount) throw new RegistryNotFoundError(`Task ${input.taskId} does not exist`);
@@ -2084,7 +2386,7 @@ export class PostgresRegistry implements RegistryRepository {
     try {
       await client.query("BEGIN");
       const task = await client.query<{ id: string }>(
-        "SELECT id FROM registry_task_versions WHERE id = $1",
+        "SELECT id FROM registry_task_versions WHERE id = $1 AND superseded_at IS NULL",
         [input.taskVersionId],
       );
       if (!task.rowCount) throw new RegistryNotFoundError(`task_version ${input.taskVersionId} does not exist`);
@@ -2503,6 +2805,7 @@ export class PostgresRegistry implements RegistryRepository {
          LEFT JOIN registry_check_definitions cd
            ON cd.id = cr.definition_id AND cd.version = cr.definition_version
          WHERE tv.catalog_visibility = ANY($1::text[])
+           AND tv.superseded_at IS NULL
          GROUP BY tv.batch_id, tv.category_id, tv.id, t.stable_key, t.title, t.summary,
                   tv.source_path, tv.format, tv.representation_kind, tv.representation_path,
                   tv.normalization_outcome, tv.representation_basis, tv.artifact_id, tv.content_sha256,
@@ -2519,6 +2822,7 @@ export class PostgresRegistry implements RegistryRepository {
            ON cd.id = cr.definition_id AND cd.version = cr.definition_version
          JOIN registry_task_versions tv ON tv.id = cr.task_version_id
          WHERE tv.catalog_visibility = ANY($1::text[])
+           AND tv.superseded_at IS NULL
            AND cd.evidence_role IN ('environment', 'build', 'boot', 'positive_control', 'negative_control')
            AND cr.execution_scope = 'remote_sandbox'
          ORDER BY cr.task_version_id, cd.evidence_role, cr.completed_at DESC, cr.created_at DESC, cr.id DESC`,
@@ -2578,6 +2882,7 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_task_source_items tsi
          JOIN registry_task_versions tv ON tv.id = tsi.task_version_id
          WHERE tv.catalog_visibility = ANY($1::text[])
+           AND tv.superseded_at IS NULL
          ORDER BY tsi.created_at`,
         [visibility],
       ),
@@ -2586,6 +2891,7 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_task_findings tf
          JOIN registry_task_versions tv ON tv.id = tf.task_version_id
          WHERE tv.catalog_visibility = ANY($1::text[])
+           AND tv.superseded_at IS NULL
            AND ($2::boolean OR tf.visibility = 'portal')
          ORDER BY tf.updated_at DESC, tf.created_at DESC, tf.id`,
         [visibility, scope === "all"],

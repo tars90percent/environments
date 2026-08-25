@@ -12,6 +12,8 @@ import type {
   OperationsSummary,
   ReconcileSubmissionSourceItemsInput,
   ReconcileSubmissionSourceItemsResult,
+  ReconcileSubmissionTasksInput,
+  ReconcileSubmissionTasksResult,
   RegisterBenchmarkInput,
   RegisterBenchmarkResult,
   RegistryBenchmark,
@@ -40,6 +42,7 @@ export interface RegistryRepository {
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
   appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;
+  reconcileSubmissionTasks(input: ReconcileSubmissionTasksInput): Promise<ReconcileSubmissionTasksResult>;
   classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;

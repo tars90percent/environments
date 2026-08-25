@@ -11,6 +11,7 @@ import type {
   HarborFindingInput,
   RegisterBenchmarkInput,
   ReconcileSubmissionSourceItemsInput,
+  ReconcileSubmissionTasksInput,
   ResearcherUploadInput,
   SourceEnvelopeInput,
   StatusUpdateInput,
@@ -314,6 +315,25 @@ export function parseAppendTasks(value: unknown): AppendTasksInput {
     benchmarkAssignments,
     tasks,
     actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseReconcileSubmissionTasks(value: unknown): ReconcileSubmissionTasksInput {
+  const input = object(value, "submission task reconciliation");
+  onlyKeys(
+    input,
+    new Set(["submissionId", "benchmarkAssignments", "tasks", "reason", "actor"]),
+    "submission task reconciliation",
+  );
+  const parsed = parseAppendTasks({
+    submissionId: input.submissionId,
+    benchmarkAssignments: input.benchmarkAssignments,
+    tasks: input.tasks,
+    actor: input.actor,
+  });
+  return {
+    ...parsed,
+    reason: boundedString(input.reason, "reason", 2_000),
   };
 }
 

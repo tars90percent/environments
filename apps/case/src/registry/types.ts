@@ -430,6 +430,25 @@ export type AppendTasksResult = {
   taskIds: string[];
 };
 
+/**
+ * Replaces the active parsed-object set for one submission while retaining every
+ * previous task version as superseded history. The task list is the complete
+ * desired active set, not a patch.
+ */
+export type ReconcileSubmissionTasksInput = AppendTasksInput & {
+  reason: string;
+};
+
+export type ReconcileSubmissionTasksResult = {
+  submissionId: string;
+  activeTaskVersionIds: string[];
+  taskVersionsAdded: number;
+  taskVersionsUnchanged: number;
+  taskVersionsSuperseded: number;
+  supersededTaskVersionIds: string[];
+  retiredTaskVersionIds: string[];
+};
+
 export type HarborCheckResultInput = {
   id: string;
   taskId: string;
