@@ -1447,12 +1447,12 @@ const migrations: Migration[] = [
              tv.task_summary AS summary,
              tv.task_kind,
              tv.format_kind,
-             tv.benchmark_id,
-             benchmark.display_name AS benchmark_name,
              tv.source_path,
              tv.artifact_id,
              tv.content_sha256,
-             tv.created_at
+             tv.created_at,
+             tv.benchmark_id,
+             benchmark.display_name AS benchmark_name
       FROM registry_task_versions tv
       JOIN registry_tasks t ON t.id = tv.task_id
       JOIN registry_benchmarks benchmark ON benchmark.id = tv.benchmark_id;
