@@ -238,6 +238,7 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
     <div className="task-main">
       <h5>{task.title}</h5>
       <div className="task-meta">
+        <span>{task.benchmark.displayName}</span>
         <span>{task.format === "harbor" ? "Harbor" : t.nonHarbor}</span>
         {task.kind === "trace" && <span>{t.trace}</span>}
         {task.sourcePath && <code>{displayArchivePath(task.sourcePath)}</code>}
@@ -264,7 +265,7 @@ function TaskRow({ task, language }: { task: CatalogTask; language: Language }) 
 }
 
 function vendorSearchText(vendor: CatalogVendor): string {
-  return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
+  return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.benchmark.displayName, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
 }
 
 function friendlySubmissionSource(submission: CatalogSubmission, language: Language): string {
@@ -313,8 +314,8 @@ const previewSubmission: CatalogSubmission = {
   formats: ["harbor", "non_harbor"],
   sourceEvents: [{ id: "preview-source", channel: "upload", externalRef: "", sender: "Vendor", receivedAt: "2026-08-20T09:30:00.000Z", rawArtifactId: "artifact:preview:raw", rawArtifact: { id: "artifact:preview:raw", kind: "source_payload", contentSha256: "0".repeat(64), sizeBytes: 5242880, contentType: "application/zip", originalName: "original-payload.zip" }, items: [{ id: "preview-file", kind: "archive", displayName: "original-payload.zip", locator: null, mediaType: "application/zip", artifactId: "artifact:preview:raw", artifactKind: "source_payload", contentSha256: "0".repeat(64), sizeBytes: 5242880 }] }],
   tasks: [
-    { id: "preview-harbor", stableKey: "repair-cache", title: "Repair cache invalidation", summary: null, kind: "task", format: "harbor", sourcePath: "tasks/repair-cache", artifactId: "artifact:preview:task", contentSha256: null, sourceItemIds: ["preview-file"], checks: { environment: previewCheck("environment", "pass"), nop: previewCheck("nop", "fail") }, attempts: { oracle: previewAttempt("oracle", "inconclusive") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] },
-    { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, attempts: {}, findings: [] },
+    { id: "preview-harbor", stableKey: "repair-cache", title: "Repair cache invalidation", summary: null, kind: "task", format: "harbor", benchmark: { id: "terminal-bench", displayName: "Terminal-Bench" }, sourcePath: "tasks/repair-cache", artifactId: "artifact:preview:task", contentSha256: null, sourceItemIds: ["preview-file"], checks: { environment: previewCheck("environment", "pass"), nop: previewCheck("nop", "fail") }, attempts: { oracle: previewAttempt("oracle", "inconclusive") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] },
+    { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", benchmark: { id: "unspecified", displayName: "Unspecified" }, sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, attempts: {}, findings: [] },
   ],
 };
 

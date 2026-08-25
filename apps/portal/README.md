@@ -3,11 +3,12 @@
 A researcher catalog for vendor RL-task samples, hosted on
 Railway and available to authenticated members of TARS's Feishu organization.
 小环境 loads vendors, dated submissions, original-source records, parsed tasks
-or traces, three Harbor tags, non-conclusive attempt state, findings, and
-downloads from CASE.
+or traces, their general benchmark directions, three Harbor tags,
+non-conclusive attempt state, findings, and downloads from CASE.
 
-The interface intentionally contains no procurement, research-demand, category,
-quality, status, scoring, recommendation, or review workflow.
+The interface intentionally contains no procurement, research-demand,
+generalized category, quality, status, scoring, recommendation, or review
+workflow. Benchmark directions are source-backed task labels, not evaluations.
 
 This README describes the portal application and its access boundary. The
 monorepo's root [`AGENTS.md`](../../AGENTS.md) is the sole authoritative

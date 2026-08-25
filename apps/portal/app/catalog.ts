@@ -35,6 +35,10 @@ export type CatalogTask = {
   summary: string | null;
   kind: TaskKind;
   format: TaskFormat;
+  benchmark: {
+    id: string;
+    displayName: string;
+  };
   sourcePath: string | null;
   artifactId: string | null;
   contentSha256: string | null;

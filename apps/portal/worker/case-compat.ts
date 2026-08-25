@@ -27,7 +27,7 @@ const LEGACY_PHASES: Array<[string, HarborCheckPhase]> = [
 ];
 
 /**
- * Temporary deployment bridge. It can be removed after CASE migration 016 has
+ * Temporary deployment bridge. It can be removed after CASE migration 018 has
  * deployed and the portal no longer needs to consume the former catalog shape.
  */
 export function normalizeCaseCatalog(value: unknown): CatalogSnapshot {
@@ -101,6 +101,7 @@ function normalizeLegacyTask(value: JsonRecord): CatalogTask {
     summary: nullableText(value.summary),
     kind: legacyKind(text(value.format)),
     format: legacyFormat(text(value.format), representation),
+    benchmark: { id: "unspecified", displayName: "Unspecified" },
     sourcePath,
     artifactId: nullableText(value.artifactId),
     contentSha256: nullableText(value.contentSha256),

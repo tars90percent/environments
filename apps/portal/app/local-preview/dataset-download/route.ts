@@ -32,9 +32,9 @@ export function GET() {
 }
 
 function previewTask(id: string, stableKey: string, title: string) {
-  return { id, stableKey, title, summary: null, kind: "task" as const, sourcePath: `tasks/${stableKey}`, format: "harbor" as const, artifactId: `artifact:preview:${stableKey}`, contentSha256: null, checks: {}, findings: [] };
+  return { id, stableKey, title, summary: null, kind: "task" as const, sourcePath: `tasks/${stableKey}`, format: "harbor" as const, benchmark: { id: "terminal-bench", displayName: "Terminal-Bench" }, artifactId: `artifact:preview:${stableKey}`, contentSha256: null, checks: {}, findings: [] };
 }
 
 function previewTrace() {
-  return { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace" as const, sourcePath: "traces/session.jsonl", format: "non_harbor" as const, artifactId: "artifact:preview:browser-trace", contentSha256: null, checks: {}, findings: [] };
+  return { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace" as const, sourcePath: "traces/session.jsonl", format: "non_harbor" as const, benchmark: { id: "unspecified", displayName: "Unspecified" }, artifactId: "artifact:preview:browser-trace", contentSha256: null, checks: {}, findings: [] };
 }
