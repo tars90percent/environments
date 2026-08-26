@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test, { after, before } from "node:test";
+import { build as buildModule } from "esbuild";
 import { strFromU8, unzipSync } from "fflate";
 
 const authEnv = {
@@ -21,6 +22,22 @@ async function worker() {
   return (await import(workerUrl.href)).default;
 }
 
+async function benchmarkLandscapeModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/benchmark-landscape.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  const source = result.outputFiles[0].text;
+  return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+}
+
+function landscapeTask(id, benchmarkId, benchmarkName, kind = "task", format = "harbor") {
+  return { id, stableKey: id, title: id, summary: null, kind, format, benchmark: { id: benchmarkId, displayName: benchmarkName } };
+}
+
 test("requires an authenticated researcher session", async () => {
   const response = await (await worker()).fetch(
     new Request("http://localhost/", { headers: { accept: "text/html" } }),
@@ -31,11 +48,55 @@ test("requires an authenticated researcher session", async () => {
   assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/auth/login");
 });
 
+test("groups only Harbor tasks into benchmark directions and portal groups", async () => {
+  const { benchmarkCategoryId, buildBenchmarkLandscape } = await benchmarkLandscapeModule();
+  const catalog = {
+    vendors: [
+      { id: "vendor-one", name: "Vendor One", short: "V1", submissions: [{ id: "submission-one", date: "2026-08-20", label: "One", tasks: [
+        landscapeTask("deep-one", "deep-swe", "DeepSWE"),
+        landscapeTask("terminal-one", "terminal-bench", "Terminal-Bench"),
+        landscapeTask("native-one", "deep-swe", "DeepSWE", "task", "non_harbor"),
+      ] }] },
+      { id: "vendor-two", name: "Vendor Two", short: "V2", submissions: [{ id: "submission-two", date: "2026-08-19", label: "Two", tasks: [
+        landscapeTask("deep-two", "deep-swe", "DeepSWE"),
+        landscapeTask("security-two", "cybersecurity", "Cybersecurity"),
+        landscapeTask("trace-two", "terminal-bench", "Terminal-Bench", "trace", "harbor"),
+      ] }] },
+    ],
+  };
+  const landscape = buildBenchmarkLandscape(catalog);
+  assert.equal(landscape.taskCount, 4);
+  assert.equal(landscape.benchmarkCount, 3);
+  assert.equal(landscape.vendorCount, 2);
+  assert.deepEqual(landscape.groups.map((group) => [group.id, group.taskCount, group.vendorCount]), [
+    ["deep-swe", 2, 2],
+    ["cybersecurity", 1, 1],
+    ["terminal-bench", 1, 1],
+  ]);
+  assert.equal(benchmarkCategoryId("deep-swe"), "software-engineering");
+  assert.equal(benchmarkCategoryId("terminal-bench"), "systems-infrastructure");
+  assert.equal(benchmarkCategoryId("cybersecurity"), "security");
+  assert.equal(benchmarkCategoryId("mathematical-reasoning"), "science-reasoning");
+  assert.equal(benchmarkCategoryId("scaler-swe"), "other");
+  assert.equal(benchmarkCategoryId("brand-new-direction"), "other");
+});
+
 test("keeps the researcher UI on the narrow CASE record", async () => {
   const source = await readFile(new URL("../app/portal-client.tsx", import.meta.url), "utf8");
+  const landscapeSource = await readFile(new URL("../app/benchmark-landscape.ts", import.meta.url), "utf8");
   const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
   assert.match(source, /Environment & Task Samples/);
+  assert.match(source, /Harbor task landscape/);
+  assert.match(source, /useState<PortalView>\("benchmarks"\)/);
+  assert.match(source, /BenchmarkOverview/);
+  assert.match(source, /BenchmarkDetail/);
+  assert.match(source, /grouped by vendor/);
+  assert.match(landscapeSource, /task\.kind === "task" && task\.format === "harbor"/);
+  assert.match(landscapeSource, /benchmarkCategoryId/);
+  assert.match(landscapeSource, /"terminal-bench"/);
+  assert.match(landscapeSource, /"mathematical-reasoning"/);
+  assert.doesNotMatch(landscapeSource, /"scaler-/);
   assert.match(source, /Original vendor files/);
   assert.doesNotMatch(source, /Source records|来源记录|sourceRecord/);
   assert.doesNotMatch(source, /Show vendor filenames|查看供应商文件名|showFiles/);
@@ -65,7 +126,8 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.doesNotMatch(source, /catalog\?\.totals\.tasks/);
   assert.match(source, /catalog\?\.totals\.harborTasks/);
   assert.doesNotMatch(source, /Upload submission|上传提交|\/api\/uploads|x-case-upload/i);
-  assert.doesNotMatch(source, /procurement|research demand|category|runtimeVerification|representationPath|normalizationOutcome|needs_vendor_fix|ready_for_research|reviewer/i);
+  assert.doesNotMatch(source, /procurement|research demand|runtimeVerification|representationPath|normalizationOutcome|needs_vendor_fix|ready_for_research|reviewer/i);
+  assert.doesNotMatch(source, /task\.category|submission\.categories|categoryIds/);
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
   assert.doesNotMatch(source, /FormatBadge|format-badge|kind-badge|submission-formats/);
 
