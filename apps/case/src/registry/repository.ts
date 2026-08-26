@@ -1,6 +1,8 @@
 import type {
   ArtifactInput,
   ArtifactRecord,
+  AssignTaskBenchmarksInput,
+  AssignTaskBenchmarksResult,
   AppendTasksInput,
   AppendTasksResult,
   CaptureSubmissionInput,
@@ -41,6 +43,7 @@ export interface RegistryRepository {
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
+  assignTaskBenchmarks(input: AssignTaskBenchmarksInput): Promise<AssignTaskBenchmarksResult>;
   appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;
   reconcileSubmissionTasks(input: ReconcileSubmissionTasksInput): Promise<ReconcileSubmissionTasksResult>;
   classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;

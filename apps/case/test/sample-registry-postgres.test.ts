@@ -98,6 +98,31 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.deepEqual(submission?.tasks[1]?.checks, {});
     assert.deepEqual(submission?.tasks[1]?.attempts, {});
 
+    const benchmarkAssignment = {
+      submissionId: "submission-one",
+      assignments: [
+        { taskId: "task-one", benchmarkId: "science-bench" },
+        { taskId: "task-trace", benchmarkId: "unspecified" },
+      ],
+      reason: "Apply the reviewed benchmark without replacing task versions.",
+      actor: "TARS",
+    };
+    const benchmarkResult = await repository.assignTaskBenchmarks(benchmarkAssignment);
+    assert.equal(benchmarkResult.assignmentsAdded, 1);
+    assert.equal(benchmarkResult.assignmentsUnchanged, 1);
+    const benchmarkedSubmission = await repository.getSampleSubmission("submission-one");
+    assert.equal(benchmarkedSubmission?.tasks[0]?.id, "task-one");
+    assert.deepEqual(benchmarkedSubmission?.tasks[0]?.benchmark, {
+      id: "science-bench",
+      displayName: "Science Bench",
+    });
+    assert.equal(benchmarkedSubmission?.tasks[0]?.checks.environment?.outcome, "fail");
+    assert.equal(benchmarkedSubmission?.tasks[0]?.attempts.oracle?.status, "blocked");
+    assert.equal(benchmarkedSubmission?.tasks[0]?.findings[0]?.phase, "environment");
+    const repeatedBenchmarkResult = await repository.assignTaskBenchmarks(benchmarkAssignment);
+    assert.equal(repeatedBenchmarkResult.assignmentsAdded, 0);
+    assert.equal(repeatedBenchmarkResult.assignmentsUnchanged, 2);
+
     const reconciliation = await repository.reconcileSubmissionSourceItems({
       submissionId: "submission-one",
       sourceEventId: "source-one",
@@ -179,6 +204,21 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     ]);
     assert.equal(await repository.getSampleTask("task-trace"), null);
     assert.equal(await repository.getSampleTask("source-only-record"), null);
+    const reconciledTask = await repository.getSampleTask("task-one");
+    assert.deepEqual(reconciledTask?.benchmark, { id: "terminal-bench", displayName: "Terminal-Bench" });
+    assert.equal(reconciledTask?.checks.environment?.outcome, "fail");
+    assert.equal(reconciledTask?.attempts.oracle?.status, "blocked");
+    const benchmarkHistory = await administrator.query<{ benchmark_id: string }>(
+      `SELECT benchmark_id
+       FROM "${schema}".registry_task_benchmark_assignments
+       WHERE task_version_id = 'task-one'
+       ORDER BY revision`,
+    );
+    assert.deepEqual(benchmarkHistory.rows.map((row) => row.benchmark_id), [
+      "terminal-bench",
+      "science-bench",
+      "terminal-bench",
+    ]);
 
     await repository.recordHarborCheck({
       ...check("task-one", evidenceSha),

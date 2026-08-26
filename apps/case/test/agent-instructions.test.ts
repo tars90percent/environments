@@ -28,15 +28,18 @@ test("installs the source-controlled guide into the persistent agent workspace",
 test("the CASE guide defines the narrow submission-processing workflow", async () => {
   const guide = await readFile(rootGuide, "utf8");
 
-  assert.match(guide, /preserve each original submission and its arrival provenance/);
-  assert.match(guide, /Assign each parsed task or trace one registered general benchmark direction/);
-  assert.match(guide, /Do not track benchmark versions/);
-  assert.match(guide, /use `unspecified` when the direction is not clear/);
-  assert.match(guide, /assign them in bulk from that source item/);
-  assert.match(guide, /exactly one of `harbor` or `non_harbor`/);
-  assert.match(guide, /For `non_harbor`, record the task and stop\. Do not check it/);
-  assert.match(guide, /exactly three results: Environment, Oracle, and Nop/);
-  assert.match(guide, /complete sample-processing workflow/);
+  assert.match(guide, /maps the landscape of RL environment & data vendors/);
+  assert.match(guide, /Preserve the arrival event and exact original payload/);
+  assert.match(guide, /Assign each parsed item one registered general benchmark direction/);
+  assert.match(guide, /Use `unspecified` when no direction is clear/);
+  assert.match(guide, /The agent interprets; code validates and preserves/);
+  assert.match(guide, /Classify every other task as `non_harbor`/);
+  assert.match(guide, /Record it and stop; Harbor checks do not apply/);
+  assert.match(guide, /Environment, Oracle, and Nop/);
+  assert.match(guide, /Keep this project descriptive/);
+  assert.match(guide, /A benchmark review is not a task-version change/);
+  assert.match(guide, /case-registry assign-task-benchmarks/);
+  assert.match(guide, /Never supersede, replace, or mutate a task version merely to change its benchmark/);
 });
 
 test("the CASE guide permits only the three Modal-backed Harbor checks", async () => {

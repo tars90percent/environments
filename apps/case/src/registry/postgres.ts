@@ -7,6 +7,8 @@ import { deriveRuntimeVerification, type RuntimeCheckFact } from "./task-evidenc
 import type {
   ArtifactInput,
   ArtifactRecord,
+  AssignTaskBenchmarksInput,
+  AssignTaskBenchmarksResult,
   AppendTasksInput,
   AppendTasksResult,
   AppendNormalizedTasksInput,
@@ -81,6 +83,10 @@ type BenchmarkRow = {
   display_name: string;
   aliases: string[];
   created_at: string | Date;
+};
+type CurrentTaskBenchmarkRow = {
+  task_version_id: string;
+  benchmark_id: string;
 };
 type ResearchDemandRow = {
   id: string;
@@ -1081,7 +1087,111 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
+  async assignTaskBenchmarks(input: AssignTaskBenchmarksInput): Promise<AssignTaskBenchmarksResult> {
+    const requestSha256 = hashValue(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const submissionResult = await client.query<{ intake_purpose: string | null }>(
+        `SELECT COALESCE(intake_purpose, metadata->>'intakePurpose') AS intake_purpose
+         FROM registry_submission_batches
+         WHERE id = $1
+         FOR UPDATE`,
+        [input.submissionId],
+      );
+      const submission = submissionResult.rows[0];
+      if (!submission) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (submission.intake_purpose !== "sample_evaluation") {
+        throw new RegistryConflictError(`Submission ${input.submissionId} is not a sample submission`);
+      }
+
+      const benchmarkIds = [...new Set(input.assignments.map((assignment) => assignment.benchmarkId))];
+      const benchmarkResult = await client.query<{ id: string }>(
+        "SELECT id FROM registry_benchmarks WHERE id = ANY($1::text[])",
+        [benchmarkIds],
+      );
+      const registeredBenchmarkIds = new Set(benchmarkResult.rows.map((row) => row.id));
+      for (const benchmarkId of benchmarkIds) {
+        if (!registeredBenchmarkIds.has(benchmarkId)) {
+          throw new RegistryNotFoundError(`Benchmark ${benchmarkId} is not registered`);
+        }
+      }
+
+      const taskIds = input.assignments.map((assignment) => assignment.taskId);
+      const currentResult = await client.query<CurrentTaskBenchmarkRow>(
+        `SELECT tv.id AS task_version_id, current_benchmark.benchmark_id
+         FROM registry_task_versions tv
+         JOIN registry_current_task_benchmarks current_benchmark
+           ON current_benchmark.task_version_id = tv.id
+         WHERE tv.batch_id = $1
+           AND tv.superseded_at IS NULL
+           AND tv.id = ANY($2::text[])
+         FOR UPDATE OF tv`,
+        [input.submissionId, taskIds],
+      );
+      const currentBenchmarks = new Map(currentResult.rows.map((row) => [row.task_version_id, row.benchmark_id]));
+      for (const taskId of taskIds) {
+        if (!currentBenchmarks.has(taskId)) {
+          throw new RegistryNotFoundError(`Active task ${taskId} does not belong to submission ${input.submissionId}`);
+        }
+      }
+
+      let assignmentsAdded = 0;
+      let assignmentsUnchanged = 0;
+      const changes: Array<{ taskId: string; previousBenchmarkId: string; benchmarkId: string; assignmentId: string }> = [];
+      for (const assignment of input.assignments) {
+        const previousBenchmarkId = currentBenchmarks.get(assignment.taskId)!;
+        if (previousBenchmarkId === assignment.benchmarkId) {
+          assignmentsUnchanged += 1;
+          continue;
+        }
+        const assignmentId = benchmarkAssignmentId(requestSha256, assignment.taskId);
+        await client.query(
+          `INSERT INTO registry_task_benchmark_assignments(
+             id, task_version_id, benchmark_id, actor, reason, request_sha256
+           ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [assignmentId, assignment.taskId, assignment.benchmarkId, input.actor, input.reason, requestSha256],
+        );
+        changes.push({
+          taskId: assignment.taskId,
+          previousBenchmarkId,
+          benchmarkId: assignment.benchmarkId,
+          assignmentId,
+        });
+        assignmentsAdded += 1;
+      }
+
+      if (changes.length) {
+        await client.query(
+          "UPDATE registry_submission_batches SET updated_at = now() WHERE id = $1",
+          [input.submissionId],
+        );
+        await this.insertStatusEvent(
+          client,
+          "submission_batch",
+          input.submissionId,
+          "benchmark.assignments_recorded",
+          input.actor,
+          { reason: input.reason, requestSha256, changes },
+        );
+      }
+      await client.query("COMMIT");
+      return {
+        submissionId: input.submissionId,
+        assignmentsAdded,
+        assignmentsUnchanged,
+        assignments: input.assignments,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async appendTasks(input: AppendTasksInput): Promise<AppendTasksResult> {
+    const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1188,28 +1298,33 @@ export class PostgresRegistry implements RegistryRepository {
           artifact_id: string | null;
           content_sha256: string | null;
         }>(
-          `SELECT id, batch_id, task_stable_key, task_title, task_summary, task_kind, format_kind, benchmark_id,
-                  source_path, artifact_id, content_sha256
-           FROM registry_task_versions
-           WHERE superseded_at IS NULL
-             AND (id = $1 OR (batch_id = $2 AND task_id = $3))
-           FOR UPDATE`,
+          `SELECT tv.id, tv.batch_id, tv.task_stable_key, tv.task_title, tv.task_summary,
+                  tv.task_kind, tv.format_kind, current_benchmark.benchmark_id,
+                  tv.source_path, tv.artifact_id, tv.content_sha256
+           FROM registry_task_versions tv
+           JOIN registry_current_task_benchmarks current_benchmark
+             ON current_benchmark.task_version_id = tv.id
+           WHERE tv.superseded_at IS NULL
+             AND (tv.id = $1 OR (tv.batch_id = $2 AND tv.task_id = $3))
+           FOR UPDATE OF tv`,
           [task.id, input.submissionId, taskId],
         );
         const current = existing.rows[0];
         if (current) {
-          const matches = current.id === task.id
+          const immutableMatches = current.id === task.id
             && current.batch_id === input.submissionId
             && current.task_stable_key === task.stableKey
             && current.task_title === task.title
             && current.task_summary === (task.summary ?? null)
             && current.task_kind === task.kind
             && current.format_kind === task.format
-            && current.benchmark_id === task.benchmarkId
             && current.source_path === task.sourcePath
             && current.artifact_id === task.artifactId
             && current.content_sha256 === task.contentSha256;
-          if (!matches) throw new RegistryConflictError(`Task ${task.id} already exists with different immutable contents`);
+          if (!immutableMatches) throw new RegistryConflictError(`Task ${task.id} already exists with different immutable contents`);
+          if (current.benchmark_id !== task.benchmarkId) {
+            throw new RegistryConflictError(`Task ${task.id} already exists; use assign-task-benchmarks to change its benchmark`);
+          }
         } else {
           await client.query(
             `INSERT INTO registry_task_versions(
@@ -1224,6 +1339,13 @@ export class PostgresRegistry implements RegistryRepository {
             [task.id, taskId, input.submissionId, compatibilityCategoryId, task.sourcePath, task.format,
               task.artifactId, task.contentSha256, batch.workflow_status, batch.catalog_visibility,
               task.kind, task.format, task.stableKey, task.title, task.summary ?? null, task.benchmarkId],
+          );
+          await client.query(
+            `INSERT INTO registry_task_benchmark_assignments(
+               id, task_version_id, benchmark_id, actor, reason, request_sha256
+             ) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [benchmarkAssignmentId(requestSha256, task.id), task.id, task.benchmarkId, input.actor,
+              "Initial benchmark assignment during task registration.", requestSha256],
           );
           tasksAdded += 1;
           if (task.format === "harbor") {
@@ -1370,11 +1492,14 @@ export class PostgresRegistry implements RegistryRepository {
         content_sha256: string | null;
       };
       const activeResult = await client.query<ActiveTaskVersionRow>(
-        `SELECT id, task_id, category_id, task_stable_key, task_title, task_summary,
-                task_kind, format_kind, benchmark_id, source_path, artifact_id, content_sha256
-         FROM registry_task_versions
-         WHERE batch_id = $1 AND superseded_at IS NULL
-         FOR UPDATE`,
+        `SELECT tv.id, tv.task_id, tv.category_id, tv.task_stable_key, tv.task_title, tv.task_summary,
+                tv.task_kind, tv.format_kind, current_benchmark.benchmark_id,
+                tv.source_path, tv.artifact_id, tv.content_sha256
+         FROM registry_task_versions tv
+         JOIN registry_current_task_benchmarks current_benchmark
+           ON current_benchmark.task_version_id = tv.id
+         WHERE tv.batch_id = $1 AND tv.superseded_at IS NULL
+         FOR UPDATE OF tv`,
         [input.submissionId],
       );
       const activeByTaskId = new Map(activeResult.rows.map((row) => [row.task_id, row]));
@@ -1401,6 +1526,8 @@ export class PostgresRegistry implements RegistryRepository {
       const retiredTaskVersionIds: string[] = [];
       let taskVersionsAdded = 0;
       let taskVersionsUnchanged = 0;
+      let benchmarkAssignmentsAdded = 0;
+      let benchmarkAssignmentsUnchanged = 0;
 
       for (const task of input.tasks) {
         const taskId = stableTaskId(batch.vendor_id, task.stableKey);
@@ -1420,19 +1547,35 @@ export class PostgresRegistry implements RegistryRepository {
         const current = activeByTaskId.get(taskId);
         const sourceIds = [...task.sourceItemIds].sort();
         const currentSourceIds = current ? [...(activeSourceIds.get(current.id) ?? [])].sort() : [];
-        const matches = current
-          && current.id === task.id
-          && current.task_stable_key === task.stableKey
+        const sameContents = current
+          ? current.task_stable_key === task.stableKey
           && current.task_title === task.title
           && current.task_summary === (task.summary ?? null)
           && current.task_kind === task.kind
           && current.format_kind === task.format
-          && current.benchmark_id === task.benchmarkId
           && current.source_path === task.sourcePath
           && current.artifact_id === task.artifactId
           && current.content_sha256 === task.contentSha256
-          && hashValue(currentSourceIds) === hashValue(sourceIds);
-        if (matches) {
+          && hashValue(currentSourceIds) === hashValue(sourceIds)
+          : false;
+        if (current && sameContents && current.id !== task.id) {
+          throw new RegistryConflictError(
+            `Task ${current.id} has unchanged contents; keep its version id and use assign-task-benchmarks for a benchmark correction`,
+          );
+        }
+        if (current && sameContents && current.id === task.id) {
+          if (current.benchmark_id === task.benchmarkId) {
+            benchmarkAssignmentsUnchanged += 1;
+          } else {
+            await client.query(
+              `INSERT INTO registry_task_benchmark_assignments(
+                 id, task_version_id, benchmark_id, actor, reason, request_sha256
+               ) VALUES ($1, $2, $3, $4, $5, $6)`,
+              [benchmarkAssignmentId(requestSha256, current.id), current.id, task.benchmarkId,
+                input.actor, input.reason, requestSha256],
+            );
+            benchmarkAssignmentsAdded += 1;
+          }
           taskVersionsUnchanged += 1;
           continue;
         }
@@ -1473,6 +1616,14 @@ export class PostgresRegistry implements RegistryRepository {
             json({ reconciliationRequestSha256: requestSha256, reconciliationReason: input.reason }),
             task.kind, task.format, task.stableKey, task.title, task.summary ?? null, task.benchmarkId],
         );
+        await client.query(
+          `INSERT INTO registry_task_benchmark_assignments(
+             id, task_version_id, benchmark_id, actor, reason, request_sha256
+           ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [benchmarkAssignmentId(requestSha256, task.id), task.id, task.benchmarkId,
+            input.actor, input.reason, requestSha256],
+        );
+        benchmarkAssignmentsAdded += 1;
         for (const sourceItemId of task.sourceItemIds) {
           await client.query(
             `INSERT INTO registry_task_source_items(task_version_id, source_item_id, role)
@@ -1543,6 +1694,8 @@ export class PostgresRegistry implements RegistryRepository {
           activeTaskVersionIds,
           taskVersionsAdded,
           taskVersionsUnchanged,
+          benchmarkAssignmentsAdded,
+          benchmarkAssignmentsUnchanged,
           supersededTaskVersionIds,
           retiredTaskVersionIds,
         },
@@ -3552,6 +3705,12 @@ export class RegistryNotFoundError extends Error {
 
 function stableTaskId(vendorId: string, stableKey: string): string {
   return `${vendorId}:task:${createHash("sha256").update(stableKey).digest("hex").slice(0, 24)}`;
+}
+
+function benchmarkAssignmentId(requestSha256: string, taskVersionId: string): string {
+  return `benchmark-assignment:${createHash("sha256")
+    .update(`${requestSha256}\u0000${taskVersionId}`)
+    .digest("hex")}`;
 }
 
 function legacyTaskKind(metadata: Record<string, unknown> | undefined): "task" | "trace" {

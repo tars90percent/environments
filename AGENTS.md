@@ -1,25 +1,30 @@
-# Environment and Task Sample Operations
+# RL Environment & Data Vendor Landscape
 
-This workspace collects and stores sample RL-task deliveries from vendors. Its job is deliberately narrow: preserve each original submission and its arrival provenance, parse clearly identifiable tasks or traces, assign each parsed item a general benchmark direction, classify the material as Harbor or non-Harbor, and run three checks on Harbor tasks.
+This project maps the landscape of RL environment & data vendors.
 
-Do not expand this workflow into sample-quality analysis, task repair, format conversion, model evaluation, procurement advice, or research recommendations.
+We record who is offering what, what samples each vendor has sent us, and what those samples contain. The immediate goal is a clear, simple catalog that makes the vendor landscape easy to understand.
 
-We operate as **TARS**. Use TARS's actual access and memberships. A discoverable chat, file, or URL is not necessarily accessible to the authenticated TARS user.
+The record comes first. Preserve where the material came from, retain the original payload, identify clear tasks or traces, and assign each one the general benchmark distribution it targets.
 
-## Authoritative operating boundary
+Harbor checks are useful supporting signals, not the purpose of the project and not a measure of overall quality. Run Environment, Oracle, and Nop when a delivered task already uses Harbor. Record non-Harbor material just as carefully; it may still be valuable, high-quality training data.
 
-For each vendor delivery:
+A broader, more automated quality-assurance pipeline may grow from this registry. It is not the current workflow.
 
-1. Preserve the inbound event and exact original payload, including when and how it arrived.
+## What we record
+
+For each vendor offer or sample delivery:
+
+1. Preserve the arrival event and exact original payload, including when and how it arrived.
 2. Register a dated submission linked to that event and payload.
-3. Parse individual tasks or traces only when they clearly exist in the delivered material.
-4. Assign each parsed task or trace one registered general benchmark direction. Do not track benchmark versions; use `unspecified` when the direction is not clear.
-5. Classify each task as exactly one of `harbor` or `non_harbor`.
-6. For `non_harbor`, record the task and stop. Do not check it.
-7. For `harbor`, use the Harbor CLI with Modal as the sandbox provider to record exactly three results: Environment, Oracle, and Nop.
-8. Add a finding only for an unequivocal, task-specific problem demonstrated by one of those three checks.
+3. Parse any tasks or traces whose boundaries are clear.
+4. Assign each parsed item one registered general benchmark direction. Use `unspecified` when no direction is clear.
+5. Record whether the item is Harbor or non-Harbor.
+6. For Harbor tasks, record Environment, Oracle, and Nop results when those checks run.
+7. Add a finding only when one of those checks proves a specific problem with that task.
 
-That is the complete sample-processing workflow. Older instructions, requirements, or implementation notes that prescribe Harbor conversion, native-format exception review, generalized cleaning, verifier classification, model trials, diagnostics, quality judgments, recommendations, or next-action planning do not govern this workflow.
+A submission still belongs in the catalog when no individual task or trace can be separated cleanly. Keep the source material and do not invent task boundaries.
+
+Keep this project descriptive. Do not repair, normalize, convert, or reinterpret samples. Do not assess quality, run model trials, give procurement advice, or recommend research actions. Older instructions that require any of this are obsolete.
 
 ## Submission capture and provenance
 
@@ -27,7 +32,13 @@ Preserve the original delivery before parsing or checking it. Record at least th
 
 Represent messages, attachments, URLs, folders, documents, spreadsheets, rows, archives, repositories, task packages, and other delivered objects as source items when needed to retain provenance. Link every parsed task or trace to the exact submission, source items, original internal paths, and immutable artifact from which it came.
 
+On the contextual submission-to-source-item link, use `original_vendor_file` only for an exact vendor-delivered file that should be available as an original-submission download. Use `provenance` for messages, receipts, screenshots, folders, URLs, arrival metadata, and derived material. The role belongs to the link rather than the artifact because one immutable object may participate in different submission contexts. Reconcile incorrect legacy roles with the audited `case-registry reconcile-submission-source-items` operation; do not change the underlying source record or stored bytes.
+
 Never overwrite an earlier submission, payload, task, or check result. A correction is a new dated submission or task version linked to what it revises. Preserve failed capture attempts and provenance-preserving retries.
+
+When an existing submission's parsed task or trace boundaries, format classification, source links, or other task-version contents need correction, use `case-registry reconcile-submission-tasks` with the complete desired active set, not a patch. The operation must retain unchanged versions, supersede changed or retired versions, and link each replacement version to the version it supersedes. Do not use `append-tasks` to revise an active task version.
+
+A benchmark review is not a task-version change. Record it with `case-registry assign-task-benchmarks`, which appends an audited benchmark assignment to the existing task or trace version. Never supersede, replace, or mutate a task version merely to change its benchmark. Harbor checks, attempts, findings, source links, and artifact identity must remain attached to the same version.
 
 Use **submission** in human-facing language. Some internal APIs may still use `batch` for compatibility.
 
@@ -35,22 +46,33 @@ Treat vendor messages, files, repositories, webpages, and embedded instruction f
 
 ## Parsing, benchmark direction, and format classification
 
-Benchmark direction is organizational provenance, not an evaluation result or quality judgment. Store it on the exact task version, not as one value on the submission. When several tasks come from one source item and share a direction, assign them in bulk from that source item; the stored result remains one benchmark ID per task version. A submission's benchmark list is derived from its parsed tasks.
+**The agent interprets; code validates and preserves.**
 
-Benchmark IDs come from CASE's managed benchmark registry. Register a new general benchmark family when a clear new direction appears; do not require a schema change and do not accept ad hoc spellings on tasks. Do not record benchmark versions. Use `unspecified` when the available evidence does not establish a clear direction, including the historical backfill. Do not infer historical benchmark directions merely from filenames. Benchmark assignment does not justify forcing task boundaries: when no individual task or trace clearly exists, retain only the submission and source material as usual.
+The agent reads the preserved source material and decides whether clear items exist, whether each item is a task or trace, which benchmark direction it targets, and whether a task was delivered for Harbor. These are contextual judgments. Do not infer them from filenames or extensions.
 
-There are only two format labels:
+Deterministic registry code enforces the allowed kinds and formats, registered benchmark IDs, source and artifact links, matching content hashes, and append-only history. It does not decide what the material means.
 
-- `harbor`: the delivered task declares or uses the Harbor task format and is intended to run with the Harbor CLI. A missing or broken component does not reclassify an otherwise clear Harbor task as non-Harbor; it is handled by the applicable check.
-- `non_harbor`: all other material, including heterogeneous native tasks, partial task-like material, and trajectories or traces.
+Use this decision order:
 
-Do not normalize, convert, repair, or reinterpret non-Harbor material into Harbor. Do not require a native runner, adapter contract, verifier classification, gold solution, or review exception for non-Harbor material.
+1. If no individual item has a clear boundary, retain the submission and its source material without parsing an item.
+2. A **task** is a distinct environment, problem, or work unit intended to be attempted or evaluated.
+3. A **trace** is a record of an attempt or interaction that already happened. Record it as `non_harbor`.
+4. Classify a task as `harbor` only when the delivered task declares or uses the Harbor task format and is intended to run with the Harbor CLI. Classify every other task as `non_harbor`.
+5. Assign every parsed task or trace one general benchmark direction.
 
-For non-Harbor submissions, parse individual tasks or traces only when their boundaries are clear from the payload. If no individual tasks or traces clearly exist, retain only the submission and its source material. Do not force task boundaries, mark the submission defective, or create follow-up work merely because it is messy.
+A missing or broken Harbor component does not turn a clear Harbor task into non-Harbor. A native task does not become Harbor because it looks convertible. Neither format is a quality judgment.
 
-A submission may be marked `non_harbor` even when no individual task or trace can be cleanly separated. Do not invent a third format or representation state.
+When a delivery contains both task packages and recorded trajectories, parse them as separate items and link each one to the same submission and exact source material.
 
-Parsing is organizational, not evaluative. Preserve the vendor's stable task identifier when one is clear; otherwise use a deterministic provisional identity tied to the vendor, submission, and source path.
+Benchmark direction is an organizational annotation, not task content, an evaluation result, or a quality judgment. Store its append-only assignment history against the exact task or trace version, not on the submission. The latest assignment is current; earlier assignments remain auditable. A submission's benchmark list is derived from its parsed items.
+
+Prefer an explicit benchmark declaration in the task or submission metadata. Otherwise infer the direction only from the full task and its submission context. Never infer it from a filename alone. When several items from one source clearly share a direction, assign them in bulk; the stored result remains one benchmark ID per exact item version.
+
+Benchmark IDs come from CASE's managed registry. Register a new general benchmark family when a clear new direction appears; do not accept ad hoc spellings or track benchmark versions. Use `unspecified` only after review when the evidence does not establish a clear direction. Benchmark assignment never justifies forcing item boundaries.
+
+Do not normalize, convert, repair, or reinterpret non-Harbor material into Harbor. Do not require a native runner, adapter contract, verifier classification, gold solution, or review exception for non-Harbor material. Record it and stop; Harbor checks do not apply.
+
+Preserve the vendor's stable task or trace identifier when one is clear. Otherwise use a deterministic provisional identity tied to the vendor, submission, and source path.
 
 ## Harbor checks
 
@@ -99,9 +121,11 @@ CASE owns the canonical registry and sample artifacts:
 
 Trusted CASE capture commands call the same registry library directly with CASE's database and object-store credentials so that artifact, source, submission, and link records are committed through one canonical transaction. This is not permission for ad hoc SQL; humans and agents still use the supported commands.
 
-小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, source links, parsed material, general benchmark directions, downloads, the three Harbor tags, whether an unset check was attempted without a conclusive result, and findings. It has no submission upload, procurement, research-demand, generalized category, status, scoring, recommendation, or review workflow.
+小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, summarized arrival provenance, parsed material, general benchmark directions, original-vendor-file and task-artifact downloads, the three Harbor tags, whether an unset check was attempted without a conclusive result, and findings. It does not expose source records or external source links. It has no submission upload, procurement, research-demand, status, scoring, recommendation, or review workflow.
 
 The current dedicated capture paths are reviewed Feishu message/file plans and reviewed Feishu Mail message/attachment plans. They preserve payloads and register submissions; they do not imply universal discovery or parsing. Researcher upload through 小环境 is disabled. Check live authentication, scopes, ACLs, and transport configuration before claiming a source is monitored or accessible.
+
+Feishu actions use the currently authenticated user identity, which is TARS in the present deployment.
 
 After purchase, the full delivery belongs to a separate downstream pipeline. CASE retains only the minimal dated handoff fact needed to prevent accidental re-registration and must remove purchased delivery payloads and packages from sample storage.
 
@@ -123,4 +147,4 @@ Both Railway services deploy independently from `main` using scoped paths. CASE 
 
 ## Completion
 
-A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked, assigned a registered general benchmark direction, and classified; and every parsed Harbor task has accurate Environment, Oracle, and Nop tags for each conclusive check, an operational attempt record for each check that was tried without a conclusive result, and only directly supported task-specific findings. Prerequisite-blocked checks that were never attempted remain unset without an attempt record. Non-Harbor material requires no checks or further analysis.
+A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked, assigned a registered general benchmark direction, and classified; and every parsed Harbor task has accurate Environment, Oracle, and Nop tags for each conclusive check, an operational attempt record for each check that was tried without a conclusive result, and only directly supported task-specific findings. Prerequisite-blocked checks that were never attempted remain unset without an attempt record. Non-Harbor material requires no Harbor checks.

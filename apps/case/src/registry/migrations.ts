@@ -1526,6 +1526,84 @@ const migrations: Migration[] = [
         'Replacement task version for an audited correction; null means the parsed object was retired without replacement.';
     `,
   },
+  {
+    id: "020_append_only_benchmark_assignments",
+    sql: `
+      CREATE TABLE registry_task_benchmark_assignments (
+        id text PRIMARY KEY,
+        revision bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+        task_version_id text NOT NULL REFERENCES registry_task_versions(id) ON DELETE CASCADE,
+        benchmark_id text NOT NULL REFERENCES registry_benchmarks(id),
+        actor text NOT NULL,
+        reason text NOT NULL,
+        request_sha256 text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (request_sha256 ~ '^[0-9a-f]{64}$')
+      );
+
+      CREATE INDEX registry_task_benchmark_assignments_latest_idx
+        ON registry_task_benchmark_assignments(task_version_id, revision DESC);
+
+      INSERT INTO registry_task_benchmark_assignments(
+        id, task_version_id, benchmark_id, actor, reason, request_sha256, created_at
+      )
+      SELECT 'benchmark-assignment:initial:' || tv.id,
+             tv.id,
+             tv.benchmark_id,
+             'CASE migration 020',
+             'Backfill the benchmark stored when this task version was created.',
+             repeat('0', 64),
+             tv.created_at
+      FROM registry_task_versions tv;
+
+      CREATE OR REPLACE VIEW registry_current_task_benchmarks AS
+      SELECT tv.id AS task_version_id,
+             COALESCE(latest.benchmark_id, tv.benchmark_id) AS benchmark_id,
+             latest.id AS assignment_id,
+             latest.actor,
+             latest.reason,
+             latest.created_at AS assigned_at
+      FROM registry_task_versions tv
+      LEFT JOIN LATERAL (
+        SELECT assignment.id,
+               assignment.benchmark_id,
+               assignment.actor,
+               assignment.reason,
+               assignment.revision,
+               assignment.created_at
+        FROM registry_task_benchmark_assignments assignment
+        WHERE assignment.task_version_id = tv.id
+        ORDER BY assignment.revision DESC
+        LIMIT 1
+      ) latest ON true;
+
+      CREATE OR REPLACE VIEW registry_sample_tasks AS
+      SELECT tv.id,
+             tv.batch_id AS submission_id,
+             t.vendor_id,
+             tv.task_stable_key AS stable_key,
+             tv.task_title AS title,
+             tv.task_summary AS summary,
+             tv.task_kind,
+             tv.format_kind,
+             tv.source_path,
+             tv.artifact_id,
+             tv.content_sha256,
+             tv.created_at,
+             current_benchmark.benchmark_id,
+             benchmark.display_name AS benchmark_name
+      FROM registry_task_versions tv
+      JOIN registry_tasks t ON t.id = tv.task_id
+      JOIN registry_current_task_benchmarks current_benchmark ON current_benchmark.task_version_id = tv.id
+      JOIN registry_benchmarks benchmark ON benchmark.id = current_benchmark.benchmark_id
+      WHERE tv.superseded_at IS NULL;
+
+      COMMENT ON TABLE registry_task_benchmark_assignments IS
+        'Append-only benchmark reviews. The latest row is the current organizational benchmark without changing the task version.';
+      COMMENT ON COLUMN registry_task_versions.benchmark_id IS
+        'Compatibility snapshot of the benchmark at task-version creation; current benchmark comes from registry_task_benchmark_assignments.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

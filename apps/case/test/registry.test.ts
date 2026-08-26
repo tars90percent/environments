@@ -4,6 +4,7 @@ import { registryRole } from "../src/registry/api.js";
 import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
 import {
+  parseAssignTaskBenchmarks,
   parseAppendTasks,
   parseHarborCheckAttempt,
   parseHarborCheckResult,
@@ -164,6 +165,24 @@ test("validates managed benchmark directions", () => {
   assert.equal(parsed.id, "terminal-bench");
   assert.deepEqual(parsed.aliases, ["terminal_bench", "TerminalBench"].sort((a, b) => a.localeCompare(b)));
   assert.throws(() => parseRegisterBenchmark({ ...parsed, aliases: ["Terminal Bench", "terminal_bench"] }), /unique ignoring case/);
+});
+
+test("validates append-only task benchmark assignments", () => {
+  const input = {
+    submissionId: "submission-one",
+    assignments: [
+      { taskId: "task-one", benchmarkId: "terminal-bench" },
+      { taskId: "task-two", benchmarkId: "unspecified" },
+    ],
+    reason: "Record the reviewed benchmark direction without replacing task versions.",
+    actor: "TARS",
+  };
+  assert.deepEqual(parseAssignTaskBenchmarks(input), input);
+  assert.throws(() => parseAssignTaskBenchmarks({ ...input, assignments: [] }), /at least one/);
+  assert.throws(() => parseAssignTaskBenchmarks({
+    ...input,
+    assignments: [input.assignments[0], input.assignments[0]],
+  }), /at most once/);
 });
 
 test("validates exactly three Harbor pass/fail phases and explicit control scores", () => {

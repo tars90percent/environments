@@ -11,6 +11,7 @@ import type { ArtifactStore } from "./registry/artifacts.js";
 import { localArtifactStore, openLocalRepository } from "./registry/local.js";
 import type { RegistryRepository } from "./registry/repository.js";
 import {
+  parseAssignTaskBenchmarks,
   parseAppendTasks,
   parseArtifact,
   parseHarborCheckAttempt,
@@ -80,6 +81,9 @@ if (command === "operations") {
       case "register-benchmark":
         output(await repository.registerBenchmark(parseRegisterBenchmark(await jsonFile(argument))));
         break;
+      case "assign-task-benchmarks":
+        output(await repository.assignTaskBenchmarks(parseAssignTaskBenchmarks(await jsonFile(argument))));
+        break;
       case "import":
         output(await repository.ingestSubmission(parseSubmissionManifest(await jsonFile(argument))));
         break;
@@ -143,7 +147,7 @@ if (command === "operations") {
         output({ updated: true });
         break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|assign-task-benchmarks|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
     }
   } finally {
     await repository.close();
@@ -256,6 +260,11 @@ function operationSchemas() {
     "source-event": { arguments: ["<source-event-id>"] },
     benchmarks: { arguments: [], result: "registered general benchmark directions" },
     "register-benchmark": { arguments: ["<benchmark.json>"], fields: ["id", "displayName", "aliases?", "actor"] },
+    "assign-task-benchmarks": {
+      arguments: ["<assignments.json>"],
+      fields: ["submissionId", "assignments[{taskId,benchmarkId}]", "reason", "actor"],
+      note: "Appends audited benchmark assignments without replacing task versions or disturbing Harbor evidence.",
+    },
     import: { arguments: ["<submission-manifest.json>"], compatibility: "Prefer case-intake or case-mail-intake for Feishu capture." },
     "import-source": { arguments: ["<source-envelope.json>"], compatibility: "Registers standalone provenance evidence." },
     "reconcile-submission-source-items": {
@@ -272,7 +281,7 @@ function operationSchemas() {
     "reconcile-submission-tasks": {
       arguments: ["<reconciliation.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "reason", "actor"],
-      note: "Atomically replaces the active parsed task/trace set while preserving prior task versions as superseded history.",
+      note: "Atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version.",
     },
     "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },

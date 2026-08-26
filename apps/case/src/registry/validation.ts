@@ -1,5 +1,6 @@
 import type {
   ArtifactInput,
+  AssignTaskBenchmarksInput,
   AppendTasksInput,
   AppendNormalizedTasksInput,
   CheckEvidenceRole,
@@ -350,6 +351,29 @@ export function parseRegisterBenchmark(value: unknown): RegisterBenchmarkInput {
     id: identifier(input.id, "id"),
     displayName: boundedString(input.displayName, "displayName", 300),
     aliases,
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseAssignTaskBenchmarks(value: unknown): AssignTaskBenchmarksInput {
+  const input = object(value, "benchmark assignment");
+  onlyKeys(input, new Set(["submissionId", "assignments", "reason", "actor"]), "benchmark assignment");
+  const assignments = array(input.assignments, "assignments").map((value, index) => {
+    const assignment = object(value, `assignments[${index}]`);
+    onlyKeys(assignment, new Set(["taskId", "benchmarkId"]), `assignments[${index}]`);
+    return {
+      taskId: identifier(assignment.taskId, `assignments[${index}].taskId`),
+      benchmarkId: identifier(assignment.benchmarkId, `assignments[${index}].benchmarkId`),
+    };
+  });
+  if (!assignments.length) throw new ValidationError("assignments must contain at least one task benchmark assignment");
+  if (new Set(assignments.map((assignment) => assignment.taskId)).size !== assignments.length) {
+    throw new ValidationError("assignments must name each task at most once");
+  }
+  return {
+    submissionId: identifier(input.submissionId, "submissionId"),
+    assignments,
+    reason: boundedString(input.reason, "reason", 2_000),
     actor: boundedString(input.actor, "actor", 500),
   };
 }

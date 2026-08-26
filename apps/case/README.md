@@ -86,6 +86,7 @@ case-registry summary
 case-registry catalog
 case-registry benchmarks
 case-registry register-benchmark /absolute/path/benchmark.json
+case-registry assign-task-benchmarks /absolute/path/benchmark-assignments.json
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json
 case-registry append-tasks /absolute/path/tasks.json
@@ -109,6 +110,12 @@ provide a bulk default for every supplied task linked to that item; a task-level
 benchmark ID is available for a mixed package. Benchmark versions are not
 tracked. Historical task versions are assigned `unspecified` rather than being
 inferred from filenames. Non-Harbor tasks stop there.
+
+Benchmark reviews are append-only annotations on an existing task or trace
+version. `assign-task-benchmarks` changes the current benchmark without replacing
+the task version, so its artifact, source links, Harbor checks, attempts, and
+findings remain attached and visible. Task reconciliation ignores benchmark-only
+changes and must never be used to manufacture a replacement version for them.
 
 `case-registry`, `case-intake`, and `case-mail-intake` do not call the registry
 HTTP API. The capture commands

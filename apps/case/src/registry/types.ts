@@ -397,12 +397,31 @@ export type RegisterBenchmarkResult = {
   created: boolean;
 };
 
+export type TaskBenchmarkAssignmentInput = {
+  taskId: string;
+  benchmarkId: string;
+};
+
+export type AssignTaskBenchmarksInput = {
+  submissionId: string;
+  assignments: TaskBenchmarkAssignmentInput[];
+  reason: string;
+  actor: string;
+};
+
+export type AssignTaskBenchmarksResult = {
+  submissionId: string;
+  assignmentsAdded: number;
+  assignmentsUnchanged: number;
+  assignments: TaskBenchmarkAssignmentInput[];
+};
+
 export type SourceBenchmarkAssignmentInput = {
   sourceItemId: string;
   benchmarkId: string;
 };
 
-/** Active task-registration contract. Benchmark direction is required; categories and normalization states remain absent. */
+/** Active task-registration contract. The initial benchmark direction is required; later reviews are separate annotations. */
 export type TaskRegistrationInput = {
   id: string;
   stableKey: string;
