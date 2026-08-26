@@ -40,7 +40,6 @@ const text = {
     arrived: "Received",
     sender: "Sender",
     downloadOne: "Download original file",
-    downloadMany: "Download original files (.zip)",
     noOriginalFile: "No inbound vendor file can be identified conclusively from the retained provenance.",
     directCaseImport: "Direct CASE import",
     dataset: "Download tasks",
@@ -78,7 +77,6 @@ const text = {
     arrived: "接收时间",
     sender: "发送人",
     downloadOne: "下载原始文件",
-    downloadMany: "下载原始文件（ZIP）",
     noOriginalFile: "现有溯源信息不足以明确识别原始传入的供应商文件。",
     directCaseImport: "直接导入 CASE",
     dataset: "下载任务",
@@ -220,12 +218,15 @@ function OriginalSubmissionPanel({ submission, language }: { submission: Catalog
   const artifacts = originalSubmissionArtifacts(submission);
   const knownBytes = artifacts.map((artifact) => artifact.sizeBytes).filter((size): size is number => typeof size === "number" && Number.isFinite(size) && size >= 0);
   const size = knownBytes.length === artifacts.length && artifacts.length ? formatBytes(knownBytes.reduce((sum, value) => sum + value), language) : null;
-  const downloadHref = artifacts.length === 1
-    ? `/api/artifacts/${encodeURIComponent(artifacts[0]!.artifactId)}/download`
-    : `/api/submissions/${encodeURIComponent(submission.id)}/original-download`;
   return <section className="original-submission"><div className="batch-section-head"><h4>{t.sources}</h4><span>{artifacts.length}</span></div><div className="original-card">
     <div className="original-copy"><strong>{fileCount(artifacts.length, language)}{size ? ` · ${size}` : ""}</strong><p>{t.originalNote}</p><div className="original-provenance">{submission.sourceEvents.map((event) => <span key={event.id}>{friendlyChannel(event.channel, language)} · {formatTimestamp(event.receivedAt, language)}{event.sender ? ` · ${event.sender}` : ""}</span>)}</div></div>
-    <div className="original-actions">{artifacts.length > 0 && <a className="primary" href={downloadHref}>{artifacts.length === 1 ? t.downloadOne : t.downloadMany}</a>}</div>
+    <div className={`original-actions${artifacts.length > 1 ? " multiple" : ""}`}>{artifacts.map((artifact) => <a
+      aria-label={`${t.downloadOne}: ${artifact.displayName}`}
+      className={artifacts.length === 1 ? "primary" : undefined}
+      href={`/api/artifacts/${encodeURIComponent(artifact.artifactId)}/download`}
+      key={artifact.artifactId}
+      title={artifact.displayName}
+    >{artifacts.length === 1 ? t.downloadOne : <><span>{artifact.displayName}</span>{artifact.sizeBytes !== null && <small>{formatBytes(artifact.sizeBytes, language)}</small>}</>}</a>)}</div>
     {artifacts.length === 0 && <p className="original-empty">{t.noOriginalFile}</p>}
   </div></section>;
 }

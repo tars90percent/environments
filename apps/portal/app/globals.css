@@ -153,6 +153,10 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .original-actions { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .original-actions a { padding: 7px 10px; border-radius: 8px; background: var(--card); color: var(--burgundy); font-size: 9px; font-weight: 620; text-decoration: none; white-space: nowrap; }
 .original-actions a.primary { background: var(--burgundy); color: #fff; }
+.original-actions.multiple { width: min(380px, 42vw); display: grid; grid-template-columns: minmax(0, 1fr); }
+.original-actions.multiple a { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.original-actions.multiple a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.original-actions.multiple a small { color: var(--muted); font-size: 8px; font-weight: 520; }
 .original-empty { grid-column: 1 / -1; margin: 0; padding-top: 11px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; }
 
 .state-card { max-width: 760px; min-height: 180px; padding: 38px; border-radius: 24px; background: var(--surface); color: var(--muted); line-height: 1.65; }
@@ -194,6 +198,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .dataset-access > a { justify-self: start; }
   .original-card { grid-template-columns: 1fr; }
   .original-actions { justify-content: flex-start; }
+  .original-actions.multiple { width: 100%; }
   .original-empty { grid-column: 1; }
 }
 
