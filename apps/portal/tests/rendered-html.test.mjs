@@ -87,7 +87,9 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
   assert.match(source, /Environment & Task Samples/);
-  assert.match(source, /Harbor task landscape/);
+  assert.match(source, /RL task landscape/);
+  assert.doesNotMatch(source, /Benchmark directions are grouped for navigation only/);
+  assert.doesNotMatch(source, /基准分组仅用于浏览/);
   assert.match(source, /useState<PortalView>\("benchmarks"\)/);
   assert.match(source, /BenchmarkOverview/);
   assert.match(source, /BenchmarkDetail/);

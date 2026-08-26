@@ -35,9 +35,8 @@ const text = {
     benchmarks: "Benchmarks",
     benchmarkDirections: "Benchmark directions",
     benchmarkCategories: "Benchmark groups",
-    landscapeTitle: "Harbor task landscape",
+    landscapeTitle: "RL task landscape",
     landscapeIntro: "See the Harbor tasks vendors are offering, organized by the benchmark distributions they target.",
-    categoryIntro: "Benchmark directions are grouped for navigation only. Each task keeps its exact registered benchmark tag.",
     viewTasks: "View tasks",
     backToLandscape: "Back to benchmark landscape",
     offeredBy: "Offered by",
@@ -85,9 +84,8 @@ const text = {
     benchmarks: "基准",
     benchmarkDirections: "基准方向",
     benchmarkCategories: "基准分组",
-    landscapeTitle: "Harbor 任务全景",
+    landscapeTitle: "RL 任务全景",
     landscapeIntro: "按目标基准分布查看各供应商提供的 Harbor 任务。",
-    categoryIntro: "基准分组仅用于浏览；每个任务仍保留其准确的注册基准标签。",
     viewTasks: "查看任务",
     backToLandscape: "返回基准全景",
     offeredBy: "来自",
@@ -288,7 +286,6 @@ function BenchmarkOverview({ categories, language, onSelect, totalTasks }: { cat
   const t = text[language];
   if (categories.length === 0) return <StateCard>{t.noMatch}</StateCard>;
   return <div className="benchmark-landscape">
-    <div className="landscape-note"><span aria-hidden>↳</span><p>{t.categoryIntro}</p></div>
     <div className="benchmark-category-list">{categories.map((category, index) => <section className="benchmark-category" key={category.id}>
       <header className="benchmark-category-header">
         <div className="category-index">{String(index + 1).padStart(2, "0")}</div>

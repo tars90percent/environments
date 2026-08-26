@@ -63,9 +63,6 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .page-body { width: min(1380px, calc(100% - 64px)); margin: 0 auto; padding: 0 0 96px; }
 
 .benchmark-landscape { display: grid; gap: 54px; }
-.landscape-note { min-height: 56px; padding: 14px 18px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(125,31,42,.08); border-radius: 16px; background: rgba(255,250,246,.44); color: var(--muted); }
-.landscape-note > span { color: var(--burgundy); font-size: 18px; }
-.landscape-note p { margin: 0; font-size: 10px; line-height: 1.55; }
 .benchmark-category-list { display: grid; gap: 70px; }
 .benchmark-category { min-width: 0; }
 .benchmark-category-header { min-height: 108px; display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: start; gap: 20px; border-bottom: 1px solid var(--line); }
