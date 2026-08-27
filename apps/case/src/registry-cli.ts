@@ -18,6 +18,7 @@ import {
   parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
+  parsePurgeErroneousBenchmarks,
   parseRegisterBenchmark,
   parseRemoveUnusedBenchmarks,
   parseReconcileSubmissionSourceItems,
@@ -85,6 +86,9 @@ if (command === "operations") {
         break;
       case "remove-unused-benchmarks":
         output(await repository.removeUnusedBenchmarks(parseRemoveUnusedBenchmarks(await jsonFile(argument))));
+        break;
+      case "purge-erroneous-benchmarks":
+        output(await repository.purgeErroneousBenchmarks(parsePurgeErroneousBenchmarks(await jsonFile(argument))));
         break;
       case "assign-task-benchmarks":
         output(await repository.assignTaskBenchmarks(parseAssignTaskBenchmarks(await jsonFile(argument))));
@@ -155,7 +159,7 @@ if (command === "operations") {
         output({ updated: true });
         break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
     }
   } finally {
     await repository.close();
@@ -272,6 +276,11 @@ function operationSchemas() {
       arguments: ["<removal.json>"],
       fields: ["benchmarkIds"],
       note: "Atomically deletes benchmark definitions and their registration events only when no current or historical task version or benchmark assignment references any requested benchmark.",
+    },
+    "purge-erroneous-benchmarks": {
+      arguments: ["<purge.json>"],
+      fields: ["benchmarkIds", "reason", "actor"],
+      note: "Deletes explicitly confirmed erroneous non-current assignment history and now-unused benchmark definitions; refuses current assignments and task-version compatibility references and records a purge event.",
     },
     "assign-task-benchmarks": {
       arguments: ["<assignments.json>"],

@@ -87,6 +87,7 @@ case-registry catalog
 case-registry benchmarks
 case-registry register-benchmark /absolute/path/benchmark.json
 case-registry remove-unused-benchmarks /absolute/path/benchmark-removal.json
+case-registry purge-erroneous-benchmarks /absolute/path/benchmark-purge.json
 case-registry assign-task-benchmarks /absolute/path/benchmark-assignments.json
 case-registry import /absolute/path/submission.json
 case-registry import-source /absolute/path/source-envelope.json

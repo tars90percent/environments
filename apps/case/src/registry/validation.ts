@@ -11,6 +11,7 @@ import type {
   HarborCheckAttemptInput,
   HarborCheckResultInput,
   HarborFindingInput,
+  PurgeErroneousBenchmarksInput,
   RegisterBenchmarkInput,
   RemoveUnusedBenchmarksInput,
   ReconcileSubmissionSourceItemsInput,
@@ -367,6 +368,22 @@ export function parseRemoveUnusedBenchmarks(value: unknown): RemoveUnusedBenchma
     throw new ValidationError("benchmarkIds must not contain duplicates");
   }
   return { benchmarkIds: benchmarkIds.sort((a, b) => a.localeCompare(b)) };
+}
+
+export function parsePurgeErroneousBenchmarks(value: unknown): PurgeErroneousBenchmarksInput {
+  const input = object(value, "erroneous benchmark purge");
+  onlyKeys(input, new Set(["benchmarkIds", "reason", "actor"]), "erroneous benchmark purge");
+  const benchmarkIds = array(input.benchmarkIds, "benchmarkIds")
+    .map((value, index) => identifier(value, `benchmarkIds[${index}]`));
+  if (!benchmarkIds.length) throw new ValidationError("benchmarkIds must contain at least one benchmark id");
+  if (new Set(benchmarkIds).size !== benchmarkIds.length) {
+    throw new ValidationError("benchmarkIds must not contain duplicates");
+  }
+  return {
+    benchmarkIds: benchmarkIds.sort((a, b) => a.localeCompare(b)),
+    reason: boundedString(input.reason, "reason", 2_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
 }
 
 export function parseAssignTaskBenchmarks(value: unknown): AssignTaskBenchmarksInput {

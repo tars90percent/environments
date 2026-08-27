@@ -63,6 +63,11 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       displayName: "Unused Bench",
       actor: "TARS",
     });
+    await repository.registerBenchmark({
+      id: "wrong-bench",
+      displayName: "Wrong Bench",
+      actor: "TARS",
+    });
     await repository.appendTasks(parseAppendTasks({
       submissionId: "submission-one",
       actor: "CASE",
@@ -84,6 +89,36 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.deepEqual(removedBenchmarks.removed.map((benchmark) => benchmark.id), ["unused-bench"]);
     assert.equal(removedBenchmarks.registrationEventsRemoved, 1);
     assert.ok(!(await repository.listBenchmarks()).some((benchmark) => benchmark.id === "unused-bench"));
+    await repository.assignTaskBenchmarks({
+      submissionId: "submission-one",
+      assignments: [{ taskId: "task-one", benchmarkId: "wrong-bench" }],
+      reason: "Exercise the erroneous historical assignment purge.",
+      actor: "TARS",
+    });
+    await repository.assignTaskBenchmarks({
+      submissionId: "submission-one",
+      assignments: [{ taskId: "task-one", benchmarkId: "terminal-bench" }],
+      reason: "Restore the correct current benchmark.",
+      actor: "TARS",
+    });
+    await assert.rejects(
+      () => repository!.purgeErroneousBenchmarks({
+        benchmarkIds: ["terminal-bench", "wrong-bench"],
+        reason: "Reject an atomic request containing a current benchmark.",
+        actor: "TARS",
+      }),
+      /current task or trace assignments cannot be purged/,
+    );
+    assert.ok((await repository.listBenchmarks()).some((benchmark) => benchmark.id === "wrong-bench"));
+    const purgedBenchmarks = await repository.purgeErroneousBenchmarks({
+      benchmarkIds: ["wrong-bench"],
+      reason: "The superseded assignment was confirmed to be erroneous.",
+      actor: "TARS",
+    });
+    assert.deepEqual(purgedBenchmarks.removed.map((benchmark) => benchmark.id), ["wrong-bench"]);
+    assert.equal(purgedBenchmarks.assignmentRowsRemoved, 1);
+    assert.equal(purgedBenchmarks.registrationEventsRemoved, 1);
+    assert.ok(!(await repository.listBenchmarks()).some((benchmark) => benchmark.id === "wrong-bench"));
     await assert.rejects(() => repository!.recordHarborAttempt(attempt("task-trace", evidenceSha)), RegistryConflictError);
     await repository.recordHarborAttempt(attempt("task-one", evidenceSha));
     await assert.rejects(() => repository!.recordHarborCheck(check("task-trace", evidenceSha)), RegistryConflictError);

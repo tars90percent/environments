@@ -39,6 +39,7 @@ test("the CASE guide defines the narrow submission-processing workflow", async (
   assert.match(guide, /Keep this project descriptive/);
   assert.match(guide, /A benchmark review is not a task-version change/);
   assert.match(guide, /case-registry assign-task-benchmarks/);
+  assert.match(guide, /case-registry purge-erroneous-benchmarks/);
   assert.match(guide, /Never supersede, replace, or mutate a task version merely to change its benchmark/);
   assert.match(guide, /case-registry assign-task-gpu-requirements/);
   assert.match(guide, /never represent a deliberate GPU skip as a Harbor attempt or failure/i);

@@ -41,6 +41,8 @@ When an existing submission's parsed task or trace boundaries, format classifica
 
 A benchmark review is not a task-version change. Record it with `case-registry assign-task-benchmarks`, which appends an audited benchmark assignment to the existing task or trace version. Never supersede, replace, or mutate a task version merely to change its benchmark. Harbor checks, attempts, findings, source links, and artifact identity must remain attached to the same version.
 
+When an operator explicitly confirms that non-current benchmark assignments were erroneous and directs their removal, use `case-registry purge-erroneous-benchmarks`. This operation may delete only assignments that are not current for any task or trace version, only when no task-version compatibility snapshot references the target benchmark, and must atomically remove the now-unused benchmark definitions while recording a purge event. This is the sole exception to retaining earlier benchmark assignments. Never use raw SQL or delete a current assignment to perform this correction.
+
 A GPU-requirement review is also not a task-version change. Record it with `case-registry assign-task-gpu-requirements`, including the evidence for the decision. Never supersede or mutate a task version to change `gpu_required`, and never represent a deliberate GPU skip as a Harbor attempt or failure.
 
 Use **submission** in human-facing language. Some internal APIs may still use `batch` for compatibility.
@@ -67,7 +69,7 @@ A missing or broken Harbor component does not turn a clear Harbor task into non-
 
 When a delivery contains both task packages and recorded trajectories, parse them as separate items and link each one to the same submission and exact source material.
 
-Benchmark direction is an organizational annotation, not task content, an evaluation result, or a quality judgment. Store its append-only assignment history against the exact task or trace version, not on the submission. The latest assignment is current; earlier assignments remain auditable. A submission's benchmark list is derived from its parsed items.
+Benchmark direction is an organizational annotation, not task content, an evaluation result, or a quality judgment. Store its assignment history against the exact task or trace version, not on the submission. The latest assignment is current; earlier assignments remain auditable unless they are explicitly confirmed as erroneous and removed through the guarded purge operation above. A submission's benchmark list is derived from its parsed items.
 
 Prefer an explicit benchmark declaration in the task or submission metadata. Otherwise infer the direction only from the full task and its submission context. Never infer it from a filename alone. When several items from one source clearly share a direction, assign them in bulk; the stored result remains one benchmark ID per exact item version.
 

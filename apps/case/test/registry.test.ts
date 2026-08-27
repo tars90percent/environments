@@ -10,6 +10,7 @@ import {
   parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
+  parsePurgeErroneousBenchmarks,
   parseRegisterBenchmark,
   parseRemoveUnusedBenchmarks,
   parseReconcileSubmissionSourceItems,
@@ -177,6 +178,21 @@ test("validates atomic unused benchmark removals", () => {
   });
   assert.throws(() => parseRemoveUnusedBenchmarks({ benchmarkIds: [] }), /at least one/);
   assert.throws(() => parseRemoveUnusedBenchmarks({ benchmarkIds: ["unused-one", "unused-one"] }), /duplicates/);
+});
+
+test("validates explicit erroneous benchmark purges", () => {
+  const input = {
+    benchmarkIds: ["wrong-two", "wrong-one"],
+    reason: "These superseded assignments were confirmed to be erroneous.",
+    actor: "TARS",
+  };
+  assert.deepEqual(parsePurgeErroneousBenchmarks(input), {
+    ...input,
+    benchmarkIds: ["wrong-one", "wrong-two"],
+  });
+  assert.throws(() => parsePurgeErroneousBenchmarks({ ...input, reason: "" }), ValidationError);
+  assert.throws(() => parsePurgeErroneousBenchmarks({ ...input, actor: "" }), ValidationError);
+  assert.throws(() => parsePurgeErroneousBenchmarks({ ...input, benchmarkIds: [] }), /at least one/);
 });
 
 test("validates append-only task benchmark assignments", () => {

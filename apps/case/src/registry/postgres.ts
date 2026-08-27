@@ -40,6 +40,8 @@ import type {
   ReconcileSubmissionSourceItemsResult,
   ReconcileSubmissionTasksInput,
   ReconcileSubmissionTasksResult,
+  PurgeErroneousBenchmarksInput,
+  PurgeErroneousBenchmarksResult,
   RegisterBenchmarkInput,
   RegisterBenchmarkResult,
   RemoveUnusedBenchmarksInput,
@@ -1155,6 +1157,94 @@ export class PostgresRegistry implements RegistryRepository {
       await client.query("COMMIT");
       return {
         removed: benchmarkResult.rows.map(benchmarkFromRow),
+        registrationEventsRemoved: eventsResult.rowCount ?? 0,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async purgeErroneousBenchmarks(input: PurgeErroneousBenchmarksInput): Promise<PurgeErroneousBenchmarksResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("LOCK TABLE registry_benchmarks IN SHARE ROW EXCLUSIVE MODE");
+      await client.query("LOCK TABLE registry_task_versions, registry_task_benchmark_assignments IN SHARE MODE");
+
+      const benchmarkResult = await client.query<BenchmarkRow>(
+        `SELECT id, display_name, aliases, created_at
+         FROM registry_benchmarks
+         WHERE id = ANY($1::text[])
+         ORDER BY display_name, id`,
+        [input.benchmarkIds],
+      );
+      const foundIds = new Set(benchmarkResult.rows.map((row) => row.id));
+      const missingIds = input.benchmarkIds.filter((id) => !foundIds.has(id));
+      if (missingIds.length) throw new RegistryNotFoundError(`Benchmarks not found: ${missingIds.join(", ")}`);
+      if (foundIds.has("unspecified")) throw new RegistryConflictError("The unspecified benchmark cannot be purged");
+
+      const compatibilityReferences = await client.query<{ benchmark_id: string; reference_count: string }>(
+        `SELECT benchmark_id, COUNT(*)::text AS reference_count
+         FROM registry_task_versions
+         WHERE benchmark_id = ANY($1::text[])
+         GROUP BY benchmark_id
+         ORDER BY benchmark_id`,
+        [input.benchmarkIds],
+      );
+      if (compatibilityReferences.rows.length) {
+        const references = compatibilityReferences.rows.map((row) => `${row.benchmark_id} (${row.reference_count})`);
+        throw new RegistryConflictError(
+          `Benchmarks referenced by task-version compatibility snapshots cannot be purged: ${references.join("; ")}`,
+        );
+      }
+
+      const currentReferences = await client.query<{ benchmark_id: string; reference_count: string }>(
+        `SELECT benchmark_id, COUNT(*)::text AS reference_count
+         FROM registry_current_task_benchmarks
+         WHERE benchmark_id = ANY($1::text[])
+         GROUP BY benchmark_id
+         ORDER BY benchmark_id`,
+        [input.benchmarkIds],
+      );
+      if (currentReferences.rows.length) {
+        const references = currentReferences.rows.map((row) => `${row.benchmark_id} (${row.reference_count})`);
+        throw new RegistryConflictError(`Benchmarks with current task or trace assignments cannot be purged: ${references.join("; ")}`);
+      }
+
+      const assignmentsResult = await client.query(
+        `DELETE FROM registry_task_benchmark_assignments
+         WHERE benchmark_id = ANY($1::text[])`,
+        [input.benchmarkIds],
+      );
+      const eventsResult = await client.query(
+        `DELETE FROM registry_status_events
+         WHERE entity_type = 'benchmark' AND entity_id = ANY($1::text[])`,
+        [input.benchmarkIds],
+      );
+      await client.query(
+        "DELETE FROM registry_benchmarks WHERE id = ANY($1::text[])",
+        [input.benchmarkIds],
+      );
+      await this.insertStatusEvent(
+        client,
+        "registry",
+        `benchmark-purge:${hashValue(input).slice(0, 24)}`,
+        "benchmark.erroneous_history_purged",
+        input.actor,
+        {
+          benchmarkIds: input.benchmarkIds,
+          reason: input.reason,
+          assignmentRowsRemoved: assignmentsResult.rowCount ?? 0,
+          registrationEventsRemoved: eventsResult.rowCount ?? 0,
+        },
+      );
+      await client.query("COMMIT");
+      return {
+        removed: benchmarkResult.rows.map(benchmarkFromRow),
+        assignmentRowsRemoved: assignmentsResult.rowCount ?? 0,
         registrationEventsRemoved: eventsResult.rowCount ?? 0,
       };
     } catch (error) {

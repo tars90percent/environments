@@ -406,6 +406,18 @@ export type RemoveUnusedBenchmarksResult = {
   registrationEventsRemoved: number;
 };
 
+export type PurgeErroneousBenchmarksInput = {
+  benchmarkIds: string[];
+  reason: string;
+  actor: string;
+};
+
+export type PurgeErroneousBenchmarksResult = {
+  removed: RegistryBenchmark[];
+  assignmentRowsRemoved: number;
+  registrationEventsRemoved: number;
+};
+
 export type TaskBenchmarkAssignmentInput = {
   taskId: string;
   benchmarkId: string;
