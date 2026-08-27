@@ -39,6 +39,7 @@ export type CatalogTask = {
     id: string;
     displayName: string;
   };
+  gpuRequired: boolean;
   sourcePath: string | null;
   artifactId: string | null;
   contentSha256: string | null;

@@ -16,6 +16,7 @@ export type DatasetSubmission = {
     kind: "task" | "trace";
     format: "harbor" | "non_harbor";
     benchmark: { id: string; displayName: string };
+    gpuRequired: boolean;
     sourcePath: string | null;
     artifactId: string | null;
     contentSha256: string | null;
@@ -31,6 +32,7 @@ export type DatasetPackage = {
   kind: "task" | "trace";
   format: "harbor" | "non_harbor";
   benchmark: { id: string; displayName: string };
+  gpuRequired: boolean;
   sourcePath: string | null;
   artifactId: string;
   contentSha256: string | null;
@@ -154,6 +156,7 @@ function datasetPackages(submission: DatasetSubmission): DatasetPackage[] {
         kind: task.kind,
         format: task.format,
         benchmark: task.benchmark,
+        gpuRequired: task.gpuRequired,
         sourcePath: task.sourcePath ? displayArchivePath(task.sourcePath) : null,
         artifactId: task.artifactId,
         contentSha256: task.contentSha256,

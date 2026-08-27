@@ -117,6 +117,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /task\.format === "harbor"/);
   assert.match(source, /task\.benchmark\.displayName/);
   assert.match(source, /task\.benchmark\.id !== "unspecified"/);
+  assert.match(source, /task\.gpuRequired/);
   assert.match(source, /check-mark/);
   assert.match(source, /task\.attempts\?\.\[phase\]/);
   assert.match(source, /attempted: "Tried"/);
@@ -212,6 +213,7 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
     assert.equal(submission.tasks[0].kind, "task");
     assert.equal(submission.tasks[0].format, "harbor");
     assert.deepEqual(submission.tasks[0].benchmark, { id: "unspecified", displayName: "Unspecified" });
+    assert.equal(submission.tasks[0].gpuRequired, false);
     assert.deepEqual(Object.keys(submission.tasks[0].checks), ["oracle", "environment"]);
     assert.equal(submission.tasks[0].checks.environment.outcome, "fail");
     assert.match(submission.tasks[0].checks.environment.summary, /inferred from failed Build or Boot evidence/i);
@@ -271,6 +273,7 @@ test("downloads every available task artifact", async () => {
     assert.equal(manifest.tasks[0].sourcePath, "benchmark样例数据-实现网-Call数大于100/packages/task_01");
     assert.deepEqual(manifest.tasks.map((entry) => [entry.kind, entry.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
     assert.deepEqual(manifest.tasks.map((entry) => entry.benchmark.id), ["terminal-bench", "unspecified"]);
+    assert.deepEqual(manifest.tasks.map((entry) => entry.gpuRequired), [true, false]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -430,7 +433,7 @@ test("recovers legacy inbound task packages without bundling messages, screensho
 });
 
 function task(id, stableKey, kind, format, artifactId) {
-  return { id, stableKey, title: stableKey, summary: null, kind, format, benchmark: format === "harbor" ? { id: "terminal-bench", displayName: "Terminal-Bench" } : { id: "unspecified", displayName: "Unspecified" }, sourcePath: `${kind}s/${stableKey}`, artifactId, contentSha256: "a".repeat(64), checks: {}, attempts: {}, findings: [] };
+  return { id, stableKey, title: stableKey, summary: null, kind, format, benchmark: format === "harbor" ? { id: "terminal-bench", displayName: "Terminal-Bench" } : { id: "unspecified", displayName: "Unspecified" }, gpuRequired: format === "harbor", sourcePath: `${kind}s/${stableKey}`, artifactId, contentSha256: "a".repeat(64), checks: {}, attempts: {}, findings: [] };
 }
 
 function sourceItem(id, displayName, artifactId, artifactKind, sizeBytes, kind = artifactKind === "task_package" ? "task_package" : "archive", mediaType = "application/zip", submissionRoles) {

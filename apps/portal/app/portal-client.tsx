@@ -68,6 +68,7 @@ const text = {
     task: "Task",
     trace: "Trace",
     nonHarbor: "Non-Harbor",
+    gpuRequired: "GPU required",
     findings: "Findings",
     unset: "—",
     attempted: "Tried",
@@ -117,6 +118,7 @@ const text = {
     task: "任务",
     trace: "轨迹",
     nonHarbor: "非 Harbor",
+    gpuRequired: "需 GPU",
     findings: "发现",
     unset: "—",
     attempted: "已尝试",
@@ -392,6 +394,7 @@ function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task
         {contextLabel && <span>{contextLabel}</span>}
         {!hideBenchmark && task.benchmark.id !== "unspecified" && <span>{task.benchmark.displayName}</span>}
         <span>{task.format === "harbor" ? "Harbor" : t.nonHarbor}</span>
+        {task.gpuRequired && <span>{t.gpuRequired}</span>}
         {task.kind === "trace" && <span>{t.trace}</span>}
         {task.sourcePath && <code>{displayArchivePath(task.sourcePath)}</code>}
       </div>
@@ -508,7 +511,7 @@ const previewSubmission: CatalogSubmission = {
     previewHarborTask("preview-security", "Capture a protected service secret", "cybersecurity", "Cybersecurity"),
     previewHarborTask("preview-math", "Solve constrained polynomial count", "mathematical-reasoning", "Mathematical Reasoning"),
     previewHarborTask("preview-cad", "Reconstruct a parametric CAD part", "cad-generation-and-understanding", "CAD Generation and Understanding"),
-    { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", benchmark: { id: "unspecified", displayName: "Unspecified" }, sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, attempts: {}, findings: [] },
+    { id: "preview-trace", stableKey: "browser-trace", title: "Browser workflow trace", summary: null, kind: "trace", format: "non_harbor", benchmark: { id: "unspecified", displayName: "Unspecified" }, gpuRequired: false, sourcePath: "traces/session.jsonl", artifactId: "artifact:preview:trace", contentSha256: null, sourceItemIds: ["preview-file"], checks: {}, attempts: {}, findings: [] },
   ],
 };
 
@@ -534,6 +537,7 @@ function previewHarborTask(id: string, title: string, benchmarkId: string, bench
     kind: "task",
     format: "harbor",
     benchmark: { id: benchmarkId, displayName: benchmarkName },
+    gpuRequired: false,
     sourcePath: `tasks/${id.replace(/^preview-/, "")}`,
     artifactId: null,
     contentSha256: null,

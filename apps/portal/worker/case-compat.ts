@@ -102,6 +102,7 @@ function normalizeLegacyTask(value: JsonRecord): CatalogTask {
     kind: legacyKind(text(value.format)),
     format: legacyFormat(text(value.format), representation),
     benchmark: { id: "unspecified", displayName: "Unspecified" },
+    gpuRequired: false,
     sourcePath,
     artifactId: nullableText(value.artifactId),
     contentSha256: nullableText(value.contentSha256),
