@@ -91,6 +91,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       { id: "terminal-bench", displayName: "Terminal-Bench" },
       { id: "unspecified", displayName: "Unspecified" },
     ]);
+    assert.deepEqual(submission?.tasks.map((task) => task.gpuRequired), [false, false]);
     assert.equal(submission?.tasks[0]?.checks.environment?.outcome, "fail");
     assert.equal(submission?.tasks[0]?.checks.oracle, undefined);
     assert.equal(submission?.tasks[0]?.attempts.oracle?.status, "blocked");
@@ -122,6 +123,39 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     const repeatedBenchmarkResult = await repository.assignTaskBenchmarks(benchmarkAssignment);
     assert.equal(repeatedBenchmarkResult.assignmentsAdded, 0);
     assert.equal(repeatedBenchmarkResult.assignmentsUnchanged, 2);
+
+    const gpuRequirementAssignment = {
+      submissionId: "submission-one",
+      assignments: [{
+        taskId: "task-one",
+        gpuRequired: true,
+        evidence: "task.toml declares environment.gpus = 1 and gpu_types = [H100].",
+      }],
+      reason: "Record the declared GPU requirement without replacing the task version.",
+      actor: "TARS",
+    };
+    const gpuRequirementResult = await repository.assignTaskGpuRequirements(gpuRequirementAssignment);
+    assert.equal(gpuRequirementResult.assignmentsAdded, 1);
+    assert.equal(gpuRequirementResult.assignmentsUnchanged, 0);
+    const gpuSubmission = await repository.getSampleSubmission("submission-one");
+    assert.equal(gpuSubmission?.tasks[0]?.gpuRequired, true);
+    assert.equal(gpuSubmission?.tasks[0]?.checks.environment?.outcome, "fail");
+    assert.equal(gpuSubmission?.tasks[0]?.attempts.oracle?.status, "blocked");
+    assert.equal((await repository.assignTaskGpuRequirements(gpuRequirementAssignment)).assignmentsUnchanged, 1);
+
+    const reviewedCpuRequirement = await repository.assignTaskGpuRequirements({
+      submissionId: "submission-one",
+      assignments: [{
+        taskId: "task-one",
+        gpuRequired: false,
+        evidence: "A subsequent review established that the task manifest requires only CPU resources.",
+      }],
+      reason: "Correct the requirement through append-only history.",
+      actor: "TARS",
+    });
+    assert.equal(reviewedCpuRequirement.assignmentsAdded, 1);
+    assert.equal((await repository.getSampleSubmission("submission-one"))?.tasks[0]?.gpuRequired, false);
+    assert.equal((await repository.assignTaskGpuRequirements(gpuRequirementAssignment)).assignmentsAdded, 1);
 
     const reconciliation = await repository.reconcileSubmissionSourceItems({
       submissionId: "submission-one",
@@ -219,6 +253,26 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       "science-bench",
       "terminal-bench",
     ]);
+    const gpuRequirementHistory = await administrator.query<{ gpu_required: boolean; evidence: string }>(
+      `SELECT gpu_required, evidence
+       FROM "${schema}".registry_task_gpu_requirement_assignments
+       WHERE task_version_id = 'task-one'
+       ORDER BY revision`,
+    );
+    assert.deepEqual(gpuRequirementHistory.rows, [
+      {
+        gpu_required: true,
+        evidence: "task.toml declares environment.gpus = 1 and gpu_types = [H100].",
+      },
+      {
+        gpu_required: false,
+        evidence: "A subsequent review established that the task manifest requires only CPU resources.",
+      },
+      {
+        gpu_required: true,
+        evidence: "task.toml declares environment.gpus = 1 and gpu_types = [H100].",
+      },
+    ]);
 
     await repository.recordHarborCheck({
       ...check("task-one", evidenceSha),
@@ -231,6 +285,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     const correctedCatalog = await repository.sampleCatalogSnapshot();
     const correctedTask = correctedCatalog.vendors[0]?.submissions[0]?.tasks[0];
     assert.equal(correctedTask?.checks.environment?.outcome, "pass");
+    assert.equal(correctedTask?.gpuRequired, true);
     assert.deepEqual(correctedTask?.findings, []);
   } finally {
     await repository?.close();

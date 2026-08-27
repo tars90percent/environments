@@ -19,8 +19,9 @@ For each vendor offer or sample delivery:
 3. Parse any tasks or traces whose boundaries are clear.
 4. Assign each parsed item one registered general benchmark direction. Use `unspecified` when no direction is clear.
 5. Record whether the item is Harbor or non-Harbor.
-6. For Harbor tasks, record Environment, Oracle, and Nop results when those checks run.
-7. Add a finding only when one of those checks proves a specific problem with that task.
+6. For Harbor tasks, record whether GPU resources are required.
+7. For Harbor tasks that do not require a GPU, record Environment, Oracle, and Nop results when those checks run.
+8. Add a finding only when one of those checks proves a specific problem with that task.
 
 A submission still belongs in the catalog when no individual task or trace can be separated cleanly. Keep the source material and do not invent task boundaries.
 
@@ -39,6 +40,8 @@ Never overwrite an earlier submission, payload, task, or check result. A correct
 When an existing submission's parsed task or trace boundaries, format classification, source links, or other task-version contents need correction, use `case-registry reconcile-submission-tasks` with the complete desired active set, not a patch. The operation must retain unchanged versions, supersede changed or retired versions, and link each replacement version to the version it supersedes. Do not use `append-tasks` to revise an active task version.
 
 A benchmark review is not a task-version change. Record it with `case-registry assign-task-benchmarks`, which appends an audited benchmark assignment to the existing task or trace version. Never supersede, replace, or mutate a task version merely to change its benchmark. Harbor checks, attempts, findings, source links, and artifact identity must remain attached to the same version.
+
+A GPU-requirement review is also not a task-version change. Record it with `case-registry assign-task-gpu-requirements`, including the evidence for the decision. Never supersede or mutate a task version to change `gpu_required`, and never represent a deliberate GPU skip as a Harbor attempt or failure.
 
 Use **submission** in human-facing language. Some internal APIs may still use `batch` for compatibility.
 
@@ -76,7 +79,7 @@ Preserve the vendor's stable task or trace identifier when one is clear. Otherwi
 
 ## Harbor checks
 
-Run Harbor checks only on the exact immutable Harbor task version. Harbor CLI commands must use Modal as the sandbox provider; do not execute vendor Dockerfiles, solutions, tests, or other task code directly on this workstation, in CASE, in the portal, or in any production-connected service. The approved Modal compatibility adapter below is part of the check harness and does not create or revise a task version.
+Run Harbor checks only on the exact immutable Harbor task version and only when `gpu_required` is false. When `gpu_required` is true, skip Environment, Oracle, and Nop; leave their tags unset and do not create attempt records. Harbor CLI commands must use Modal as the sandbox provider; do not execute vendor Dockerfiles, solutions, tests, or other task code directly on this workstation, in CASE, in the portal, or in any production-connected service. The approved Modal compatibility adapter below is part of the check harness and does not create or revise a task version.
 
 Track exactly these three checks, matching the portal tags:
 
@@ -121,7 +124,7 @@ CASE owns the canonical registry and sample artifacts:
 
 Trusted CASE capture commands call the same registry library directly with CASE's database and object-store credentials so that artifact, source, submission, and link records are committed through one canonical transaction. This is not permission for ad hoc SQL; humans and agents still use the supported commands.
 
-小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, summarized arrival provenance, parsed material, general benchmark directions, original-vendor-file and task-artifact downloads, the three Harbor tags, whether an unset check was attempted without a conclusive result, and findings. It does not expose source records or external source links. It has no submission upload, procurement, research-demand, status, scoring, recommendation, or review workflow.
+小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, summarized arrival provenance, parsed material, general benchmark directions, GPU requirements, original-vendor-file and task-artifact downloads, the three Harbor tags, whether an unset check was attempted without a conclusive result, and findings. It does not expose source records or external source links. It has no submission upload, procurement, research-demand, status, scoring, recommendation, or review workflow.
 
 The current dedicated capture paths are reviewed Feishu message/file plans and reviewed Feishu Mail message/attachment plans. They preserve payloads and register submissions; they do not imply universal discovery or parsing. Researcher upload through 小环境 is disabled. Check live authentication, scopes, ACLs, and transport configuration before claiming a source is monitored or accessible.
 
@@ -147,4 +150,4 @@ Both Railway services deploy independently from `main` using scoped paths. CASE 
 
 ## Completion
 
-A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked, assigned a registered general benchmark direction, and classified; and every parsed Harbor task has accurate Environment, Oracle, and Nop tags for each conclusive check, an operational attempt record for each check that was tried without a conclusive result, and only directly supported task-specific findings. Prerequisite-blocked checks that were never attempted remain unset without an attempt record. Non-Harbor material requires no Harbor checks.
+A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked, assigned a registered general benchmark direction, and classified; every parsed Harbor task has an accurate GPU requirement; and each non-GPU Harbor task has accurate Environment, Oracle, and Nop tags for every conclusive check, an operational attempt record for each check that was tried without a conclusive result, and only directly supported task-specific findings. GPU-required checks and prerequisite-blocked checks that were never attempted remain unset without an attempt record. Non-Harbor material requires no Harbor checks.

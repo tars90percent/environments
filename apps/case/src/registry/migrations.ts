@@ -1604,6 +1604,78 @@ const migrations: Migration[] = [
         'Compatibility snapshot of the benchmark at task-version creation; current benchmark comes from registry_task_benchmark_assignments.';
     `,
   },
+  {
+    id: "021_append_only_gpu_requirements",
+    sql: `
+      CREATE TABLE registry_task_gpu_requirement_assignments (
+        id text PRIMARY KEY,
+        revision bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+        task_version_id text NOT NULL REFERENCES registry_task_versions(id) ON DELETE CASCADE,
+        gpu_required boolean NOT NULL,
+        evidence text NOT NULL,
+        actor text NOT NULL,
+        reason text NOT NULL,
+        request_sha256 text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (length(trim(evidence)) > 0),
+        CHECK (request_sha256 ~ '^[0-9a-f]{64}$')
+      );
+
+      CREATE INDEX registry_task_gpu_requirement_assignments_latest_idx
+        ON registry_task_gpu_requirement_assignments(task_version_id, revision DESC);
+
+      CREATE VIEW registry_current_task_gpu_requirements AS
+      SELECT tv.id AS task_version_id,
+             COALESCE(latest.gpu_required, false) AS gpu_required,
+             latest.id AS assignment_id,
+             latest.evidence,
+             latest.actor,
+             latest.reason,
+             latest.created_at AS assigned_at
+      FROM registry_task_versions tv
+      LEFT JOIN LATERAL (
+        SELECT assignment.id,
+               assignment.gpu_required,
+               assignment.evidence,
+               assignment.actor,
+               assignment.reason,
+               assignment.revision,
+               assignment.created_at
+        FROM registry_task_gpu_requirement_assignments assignment
+        WHERE assignment.task_version_id = tv.id
+        ORDER BY assignment.revision DESC
+        LIMIT 1
+      ) latest ON true;
+
+      CREATE OR REPLACE VIEW registry_sample_tasks AS
+      SELECT tv.id,
+             tv.batch_id AS submission_id,
+             t.vendor_id,
+             tv.task_stable_key AS stable_key,
+             tv.task_title AS title,
+             tv.task_summary AS summary,
+             tv.task_kind,
+             tv.format_kind,
+             tv.source_path,
+             tv.artifact_id,
+             tv.content_sha256,
+             tv.created_at,
+             current_benchmark.benchmark_id,
+             benchmark.display_name AS benchmark_name,
+             current_gpu.gpu_required
+      FROM registry_task_versions tv
+      JOIN registry_tasks t ON t.id = tv.task_id
+      JOIN registry_current_task_benchmarks current_benchmark ON current_benchmark.task_version_id = tv.id
+      JOIN registry_benchmarks benchmark ON benchmark.id = current_benchmark.benchmark_id
+      JOIN registry_current_task_gpu_requirements current_gpu ON current_gpu.task_version_id = tv.id
+      WHERE tv.superseded_at IS NULL;
+
+      COMMENT ON TABLE registry_task_gpu_requirement_assignments IS
+        'Append-only reviews of whether an exact task version requires GPU resources. The latest row is current.';
+      COMMENT ON VIEW registry_current_task_gpu_requirements IS
+        'Current GPU requirement per exact task version; false means no positive requirement is currently recorded.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

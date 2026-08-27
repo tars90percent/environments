@@ -1,6 +1,8 @@
 import type {
   ArtifactInput,
   ArtifactRecord,
+  AssignTaskGpuRequirementsInput,
+  AssignTaskGpuRequirementsResult,
   AssignTaskBenchmarksInput,
   AssignTaskBenchmarksResult,
   AppendTasksInput,
@@ -44,6 +46,7 @@ export interface RegistryRepository {
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
   assignTaskBenchmarks(input: AssignTaskBenchmarksInput): Promise<AssignTaskBenchmarksResult>;
+  assignTaskGpuRequirements(input: AssignTaskGpuRequirementsInput): Promise<AssignTaskGpuRequirementsResult>;
   appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;
   reconcileSubmissionTasks(input: ReconcileSubmissionTasksInput): Promise<ReconcileSubmissionTasksResult>;
   classifySubmissionIntake(input: SubmissionIntakeClassificationInput): Promise<SubmissionIntakeClassificationResult>;

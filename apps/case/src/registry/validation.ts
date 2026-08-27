@@ -1,5 +1,6 @@
 import type {
   ArtifactInput,
+  AssignTaskGpuRequirementsInput,
   AssignTaskBenchmarksInput,
   AppendTasksInput,
   AppendNormalizedTasksInput,
@@ -367,6 +368,30 @@ export function parseAssignTaskBenchmarks(value: unknown): AssignTaskBenchmarksI
     };
   });
   if (!assignments.length) throw new ValidationError("assignments must contain at least one task benchmark assignment");
+  if (new Set(assignments.map((assignment) => assignment.taskId)).size !== assignments.length) {
+    throw new ValidationError("assignments must name each task at most once");
+  }
+  return {
+    submissionId: identifier(input.submissionId, "submissionId"),
+    assignments,
+    reason: boundedString(input.reason, "reason", 2_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseAssignTaskGpuRequirements(value: unknown): AssignTaskGpuRequirementsInput {
+  const input = object(value, "GPU requirement assignment");
+  onlyKeys(input, new Set(["submissionId", "assignments", "reason", "actor"]), "GPU requirement assignment");
+  const assignments = array(input.assignments, "assignments").map((value, index) => {
+    const assignment = object(value, `assignments[${index}]`);
+    onlyKeys(assignment, new Set(["taskId", "gpuRequired", "evidence"]), `assignments[${index}]`);
+    return {
+      taskId: identifier(assignment.taskId, `assignments[${index}].taskId`),
+      gpuRequired: boolean(assignment.gpuRequired, `assignments[${index}].gpuRequired`),
+      evidence: boundedString(assignment.evidence, `assignments[${index}].evidence`, 2_000),
+    };
+  });
+  if (!assignments.length) throw new ValidationError("assignments must contain at least one task GPU requirement assignment");
   if (new Set(assignments.map((assignment) => assignment.taskId)).size !== assignments.length) {
     throw new ValidationError("assignments must name each task at most once");
   }

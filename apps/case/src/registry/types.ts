@@ -416,6 +416,26 @@ export type AssignTaskBenchmarksResult = {
   assignments: TaskBenchmarkAssignmentInput[];
 };
 
+export type TaskGpuRequirementAssignmentInput = {
+  taskId: string;
+  gpuRequired: boolean;
+  evidence: string;
+};
+
+export type AssignTaskGpuRequirementsInput = {
+  submissionId: string;
+  assignments: TaskGpuRequirementAssignmentInput[];
+  reason: string;
+  actor: string;
+};
+
+export type AssignTaskGpuRequirementsResult = {
+  submissionId: string;
+  assignmentsAdded: number;
+  assignmentsUnchanged: number;
+  assignments: TaskGpuRequirementAssignmentInput[];
+};
+
 export type SourceBenchmarkAssignmentInput = {
   sourceItemId: string;
   benchmarkId: string;
@@ -882,6 +902,7 @@ export type SampleCatalogTask = {
     id: string;
     displayName: string;
   };
+  gpuRequired: boolean;
   sourcePath: string | null;
   artifactId: string | null;
   contentSha256: string | null;

@@ -5,6 +5,7 @@ import { contentAddressedStorageKey } from "../src/registry/artifacts.js";
 import type { SourceEnvelopeInput, SubmissionManifest } from "../src/registry/types.js";
 import {
   parseAssignTaskBenchmarks,
+  parseAssignTaskGpuRequirements,
   parseAppendTasks,
   parseHarborCheckAttempt,
   parseHarborCheckResult,
@@ -183,6 +184,29 @@ test("validates append-only task benchmark assignments", () => {
     ...input,
     assignments: [input.assignments[0], input.assignments[0]],
   }), /at most once/);
+});
+
+test("validates append-only task GPU requirement assignments", () => {
+  const input = {
+    submissionId: "submission-one",
+    assignments: [{
+      taskId: "task-one",
+      gpuRequired: true,
+      evidence: "task.toml declares environment.gpus = 1 and gpu_types = [H100].",
+    }],
+    reason: "Record the declared execution requirement without replacing the task version.",
+    actor: "TARS",
+  };
+  assert.deepEqual(parseAssignTaskGpuRequirements(input), input);
+  assert.throws(() => parseAssignTaskGpuRequirements({ ...input, assignments: [] }), /at least one/);
+  assert.throws(() => parseAssignTaskGpuRequirements({
+    ...input,
+    assignments: [input.assignments[0], input.assignments[0]],
+  }), /at most once/);
+  assert.throws(() => parseAssignTaskGpuRequirements({
+    ...input,
+    assignments: [{ ...input.assignments[0], evidence: "" }],
+  }), ValidationError);
 });
 
 test("validates exactly three Harbor pass/fail phases and explicit control scores", () => {

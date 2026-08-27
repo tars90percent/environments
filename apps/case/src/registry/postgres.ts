@@ -7,6 +7,8 @@ import { deriveRuntimeVerification, type RuntimeCheckFact } from "./task-evidenc
 import type {
   ArtifactInput,
   ArtifactRecord,
+  AssignTaskGpuRequirementsInput,
+  AssignTaskGpuRequirementsResult,
   AssignTaskBenchmarksInput,
   AssignTaskBenchmarksResult,
   AppendTasksInput,
@@ -87,6 +89,11 @@ type BenchmarkRow = {
 type CurrentTaskBenchmarkRow = {
   task_version_id: string;
   benchmark_id: string;
+};
+type CurrentTaskGpuRequirementRow = {
+  task_version_id: string;
+  gpu_required: boolean;
+  assignment_id: string | null;
 };
 type ResearchDemandRow = {
   id: string;
@@ -176,6 +183,7 @@ type SampleTaskRow = {
   format_kind: SampleCatalogTask["format"];
   benchmark_id: string;
   benchmark_name: string;
+  gpu_required: boolean;
   source_path: string | null;
   artifact_id: string | null;
   content_sha256: string | null;
@@ -1171,6 +1179,109 @@ export class PostgresRegistry implements RegistryRepository {
           "submission_batch",
           input.submissionId,
           "benchmark.assignments_recorded",
+          input.actor,
+          { reason: input.reason, requestSha256, changes },
+        );
+      }
+      await client.query("COMMIT");
+      return {
+        submissionId: input.submissionId,
+        assignmentsAdded,
+        assignmentsUnchanged,
+        assignments: input.assignments,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async assignTaskGpuRequirements(input: AssignTaskGpuRequirementsInput): Promise<AssignTaskGpuRequirementsResult> {
+    const requestSha256 = hashValue(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const submissionResult = await client.query<{ intake_purpose: string | null }>(
+        `SELECT COALESCE(intake_purpose, metadata->>'intakePurpose') AS intake_purpose
+         FROM registry_submission_batches
+         WHERE id = $1
+         FOR UPDATE`,
+        [input.submissionId],
+      );
+      const submission = submissionResult.rows[0];
+      if (!submission) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (submission.intake_purpose !== "sample_evaluation") {
+        throw new RegistryConflictError(`Submission ${input.submissionId} is not a sample submission`);
+      }
+
+      const taskIds = input.assignments.map((assignment) => assignment.taskId);
+      const currentResult = await client.query<CurrentTaskGpuRequirementRow>(
+        `SELECT tv.id AS task_version_id,
+                current_gpu.gpu_required,
+                current_gpu.assignment_id
+         FROM registry_task_versions tv
+         JOIN registry_current_task_gpu_requirements current_gpu
+           ON current_gpu.task_version_id = tv.id
+         WHERE tv.batch_id = $1
+           AND tv.superseded_at IS NULL
+           AND tv.task_kind = 'task'
+           AND tv.id = ANY($2::text[])
+         FOR UPDATE OF tv`,
+        [input.submissionId, taskIds],
+      );
+      const currentRequirements = new Map(currentResult.rows.map((row) => [row.task_version_id, row]));
+      for (const taskId of taskIds) {
+        if (!currentRequirements.has(taskId)) {
+          throw new RegistryNotFoundError(`Active task ${taskId} does not belong to submission ${input.submissionId}`);
+        }
+      }
+
+      let assignmentsAdded = 0;
+      let assignmentsUnchanged = 0;
+      const changes: Array<{
+        taskId: string;
+        previousGpuRequired: boolean;
+        gpuRequired: boolean;
+        evidence: string;
+        assignmentId: string;
+      }> = [];
+      for (const assignment of input.assignments) {
+        const currentRequirement = currentRequirements.get(assignment.taskId)!;
+        const previousGpuRequired = currentRequirement.gpu_required;
+        if (currentRequirement.assignment_id !== null && previousGpuRequired === assignment.gpuRequired) {
+          assignmentsUnchanged += 1;
+          continue;
+        }
+        const assignmentId = gpuRequirementAssignmentId(requestSha256, assignment.taskId);
+        await client.query(
+          `INSERT INTO registry_task_gpu_requirement_assignments(
+             id, task_version_id, gpu_required, evidence, actor, reason, request_sha256
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [assignmentId, assignment.taskId, assignment.gpuRequired, assignment.evidence,
+            input.actor, input.reason, requestSha256],
+        );
+        changes.push({
+          taskId: assignment.taskId,
+          previousGpuRequired,
+          gpuRequired: assignment.gpuRequired,
+          evidence: assignment.evidence,
+          assignmentId,
+        });
+        assignmentsAdded += 1;
+      }
+
+      if (changes.length) {
+        await client.query(
+          "UPDATE registry_submission_batches SET updated_at = now() WHERE id = $1",
+          [input.submissionId],
+        );
+        await this.insertStatusEvent(
+          client,
+          "submission_batch",
+          input.submissionId,
+          "gpu_requirement.assignments_recorded",
           input.actor,
           { reason: input.reason, requestSha256, changes },
         );
@@ -3171,7 +3282,7 @@ export class PostgresRegistry implements RegistryRepository {
       ),
       this.pool.query<SampleTaskRow>(
         `SELECT st.submission_id, st.id, st.stable_key, st.title, st.summary,
-                st.task_kind, st.format_kind, st.benchmark_id, st.benchmark_name,
+                st.task_kind, st.format_kind, st.benchmark_id, st.benchmark_name, st.gpu_required,
                 st.source_path, st.artifact_id, st.content_sha256
          FROM registry_sample_tasks st
          JOIN registry_task_versions tv ON tv.id = st.id
@@ -3302,6 +3413,7 @@ export class PostgresRegistry implements RegistryRepository {
         kind: row.task_kind,
         format: row.format_kind,
         benchmark: { id: row.benchmark_id, displayName: row.benchmark_name },
+        gpuRequired: row.gpu_required,
         sourcePath: row.source_path,
         artifactId: row.artifact_id,
         contentSha256: row.content_sha256,
@@ -3709,6 +3821,12 @@ function stableTaskId(vendorId: string, stableKey: string): string {
 
 function benchmarkAssignmentId(requestSha256: string, taskVersionId: string): string {
   return `benchmark-assignment:${createHash("sha256")
+    .update(`${requestSha256}\u0000${taskVersionId}`)
+    .digest("hex")}`;
+}
+
+function gpuRequirementAssignmentId(requestSha256: string, taskVersionId: string): string {
+  return `gpu-requirement-assignment:${createHash("sha256")
     .update(`${requestSha256}\u0000${taskVersionId}`)
     .digest("hex")}`;
 }

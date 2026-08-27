@@ -40,6 +40,8 @@ test("the CASE guide defines the narrow submission-processing workflow", async (
   assert.match(guide, /A benchmark review is not a task-version change/);
   assert.match(guide, /case-registry assign-task-benchmarks/);
   assert.match(guide, /Never supersede, replace, or mutate a task version merely to change its benchmark/);
+  assert.match(guide, /case-registry assign-task-gpu-requirements/);
+  assert.match(guide, /never represent a deliberate GPU skip as a Harbor attempt or failure/i);
 });
 
 test("the CASE guide permits only the three Modal-backed Harbor checks", async () => {
@@ -49,6 +51,8 @@ test("the CASE guide permits only the three Modal-backed Harbor checks", async (
   assert.match(guide, /\*\*Oracle pass\/fail:\*\*.*score `1`/);
   assert.match(guide, /\*\*Nop pass\/fail:\*\*.*score `0`/);
   assert.match(guide, /Modal as the sandbox provider/);
+  assert.match(guide, /only when `gpu_required` is false/);
+  assert.match(guide, /When `gpu_required` is true, skip Environment, Oracle, and Nop/);
   assert.match(guide, /do not run a separate Environment trial/i);
   assert.match(guide, /An unset phase with such a record means the check was tried without a conclusive result/);
   assert.match(guide, /Attempt state is not a fourth check/);
