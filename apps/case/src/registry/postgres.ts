@@ -42,6 +42,8 @@ import type {
   ReconcileSubmissionTasksResult,
   RegisterBenchmarkInput,
   RegisterBenchmarkResult,
+  RemoveUnusedBenchmarksInput,
+  RemoveUnusedBenchmarksResult,
   RegistryBenchmark,
   SampleCatalogCheck,
   SampleCatalogAttempt,
@@ -1087,6 +1089,74 @@ export class PostgresRegistry implements RegistryRepository {
       });
       await client.query("COMMIT");
       return { benchmark: benchmarkFromRow(inserted.rows[0]!), created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async removeUnusedBenchmarks(input: RemoveUnusedBenchmarksInput): Promise<RemoveUnusedBenchmarksResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("LOCK TABLE registry_benchmarks IN SHARE ROW EXCLUSIVE MODE");
+      await client.query("LOCK TABLE registry_task_versions, registry_task_benchmark_assignments IN SHARE MODE");
+
+      const benchmarkResult = await client.query<BenchmarkRow>(
+        `SELECT id, display_name, aliases, created_at
+         FROM registry_benchmarks
+         WHERE id = ANY($1::text[])
+         ORDER BY display_name, id`,
+        [input.benchmarkIds],
+      );
+      const foundIds = new Set(benchmarkResult.rows.map((row) => row.id));
+      const missingIds = input.benchmarkIds.filter((id) => !foundIds.has(id));
+      if (missingIds.length) throw new RegistryNotFoundError(`Benchmarks not found: ${missingIds.join(", ")}`);
+      if (foundIds.has("unspecified")) throw new RegistryConflictError("The unspecified benchmark cannot be removed");
+
+      const referencedResult = await client.query<{ benchmark_id: string; task_version_count: string; assignment_count: string }>(
+        `SELECT benchmark.id AS benchmark_id,
+                (SELECT COUNT(*)::text
+                 FROM registry_task_versions task_version
+                 WHERE task_version.benchmark_id = benchmark.id) AS task_version_count,
+                (SELECT COUNT(*)::text
+                 FROM registry_task_benchmark_assignments assignment
+                 WHERE assignment.benchmark_id = benchmark.id) AS assignment_count
+         FROM registry_benchmarks benchmark
+         WHERE benchmark.id = ANY($1::text[])
+           AND (EXISTS (
+                  SELECT 1 FROM registry_task_versions task_version
+                  WHERE task_version.benchmark_id = benchmark.id
+                ) OR EXISTS (
+                  SELECT 1 FROM registry_task_benchmark_assignments assignment
+                  WHERE assignment.benchmark_id = benchmark.id
+                ))
+         ORDER BY benchmark.id`,
+        [input.benchmarkIds],
+      );
+      if (referencedResult.rows.length) {
+        const references = referencedResult.rows.map((row) =>
+          `${row.benchmark_id} (${row.task_version_count} task versions, ${row.assignment_count} assignments)`,
+        );
+        throw new RegistryConflictError(`Referenced benchmarks cannot be removed: ${references.join("; ")}`);
+      }
+
+      const eventsResult = await client.query(
+        `DELETE FROM registry_status_events
+         WHERE entity_type = 'benchmark' AND entity_id = ANY($1::text[])`,
+        [input.benchmarkIds],
+      );
+      await client.query(
+        "DELETE FROM registry_benchmarks WHERE id = ANY($1::text[])",
+        [input.benchmarkIds],
+      );
+      await client.query("COMMIT");
+      return {
+        removed: benchmarkResult.rows.map(benchmarkFromRow),
+        registrationEventsRemoved: eventsResult.rowCount ?? 0,
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

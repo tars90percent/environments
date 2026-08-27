@@ -397,6 +397,15 @@ export type RegisterBenchmarkResult = {
   created: boolean;
 };
 
+export type RemoveUnusedBenchmarksInput = {
+  benchmarkIds: string[];
+};
+
+export type RemoveUnusedBenchmarksResult = {
+  removed: RegistryBenchmark[];
+  registrationEventsRemoved: number;
+};
+
 export type TaskBenchmarkAssignmentInput = {
   taskId: string;
   benchmarkId: string;

@@ -58,6 +58,11 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       aliases: ["science_bench"],
       actor: "TARS",
     })).created, false);
+    await repository.registerBenchmark({
+      id: "unused-bench",
+      displayName: "Unused Bench",
+      actor: "TARS",
+    });
     await repository.appendTasks(parseAppendTasks({
       submissionId: "submission-one",
       actor: "CASE",
@@ -70,6 +75,15 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
         { id: "task-trace", stableKey: "trace-one", title: "Trace one", kind: "trace", format: "non_harbor", sourcePath: "traces/one.jsonl", artifactId: `artifact:sha256:${traceSha}`, contentSha256: traceSha, sourceItemIds: ["source-trace"] },
       ],
     }));
+    await assert.rejects(
+      () => repository!.removeUnusedBenchmarks({ benchmarkIds: ["terminal-bench", "unused-bench"] }),
+      /Referenced benchmarks cannot be removed/,
+    );
+    assert.ok((await repository.listBenchmarks()).some((benchmark) => benchmark.id === "unused-bench"));
+    const removedBenchmarks = await repository.removeUnusedBenchmarks({ benchmarkIds: ["unused-bench"] });
+    assert.deepEqual(removedBenchmarks.removed.map((benchmark) => benchmark.id), ["unused-bench"]);
+    assert.equal(removedBenchmarks.registrationEventsRemoved, 1);
+    assert.ok(!(await repository.listBenchmarks()).some((benchmark) => benchmark.id === "unused-bench"));
     await assert.rejects(() => repository!.recordHarborAttempt(attempt("task-trace", evidenceSha)), RegistryConflictError);
     await repository.recordHarborAttempt(attempt("task-one", evidenceSha));
     await assert.rejects(() => repository!.recordHarborCheck(check("task-trace", evidenceSha)), RegistryConflictError);

@@ -11,6 +11,7 @@ import {
   parseHarborCheckResult,
   parseHarborFinding,
   parseRegisterBenchmark,
+  parseRemoveUnusedBenchmarks,
   parseReconcileSubmissionSourceItems,
   parseReconcileSubmissionTasks,
   parseResearcherUpload,
@@ -166,6 +167,16 @@ test("validates managed benchmark directions", () => {
   assert.equal(parsed.id, "terminal-bench");
   assert.deepEqual(parsed.aliases, ["terminal_bench", "TerminalBench"].sort((a, b) => a.localeCompare(b)));
   assert.throws(() => parseRegisterBenchmark({ ...parsed, aliases: ["Terminal Bench", "terminal_bench"] }), /unique ignoring case/);
+});
+
+test("validates atomic unused benchmark removals", () => {
+  assert.deepEqual(parseRemoveUnusedBenchmarks({
+    benchmarkIds: ["unused-two", "unused-one"],
+  }), {
+    benchmarkIds: ["unused-one", "unused-two"],
+  });
+  assert.throws(() => parseRemoveUnusedBenchmarks({ benchmarkIds: [] }), /at least one/);
+  assert.throws(() => parseRemoveUnusedBenchmarks({ benchmarkIds: ["unused-one", "unused-one"] }), /duplicates/);
 });
 
 test("validates append-only task benchmark assignments", () => {

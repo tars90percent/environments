@@ -20,6 +20,8 @@ import type {
   ReconcileSubmissionTasksResult,
   RegisterBenchmarkInput,
   RegisterBenchmarkResult,
+  RemoveUnusedBenchmarksInput,
+  RemoveUnusedBenchmarksResult,
   RegistryBenchmark,
   SampleCatalogSnapshot,
   SampleCatalogSubmission,
@@ -45,6 +47,7 @@ export interface RegistryRepository {
   ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
+  removeUnusedBenchmarks(input: RemoveUnusedBenchmarksInput): Promise<RemoveUnusedBenchmarksResult>;
   assignTaskBenchmarks(input: AssignTaskBenchmarksInput): Promise<AssignTaskBenchmarksResult>;
   assignTaskGpuRequirements(input: AssignTaskGpuRequirementsInput): Promise<AssignTaskGpuRequirementsResult>;
   appendTasks(input: AppendTasksInput): Promise<AppendTasksResult>;

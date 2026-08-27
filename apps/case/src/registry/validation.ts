@@ -12,6 +12,7 @@ import type {
   HarborCheckResultInput,
   HarborFindingInput,
   RegisterBenchmarkInput,
+  RemoveUnusedBenchmarksInput,
   ReconcileSubmissionSourceItemsInput,
   ReconcileSubmissionTasksInput,
   ResearcherUploadInput,
@@ -354,6 +355,18 @@ export function parseRegisterBenchmark(value: unknown): RegisterBenchmarkInput {
     aliases,
     actor: boundedString(input.actor, "actor", 500),
   };
+}
+
+export function parseRemoveUnusedBenchmarks(value: unknown): RemoveUnusedBenchmarksInput {
+  const input = object(value, "unused benchmark removal");
+  onlyKeys(input, new Set(["benchmarkIds"]), "unused benchmark removal");
+  const benchmarkIds = array(input.benchmarkIds, "benchmarkIds")
+    .map((value, index) => identifier(value, `benchmarkIds[${index}]`));
+  if (!benchmarkIds.length) throw new ValidationError("benchmarkIds must contain at least one benchmark id");
+  if (new Set(benchmarkIds).size !== benchmarkIds.length) {
+    throw new ValidationError("benchmarkIds must not contain duplicates");
+  }
+  return { benchmarkIds: benchmarkIds.sort((a, b) => a.localeCompare(b)) };
 }
 
 export function parseAssignTaskBenchmarks(value: unknown): AssignTaskBenchmarksInput {
