@@ -34,6 +34,17 @@ async function benchmarkLandscapeModule() {
   return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 }
 
+async function taskGroupsModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/task-groups.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+}
+
 function landscapeTask(id, benchmarkId, benchmarkName, kind = "task", format = "harbor") {
   return { id, stableKey: id, title: id, summary: null, kind, format, benchmark: { id: benchmarkId, displayName: benchmarkName } };
 }
@@ -81,6 +92,22 @@ test("groups only Harbor tasks into benchmark directions and portal groups", asy
   assert.equal(benchmarkCategoryId("brand-new-direction"), "other");
 });
 
+test("folds large submissions by benchmark direction and record type", async () => {
+  const { groupSubmissionTasks } = await taskGroupsModule();
+  const records = [
+    landscapeTask("company-task", "companybench", "CompanyBench", "task", "non_harbor"),
+    landscapeTask("company-trace-one", "companybench", "CompanyBench", "trace", "non_harbor"),
+    landscapeTask("medical-task", "medical-reasoning", "Medical Reasoning", "task", "non_harbor"),
+    landscapeTask("company-trace-two", "companybench", "CompanyBench", "trace", "non_harbor"),
+  ];
+  const groups = groupSubmissionTasks(records);
+  assert.deepEqual(groups.map((group) => [group.id, group.kind, group.tasks.map((record) => record.id)]), [
+    ["companybench:task", "task", ["company-task"]],
+    ["companybench:trace", "trace", ["company-trace-one", "company-trace-two"]],
+    ["medical-reasoning:task", "task", ["medical-task"]],
+  ]);
+});
+
 test("keeps the researcher UI on the narrow CASE record", async () => {
   const source = await readFile(new URL("../app/portal-client.tsx", import.meta.url), "utf8");
   const landscapeSource = await readFile(new URL("../app/benchmark-landscape.ts", import.meta.url), "utf8");
@@ -123,6 +150,9 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /attempted: "Tried"/);
   assert.match(source, /notAttempted: "Not attempted"/);
   assert.match(source, /task\.findings\.length > 0/);
+  assert.match(source, /TASK_GROUP_THRESHOLD = 100/);
+  assert.match(source, /groupSubmissionTasks\(tasks\)/);
+  assert.match(source, /Show \$\{count\} more/);
   assert.match(source, /fetch\("\/api\/catalog"/);
   assert.match(source, /filter\(\(vendor\) => vendor\.submissions\.length > 0\)/);
   assert.match(source, /value=\{catalog \? vendors\.length : undefined\}/);

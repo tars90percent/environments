@@ -18,6 +18,7 @@ import {
   type BenchmarkGroup,
   type HarborTaskContext,
 } from "./benchmark-landscape";
+import { groupSubmissionTasks, type SubmissionTaskGroup } from "./task-groups";
 
 type Language = "zh" | "en";
 type PortalView = "benchmarks" | "vendors";
@@ -54,6 +55,8 @@ const text = {
     newest: "Newest first",
     latest: "Latest submission",
     taskRecords: "tasks",
+    taskGroups: "Task groups",
+    groupedTaskNote: "Large submissions are folded by benchmark and record type.",
     noTasks: "No individual tasks or traces were clearly identified in this submission.",
     sources: "Original vendor files",
     originalNote: "Exact inbound vendor files retained before parsing.",
@@ -67,6 +70,7 @@ const text = {
     taskDownload: "Download",
     task: "Task",
     trace: "Trace",
+    traces: "Traces",
     nonHarbor: "Non-Harbor",
     gpuRequired: "GPU required",
     findings: "Findings",
@@ -104,6 +108,8 @@ const text = {
     newest: "最新在前",
     latest: "最新提交",
     taskRecords: "个任务",
+    taskGroups: "任务分组",
+    groupedTaskNote: "大型提交按基准方向与记录类型折叠展示。",
     noTasks: "这次提交中没有明确识别出的独立任务或轨迹。",
     sources: "供应商原始文件",
     originalNote: "解析前留存的供应商原始文件。",
@@ -117,6 +123,7 @@ const text = {
     taskDownload: "下载",
     task: "任务",
     trace: "轨迹",
+    traces: "轨迹",
     nonHarbor: "非 Harbor",
     gpuRequired: "需 GPU",
     findings: "发现",
@@ -135,6 +142,9 @@ const phaseLabels: Record<HarborCheckPhase, string> = {
   oracle: "Oracle",
   nop: "Nop",
 };
+
+const TASK_GROUP_THRESHOLD = 100;
+const TASK_BATCH_SIZE = 50;
 
 export default function PortalClient({ user, initialCatalog, localPreview = false }: { user: PortalUser; initialCatalog?: CatalogSnapshot; localPreview?: boolean }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(initialCatalog ?? null);
@@ -350,6 +360,7 @@ function StateCard({ children }: { children: string }) {
 function SubmissionCard({ submission, open, latest, language, datasetHref }: { submission: CatalogSubmission; open: boolean; latest: boolean; language: Language; datasetHref: string }) {
   const t = text[language];
   const harborTaskCount = submission.tasks.filter((task) => task.format === "harbor").length;
+  const grouped = submission.tasks.length > TASK_GROUP_THRESHOLD;
   return <details className="batch-card" open={open}>
     <summary className="batch-summary">
       <span className="batch-date"><strong>{formatDate(submission.date, language)}</strong>{latest && <small>{t.latest}</small>}</span>
@@ -359,11 +370,46 @@ function SubmissionCard({ submission, open, latest, language, datasetHref }: { s
     </summary>
     <div className="batch-body">
       <section className="dataset-access"><div className="dataset-copy"><span>CASE DATASET</span><h4>{t.tasks}</h4><p>{submission.tasks.length ? t.datasetNote : t.noTasks}</p></div><div className="dataset-metrics"><span><strong>{submission.tasks.length}</strong><small>{t.taskRecords}</small></span><span><strong>{submission.tasks.filter((task) => task.format === "harbor").length}</strong><small>{t.harbor}</small></span></div>{submission.tasks.some((task) => task.artifactId) && <a href={datasetHref}>{t.dataset}</a>}</section>
-      <div className="batch-section-head"><h4>{t.tasks}</h4><span>{submission.tasks.length} {t.taskRecords}</span></div>
-      <div className="task-list">{submission.tasks.length === 0 ? <p className="empty-task-list">{t.noTasks}</p> : submission.tasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>
+      <div className="batch-section-head"><div><h4>{grouped ? t.taskGroups : t.tasks}</h4>{grouped && <p>{t.groupedTaskNote}</p>}</div><span>{submission.tasks.length} {t.taskRecords}</span></div>
+      <SubmissionTaskList language={language} tasks={submission.tasks} />
       <OriginalSubmissionPanel language={language} submission={submission} />
     </div>
   </details>;
+}
+
+function SubmissionTaskList({ tasks, language }: { tasks: CatalogTask[]; language: Language }) {
+  const t = text[language];
+  if (tasks.length === 0) return <div className="task-list"><p className="empty-task-list">{t.noTasks}</p></div>;
+  if (tasks.length <= TASK_GROUP_THRESHOLD) return <div className="task-list">{tasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>;
+  return <div className="task-group-list">{groupSubmissionTasks(tasks).map((group) => <FoldedTaskGroup group={group} key={group.id} language={language} />)}</div>;
+}
+
+function FoldedTaskGroup({ group, language }: { group: SubmissionTaskGroup; language: Language }) {
+  const t = text[language];
+  const [expanded, setExpanded] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(TASK_BATCH_SIZE);
+  const visibleTasks = expanded ? group.tasks.slice(0, visibleCount) : [];
+  const remaining = Math.max(group.tasks.length - visibleTasks.length, 0);
+  const nextCount = Math.min(TASK_BATCH_SIZE, remaining);
+  return <details className="task-group" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+    <summary className="task-group-summary">
+      <span><strong>{group.benchmark.displayName}</strong><small>{group.kind === "trace" ? t.traces : t.tasks}</small></span>
+      <span><strong>{group.tasks.length}</strong><small>{t.taskRecords}</small></span>
+      <span aria-hidden className="disclosure">▾</span>
+    </summary>
+    {expanded && <div className="task-group-body">
+      <div className="task-list">{visibleTasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>
+      {remaining > 0 && <div className="task-group-more"><span>{showingLabel(visibleTasks.length, group.tasks.length, language)}</span><button onClick={() => setVisibleCount((count) => count + TASK_BATCH_SIZE)} type="button">{showMoreLabel(nextCount, language)}</button></div>}
+    </div>}
+  </details>;
+}
+
+function showingLabel(visible: number, total: number, language: Language) {
+  return language === "zh" ? `已显示 ${visible} / ${total}` : `Showing ${visible} of ${total}`;
+}
+
+function showMoreLabel(count: number, language: Language) {
+  return language === "zh" ? `再显示 ${count} 条` : `Show ${count} more`;
 }
 
 function OriginalSubmissionPanel({ submission, language }: { submission: CatalogSubmission; language: Language }) {

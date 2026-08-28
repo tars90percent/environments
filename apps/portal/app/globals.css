@@ -156,9 +156,27 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .dataset-access > a:hover { background: #671923; }
 .batch-section-head { min-height: 58px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 11px; }
 .batch-section-head h4 { margin: 0; font-size: 12px; font-weight: 620; }
+.batch-section-head > div { min-width: 0; display: grid; gap: 5px; }
+.batch-section-head p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .batch-section-head span { color: var(--faint); font-size: 9px; }
 
 .task-list { min-width: 0; display: grid; gap: 1px; border-radius: 10px; background: var(--line); overflow: hidden; }
+.task-group-list { min-width: 0; display: grid; gap: 8px; }
+.task-group { border: 1px solid rgba(125,31,42,.08); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.task-group-summary { min-height: 64px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto 18px; align-items: center; gap: 16px; cursor: pointer; list-style: none; }
+.task-group-summary::-webkit-details-marker { display: none; }
+.task-group-summary:hover { background: var(--surface-strong); }
+.task-group-summary > span:not(.disclosure) { min-width: 0; display: grid; gap: 4px; }
+.task-group-summary > span:nth-child(2) { justify-items: end; text-align: right; }
+.task-group-summary strong { overflow: hidden; font-size: 11px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.task-group-summary small { color: var(--muted); font-size: 8px; }
+.task-group[open] > .task-group-summary { border-bottom: 1px solid rgba(125,31,42,.08); }
+.task-group[open] > .task-group-summary .disclosure { transform: rotate(180deg); }
+.task-group-body { padding: 8px; }
+.task-group-more { min-height: 52px; padding: 10px 4px 2px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.task-group-more span { color: var(--muted); font-size: 8px; font-variant-numeric: tabular-nums; }
+.task-group-more button { min-height: 32px; padding: 7px 11px; border: 1px solid rgba(125,31,42,.12); border-radius: 8px; background: var(--card); color: var(--burgundy); font-size: 9px; font-weight: 620; }
+.task-group-more button:hover { background: var(--burgundy-soft); }
 .task-record { min-width: 0; background: var(--card); }
 .task-row { width: 100%; min-height: 76px; padding: 13px 12px; display: grid; grid-template-columns: minmax(190px, 1fr) minmax(270px, auto) auto; align-items: center; gap: 18px; background: var(--card); }
 .task-main { min-width: 0; display: grid; gap: 3px; }
