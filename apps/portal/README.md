@@ -1,10 +1,15 @@
-# env-portal-proto — 小环境 task-sample catalog
+# env-portal-proto — 小环境 research catalog
 
 A researcher catalog for vendor RL-task samples, hosted on
 Railway and available to authenticated members of TARS's Feishu organization.
 小环境 loads vendors, dated submissions, original-source records, parsed tasks
 or traces, their general benchmark directions, three Harbor tags,
 non-conclusive attempt state, findings, and downloads from CASE.
+
+It also includes a source-controlled reference page for widely used public model
+benchmarks. That page stores descriptive metadata and authoritative external
+links only; it does not copy benchmark task payloads into CASE or its object
+storage.
 
 The interface intentionally contains no procurement, research-demand,
 generalized category, quality, status, scoring, recommendation, or review
@@ -21,6 +26,7 @@ operating policy; CASE remains the canonical registry and check orchestrator.
 - The Feishu app secret and CASE credentials stay in Railway runtime secrets.
 - The application compares the verified `tenant_key` with one configured organization; it does not infer membership from email domains.
 - No vendor snapshot data or source payloads are copied into the frontend.
+- Public benchmark reference entries are source-controlled metadata, kept separate from the CASE submission registry and object store.
 - The portal server uses a read-only catalog credential.
 - Catalog and artifact endpoints require the same signed, HTTP-only researcher session as the page.
 - The portal exposes no submission-upload or other mutation endpoint.
@@ -33,6 +39,9 @@ operating policy; CASE remains the canonical registry and check orchestrator.
 - Open dated submissions without replacing earlier observations.
 - Inspect each original submission as one compact block with a direct download for every source item explicitly linked as an original vendor file. Message captures, receipts, screenshots, folders, and URLs remain in CASE as provenance but are not presented as downloads.
 - Inspect tasks or traces. Non-Harbor tasks have no checks. Harbor tasks show only Environment, Oracle, and Nop: pass/fail when conclusive, a distinct tried marker when a result was blocked or inconclusive, and a dash when not attempted. Directly supported findings remain separate.
+- Browse the Artificial Analysis Intelligence Index composition, the explicitly identified version or revision of each constituent benchmark, its access status, and links to its publisher-maintained source. Unversioned, gated, partial-public, and historically pinned datasets are labeled as such.
+- Open two source-linked sample profiles for every constituent benchmark to compare the task objective, input shape, expected output, evaluation method, and capability pattern. Profiles paraphrase public tasks; gated sources show documented formats only and do not reproduce questions.
+- Open an individual page for any sample profile. Harbor-format samples include the complete upstream package tree with paths, roles, byte sizes, snapshot revision, and direct links to every source file. Non-Harbor samples map the publisher-native record fields, input identities, execution path, output contract, and grading contract without copying field payloads. Original task material stays in the publisher's language; Chinese copy is descriptive only.
 
 ## Prerequisites
 
@@ -63,10 +72,16 @@ npm run lint
 ```
 
 The test suite builds the application, checks the server-rendered CASE boundary,
-and rejects embedded vendor snapshots and submission-mutation surfaces.
+validates the source-controlled benchmark composition, and rejects embedded
+vendor snapshots and submission-mutation surfaces.
 
 ## Deliberate omissions
 
 Persistence, capture, parsing, Harbor execution, event delivery, and Feishu
 synchronization remain CASE responsibilities. The portal cannot create or edit
-canonical records or turn check tags into a quality judgment.
+canonical records or turn check tags into a quality judgment. The public
+benchmark reference is not a second registry and does not preserve or execute
+third-party benchmark tasks. Its sample profiles are source-controlled
+descriptions and pointers, not copied prompts, answers, attachments, or packages.
+Harbor filesystem views store tree metadata only; each file continues to live at
+the publisher's repository.

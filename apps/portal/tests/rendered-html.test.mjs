@@ -45,18 +45,203 @@ async function taskGroupsModule() {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
 }
 
+async function modelBenchmarkDataModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/model-benchmark-data.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+}
+
+async function modelBenchmarkSamplesModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/model-benchmark-samples.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+}
+
+async function modelBenchmarkFilesystemsModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/model-benchmark-filesystems.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+}
+
+async function modelBenchmarkNativeRecordsModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/model-benchmark-native-records.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+}
+
 function landscapeTask(id, benchmarkId, benchmarkName, kind = "task", format = "harbor") {
   return { id, stableKey: id, title: id, summary: null, kind, format, benchmark: { id: benchmarkId, displayName: benchmarkName } };
 }
 
 test("requires an authenticated researcher session", async () => {
-  const response = await (await worker()).fetch(
+  const app = await worker();
+  const response = await app.fetch(
     new Request("http://localhost/", { headers: { accept: "text/html" } }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
   assert.equal(response.status, 307);
   assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/auth/login");
+
+  const modelBenchmarkResponse = await app.fetch(
+    new Request("http://localhost/model-benchmarks", { headers: { accept: "text/html" } }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(modelBenchmarkResponse.status, 307);
+  assert.equal(new URL(modelBenchmarkResponse.headers.get("location"), "http://localhost").pathname, "/auth/login");
+
+  const modelTaskResponse = await app.fetch(
+    new Request("http://localhost/model-benchmarks/terminal-bench-2-1/tasks/terminal-wal-recovery", { headers: { accept: "text/html" } }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(modelTaskResponse.status, 307);
+  assert.equal(new URL(modelTaskResponse.headers.get("location"), "http://localhost").pathname, "/auth/login");
+});
+
+test("records the current Artificial Analysis index as metadata and authoritative pointers", async () => {
+  const { artificialAnalysisIndex } = await modelBenchmarkDataModule();
+
+  assert.equal(artificialAnalysisIndex.version, "4.1.1");
+  assert.equal(artificialAnalysisIndex.releasedAt, "2026-08-06");
+  assert.equal(artificialAnalysisIndex.verifiedAt, "2026-08-29");
+  assert.equal(artificialAnalysisIndex.benchmarks.length, 9);
+  assert.equal(artificialAnalysisIndex.benchmarks.reduce((total, benchmark) => total + benchmark.weight, 0), 100);
+  assert.equal(artificialAnalysisIndex.categories.reduce((total, category) => total + category.weight, 0), 100);
+  assert.ok([artificialAnalysisIndex.methodologyUrl, artificialAnalysisIndex.evaluationUrl, artificialAnalysisIndex.changelogUrl]
+    .every((url) => url.startsWith("https://artificialanalysis.ai/")));
+
+  const ids = artificialAnalysisIndex.benchmarks.map((benchmark) => benchmark.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(artificialAnalysisIndex.benchmarks.map((benchmark) => [benchmark.name, benchmark.version]), [
+    ["GDPval-AA v2", "GDPval-AA v2 · GDPval public release v2"],
+    ["𝜏³-Banking", "tau2-bench v1.0.1"],
+    ["Terminal-Bench v2.1", "v2.1 · 2026-05-06"],
+    ["SciCode", "Current public test set · unversioned"],
+    ["AA-LCR", "Current public dataset · unversioned"],
+    ["AA-Omniscience", "Current production set · unversioned"],
+    ["Humanity's Last Exam", "May 2025 revision · text-only subset"],
+    ["GPQA Diamond", "Diamond subset · 198 questions"],
+    ["CritPt", "2025 public release · 70-test subset"],
+  ]);
+
+  for (const category of artificialAnalysisIndex.categories) {
+    const componentWeight = artificialAnalysisIndex.benchmarks
+      .filter((benchmark) => benchmark.categoryId === category.id)
+      .reduce((total, benchmark) => total + benchmark.weight, 0);
+    assert.equal(componentWeight, category.weight, `${category.id} weights should reconcile`);
+  }
+  for (const benchmark of artificialAnalysisIndex.benchmarks) {
+    assert.ok(benchmark.links.length > 0);
+    assert.ok(benchmark.links.every((link) => link.url.startsWith("https://")));
+    assert.deepEqual(Object.keys(benchmark).sort(), [
+      "access", "categoryId", "id", "links", "name", "publisher", "questionCount", "repeats", "responseType", "scoring", "summary", "toolUse", "version", "versionNote", "weight",
+    ].sort());
+  }
+});
+
+test("records two provenance-linked sample profiles per model benchmark without copying task payloads", async () => {
+  const { artificialAnalysisIndex } = await modelBenchmarkDataModule();
+  const { modelBenchmarkSamples, modelBenchmarkSampleContext } = await modelBenchmarkSamplesModule();
+  const benchmarkIds = artificialAnalysisIndex.benchmarks.map((benchmark) => benchmark.id);
+
+  assert.deepEqual(Object.keys(modelBenchmarkSamples).sort(), benchmarkIds.toSorted());
+  assert.deepEqual(Object.keys(modelBenchmarkSampleContext).sort(), benchmarkIds.toSorted());
+  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 18);
+
+  const profileIds = [];
+  for (const benchmark of artificialAnalysisIndex.benchmarks) {
+    const profiles = modelBenchmarkSamples[benchmark.id];
+    assert.equal(profiles.length, 2, `${benchmark.id} should have two profiles`);
+    for (const profile of profiles) {
+      profileIds.push(profile.id);
+      assert.ok(profile.sourceUrl.startsWith("https://"));
+      assert.equal(profile.capabilities.en.length, 3);
+      assert.equal(profile.capabilities.zh.length, 3);
+      assert.deepEqual(Object.keys(profile).sort(), [
+        "capabilities", "evaluation", "expectedOutput", "id", "inputs", "objective", "sourceId", "sourceKind", "sourceLabel", "sourceUrl", "title",
+      ].sort());
+    }
+  }
+  assert.equal(new Set(profileIds).size, profileIds.length);
+
+  for (const benchmarkId of ["hle", "gpqa-diamond"]) {
+    assert.ok(modelBenchmarkSamples[benchmarkId].every((profile) => profile.sourceKind === "format-archetype" && profile.sourceId === null));
+  }
+  for (const benchmarkId of benchmarkIds.filter((id) => !["hle", "gpqa-diamond"].includes(id))) {
+    assert.ok(modelBenchmarkSamples[benchmarkId].every((profile) => profile.sourceKind === "public-task" && profile.sourceId));
+  }
+});
+
+test("records complete upstream filesystem metadata for Harbor sample tasks", async () => {
+  const { modelBenchmarkTaskFilesystems, upstreamFilesystemEntryUrl } = await modelBenchmarkFilesystemsModule();
+  assert.deepEqual(Object.keys(modelBenchmarkTaskFilesystems).sort(), ["terminal-financial-documents", "terminal-wal-recovery"]);
+
+  const financial = modelBenchmarkTaskFilesystems["terminal-financial-documents"];
+  const wal = modelBenchmarkTaskFilesystems["terminal-wal-recovery"];
+  assert.equal(financial.treeSha, "7131e4375048a0e408a8fb404b5f499d726b695b");
+  assert.equal(financial.entries.filter((entry) => entry.kind === "file").length, 26);
+  assert.equal(financial.entries.filter((entry) => entry.kind === "directory").length, 4);
+  assert.equal(financial.entries.filter((entry) => entry.role === "input-artifact").length, 18);
+  assert.equal(wal.entries.filter((entry) => entry.kind === "file").length, 10);
+  assert.equal(wal.entries.filter((entry) => entry.kind === "directory").length, 3);
+
+  for (const filesystem of Object.values(modelBenchmarkTaskFilesystems)) {
+    assert.equal(filesystem.verifiedAt, "2026-08-29");
+    assert.equal(new Set(filesystem.entries.map((entry) => entry.path)).size, filesystem.entries.length);
+    assert.ok(filesystem.entries.every((entry) => !entry.path.startsWith("/") && !entry.path.includes("..")));
+    assert.ok(filesystem.entries.every((entry) => upstreamFilesystemEntryUrl(filesystem, entry).startsWith("https://github.com/harbor-framework/terminal-bench-2-1/")));
+    assert.ok(filesystem.entries.every((entry) => Object.keys(entry).sort().join(",") === "kind,path,role,sizeBytes"));
+  }
+});
+
+test("maps every non-Harbor sample in its publisher-native record shape without embedding payloads", async () => {
+  const { modelBenchmarkSamples } = await modelBenchmarkSamplesModule();
+  const { modelBenchmarkTaskFilesystems } = await modelBenchmarkFilesystemsModule();
+  const { modelBenchmarkNativeTaskRecords } = await modelBenchmarkNativeRecordsModule();
+  const allSampleIds = Object.values(modelBenchmarkSamples).flat().map((sample) => sample.id);
+  const expectedNativeIds = allSampleIds.filter((id) => !modelBenchmarkTaskFilesystems[id]);
+
+  assert.deepEqual(Object.keys(modelBenchmarkNativeTaskRecords).sort(), expectedNativeIds.toSorted());
+  assert.equal(Object.values(modelBenchmarkNativeTaskRecords).filter((record) => record.availability === "format-only").length, 4);
+
+  for (const record of Object.values(modelBenchmarkNativeTaskRecords)) {
+    assert.ok(record.fields.length >= 5);
+    assert.ok(record.stages.length >= 3);
+    assert.deepEqual(Object.keys(record).sort(), [
+      "availability", "domain", "fields", "gradingContract", "outputContract", "publisherFormat", "sourceObject", "split", "stages",
+    ].sort());
+    for (const field of record.fields) {
+      assert.deepEqual(Object.keys(field).sort(), ["name", "payload", "role", "summary"].sort());
+      assert.ok(["cataloged-metadata", "publisher-only"].includes(field.payload));
+      assert.ok(field.summary.en.length > 0 && field.summary.zh.length > 0);
+    }
+    for (const stage of record.stages) {
+      assert.deepEqual(Object.keys(stage).sort(), ["label", "summary"].sort());
+      assert.ok(stage.label.en.length > 0 && stage.label.zh.length > 0);
+    }
+  }
 });
 
 test("groups only Harbor tasks into benchmark directions and portal groups", async () => {
@@ -117,7 +302,9 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /RL task landscape/);
   assert.doesNotMatch(source, /Benchmark directions are grouped for navigation only/);
   assert.doesNotMatch(source, /基准分组仅用于浏览/);
-  assert.match(source, /useState<PortalView>\("benchmarks"\)/);
+  assert.match(source, /useState<PortalView>\(initialView\)/);
+  assert.match(source, /initialView="model-benchmarks"/);
+  assert.match(source, /href="\/model-benchmarks"/);
   assert.match(source, /BenchmarkOverview/);
   assert.match(source, /BenchmarkDetail/);
   assert.match(source, /grouped by vendor/);

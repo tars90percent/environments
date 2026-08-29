@@ -6,7 +6,7 @@ TARS's monorepo for CASE and 小环境, the two services used to preserve and in
 
 - `AGENTS.md` is the single operating policy used by repository Codex tasks and production CASE.
 - `apps/case` contains the Feishu-facing CASE service, canonical registry, capture tools, and Harbor controller.
-- `apps/portal` contains the researcher-facing 小环境 portal.
+- `apps/portal` contains the researcher-facing 小环境 portal, including the read-only CASE catalog and a source-controlled public benchmark reference.
 
 The applications retain separate packages, lockfiles, tests, Railway services, secrets, and deployment checks.
 

@@ -73,7 +73,7 @@ Benchmark direction is an organizational annotation, not task content, an evalua
 
 Prefer an explicit benchmark declaration in the task or submission metadata. Otherwise infer the direction only from the full task and its submission context. Never infer it from a filename alone. When several items from one source clearly share a direction, assign them in bulk; the stored result remains one benchmark ID per exact item version.
 
-Benchmark IDs come from CASE's managed registry. Register a new general benchmark family when a clear new direction appears; do not accept ad hoc spellings or track benchmark versions. Use `unspecified` only after review when the evidence does not establish a clear direction. Benchmark assignment never justifies forcing item boundaries.
+Benchmark IDs come from CASE's managed registry. Register a new general benchmark family when a clear new direction appears; do not accept ad hoc spellings or track benchmark versions in task-direction assignments. Use `unspecified` only after review when the evidence does not establish a clear direction. Benchmark assignment never justifies forcing item boundaries. The separate public benchmark reference described below may record publisher release labels without changing this task-direction registry.
 
 Do not normalize, convert, repair, or reinterpret non-Harbor material into Harbor. Do not require a native runner, adapter contract, verifier classification, gold solution, or review exception for non-Harbor material. Record it and stop; Harbor checks do not apply.
 
@@ -127,6 +127,19 @@ CASE owns the canonical registry and sample artifacts:
 Trusted CASE capture commands call the same registry library directly with CASE's database and object-store credentials so that artifact, source, submission, and link records are committed through one canonical transaction. This is not permission for ad hoc SQL; humans and agents still use the supported commands.
 
 小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, summarized arrival provenance, parsed material, general benchmark directions, GPU requirements, original-vendor-file and task-artifact downloads, the three Harbor tags, whether an unset check was attempted without a conclusive result, and findings. It does not expose source records or external source links. It has no submission upload, procurement, research-demand, status, scoring, recommendation, or review workflow.
+
+### Public benchmark reference
+
+小环境 may expose a source-controlled reference to public model benchmarks. This reference is separate from CASE's managed benchmark-direction registry and vendor-submission record.
+
+- Record descriptive metadata and authoritative external pointers: index membership, publisher release labels, benchmark weights, item counts, access status, and the last-verified date. Mark unversioned, gated, partial-public, and pinned historical subsets explicitly; do not invent versions.
+- A sample profile may paraphrase the task objective, input modalities, expected output, evaluation method, and capability pattern.
+- For a public non-Harbor task, the profile may also map the publisher's record structure: field names and roles, domain and split metadata, linked-input identities, execution stages, output contract, and grading contract. Describe what each field contains; do not copy its payload.
+- For an openly published task package, including a Harbor task, the profile may list the complete upstream filesystem as metadata: paths, file roles, byte sizes, repository revision, and direct source links. Do not copy file contents.
+- Keep original task material in the publisher's language at the publisher source. Localized portal text may describe the task, but must not translate or replace the original prompt.
+- Do not reproduce or store third-party prompts, question text, reference answers, rubrics, attachments, hidden tests, or task packages in CASE, its object storage, or the source-controlled reference.
+- For gated or non-disclosure datasets, show only publisher-documented format information and state clearly that no benchmark item is reproduced.
+- A reference entry is informational. It does not imply submission capture, Harbor compatibility, evaluation, procurement, recommendation, or a quality judgment.
 
 The current dedicated capture paths are reviewed Feishu message/file plans and reviewed Feishu Mail message/attachment plans. They preserve payloads and register submissions; they do not imply universal discovery or parsing. Researcher upload through 小环境 is disabled. Check live authentication, scopes, ACLs, and transport configuration before claiming a source is monitored or accessible.
 
