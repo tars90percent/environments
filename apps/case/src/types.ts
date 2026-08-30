@@ -11,8 +11,11 @@ export type FeishuMessageEvent = {
   mentions?: Array<{ id: string; key: string; name: string }>;
 };
 
+export type AuthSlot = "primary" | "backup";
+
 export type AgentState = {
-  version: 1;
-  chats: Record<string, { threadId: string }>;
+  version: 2;
+  activeAuthSlot: AuthSlot;
+  chats: Record<string, { threads: Partial<Record<AuthSlot, string>> }>;
   processedMessageIds: string[];
 };

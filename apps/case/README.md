@@ -190,9 +190,26 @@ submissions currently enter CASE only through the reviewed Feishu message/file
 or Feishu Mail message/attachment capture paths.
 
 Send `/new` as a message, or select the app's native `/new` slash command, to
-disconnect that Feishu chat from its current Codex thread. The next ordinary
-message starts a fresh Codex session with no prior conversation context. The old
-Codex transcript remains on disk but is no longer used by the chat.
+disconnect that Feishu chat from its current Codex thread in the active
+credential slot. The next ordinary message starts a fresh Codex session with no
+prior conversation context in that slot. The other slot's conversation and the
+old Codex transcript remain on disk.
+
+CASE supports two independent Codex login directories. Configure
+`CASE_CODEX_PRIMARY_HOME` and `CASE_CODEX_BACKUP_HOME`, then list the Feishu
+open_ids allowed to administer them in `ADMIN_USER_IDS`. Administrators can use:
+
+```text
+/auth status
+/auth use primary
+/auth use backup
+```
+
+The selected slot persists across restarts. Conversation IDs are stored
+separately for each slot. Switching is always manual: CASE does not select the
+other credential automatically when authentication or a request fails. A switch
+is refused unless `codex login status` confirms that the target slot is signed
+in. Replies and logs report only slot names and status, never credential data.
 
 ## Feishu capabilities and authorization
 
@@ -215,9 +232,9 @@ separate CASE-specific skill package.
 
 The resulting renewable user login is stored by `lark-cli` under its configured
 directory. On Railway, `LARKSUITE_CLI_CONFIG_DIR` points to `/data/lark-cli`, so
-the login survives image rebuilds and service restarts. The outer harness only
-handles message transport and `/new`; phrases such as `authorize`,
-`authorization complete`, and `auth status` are passed directly to Codex.
+the login survives image rebuilds and service restarts. The outer harness
+handles message transport, `/new`, and the exact admin commands under `/auth`;
+other authorization language is passed directly to Codex.
 
 The checked-in `.env.example` is safe by default: group chats and broad user
 access are disabled. A local ignored `.env` must explicitly set

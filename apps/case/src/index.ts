@@ -20,11 +20,11 @@ const gateway = new FeishuGateway({
   profile: config.larkProfile,
   env: larkRuntimeEnv,
 });
-const agent = new ChatAgent(state, larkRuntimeEnv);
 const inFlight = new Set<string>();
 const chatQueues = new Map<string, Promise<void>>();
 
 await state.load();
+const agent = new ChatAgent(state, larkRuntimeEnv);
 await agent.initialize();
 
 let registryServer: RegistryServer | undefined;
@@ -62,19 +62,43 @@ async function handle(event: FeishuMessageEvent): Promise<void> {
   try {
     const command = parseAgentCommand(event.content);
     if (command?.kind === "new") {
-      await state.resetChat(event.chat_id, event.message_id);
-      agent.reset(event.chat_id);
+      const slot = agent.currentAuthSlot();
+      await state.resetChat(event.chat_id, slot, event.message_id);
+      agent.reset(event.chat_id, slot);
       await gateway.reply(
         event.message_id,
-        "Started a new Codex session. Your next message will have no previous Codex conversation history.",
+        `Started a new Codex session for the ${slot} credential slot. Your next message in this slot will have no previous Codex conversation history.`,
       );
-      console.log(`Reset Codex session for ${event.chat_id}`);
+      console.log(`Reset ${slot} Codex session for ${event.chat_id}`);
+      return;
+    }
+
+    if (command) {
+      if (!config.adminUserIds.has(event.sender_id)) {
+        await state.markProcessed(event.message_id);
+        await gateway.reply(event.message_id, "This command is restricted to CASE admins.");
+        return;
+      }
+      if (command.kind === "auth-help") {
+        await state.markProcessed(event.message_id);
+        await gateway.reply(event.message_id, authHelp());
+        return;
+      }
+      if (command.kind === "auth-status") {
+        const status = await agent.authStatus();
+        await state.markProcessed(event.message_id);
+        await gateway.reply(event.message_id, formatAuthStatus(status));
+        return;
+      }
+      const result = await agent.useAuthSlot(command.slot);
+      await state.markProcessed(event.message_id);
+      await gateway.reply(event.message_id, formatAuthSwitch(command.slot, result));
       return;
     }
 
     const response = await agent.respond(event);
     await gateway.reply(event.message_id, response.text);
-    await state.recordSuccess(event.chat_id, response.threadId, event.message_id);
+    await state.recordSuccess(event.chat_id, response.authSlot, response.threadId, event.message_id);
     console.log(`Replied to ${event.message_id} in ${event.chat_id}`);
   } catch (error) {
     console.error(`Failed to process ${event.message_id}:`, safeError(error));
@@ -114,8 +138,40 @@ console.log(
 console.log(
   `Codex permissions (sandbox=${config.codexSandboxMode}, network=${config.codexNetworkAccess ? "enabled" : "disabled"}, web=${config.codexWebSearchMode}, approvals=${config.codexApprovalPolicy}, reviewer=${config.codexApprovalsReviewer})`,
 );
+console.log(
+  `Codex credential slots enabled (active=${agent.currentAuthSlot()}, admins=${config.adminUserIds.size}, automatic-switching=disabled)`,
+);
 await gateway.listen(enqueue);
 
 function safeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : "Unknown error";
+}
+
+function authHelp(): string {
+  return [
+    "CASE Codex credential commands:",
+    "/auth status",
+    "/auth use primary",
+    "/auth use backup",
+    "Switching is manual; CASE never fails over automatically.",
+  ].join("\n");
+}
+
+function formatAuthStatus(status: Awaited<ReturnType<ChatAgent["authStatus"]>>): string {
+  return [
+    "CASE Codex credentials",
+    `Active: ${status.active}`,
+    `Primary: ${status.slots.primary}`,
+    `Backup: ${status.slots.backup}`,
+    "Automatic switching: disabled",
+  ].join("\n");
+}
+
+function formatAuthSwitch(slot: "primary" | "backup", result: Awaited<ReturnType<ChatAgent["useAuthSlot"]>>): string {
+  if (result === "switched") {
+    return `CASE now uses the ${slot} credential slot. Its Codex conversation history is kept separate from the other slot. Automatic switching remains disabled.`;
+  }
+  if (result === "already-active") return `The ${slot} credential slot is already active. No change was made.`;
+  if (result === "signed-out") return `The ${slot} credential slot is signed out. No change was made.`;
+  return `CASE could not verify the ${slot} credential slot. No change was made.`;
 }

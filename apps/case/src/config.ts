@@ -1,5 +1,6 @@
 import { loadEnvFile } from "node:process";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 try {
@@ -38,6 +39,12 @@ function choice<const T extends readonly string[]>(
 
 const stateFile = resolve(process.env.AGENT_STATE ?? ".data/state.json");
 const rootAgentInstructionsFile = fileURLToPath(new URL("../../../AGENTS.md", import.meta.url));
+const primaryCodexHome = resolve(
+  process.env.CASE_CODEX_PRIMARY_HOME?.trim() || process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
+);
+const backupCodexHome = resolve(
+  process.env.CASE_CODEX_BACKUP_HOME?.trim() || ".data/codex-auth/backup",
+);
 
 function optionalNumber(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
@@ -52,9 +59,14 @@ export const config = {
   allowGroupChats: bool("ALLOW_GROUP_CHATS", false),
   allowAllUsers: bool("ALLOW_ALL_USERS", false),
   allowedUserIds: csv("ALLOWED_USER_IDS"),
+  adminUserIds: csv("ADMIN_USER_IDS"),
   workspace: resolve(process.env.AGENT_WORKSPACE ?? ".data/workspace"),
   agentInstructionsFile: resolve(process.env.AGENT_INSTRUCTIONS_FILE ?? rootAgentInstructionsFile),
   stateFile,
+  codexAuthHomes: {
+    primary: primaryCodexHome,
+    backup: backupCodexHome,
+  },
   codexSandboxMode: choice(
     "CODEX_SANDBOX_MODE",
     ["read-only", "workspace-write", "danger-full-access"] as const,
@@ -98,6 +110,16 @@ export function validateConfig(): void {
     throw new Error(
       "No pilot users are allowed. Set ALLOWED_USER_IDS to comma-separated Feishu open_ids, or explicitly set ALLOW_ALL_USERS=true.",
     );
+  }
+  if (config.codexAuthHomes.primary === config.codexAuthHomes.backup) {
+    throw new Error("CASE_CODEX_PRIMARY_HOME and CASE_CODEX_BACKUP_HOME must be different directories");
+  }
+  if (!config.allowAllUsers) {
+    for (const adminUserId of config.adminUserIds) {
+      if (!config.allowedUserIds.has(adminUserId)) {
+        throw new Error("Every ADMIN_USER_IDS entry must also be present in ALLOWED_USER_IDS");
+      }
+    }
   }
   const registryValues = [config.registryDatabaseUrl, config.registryCatalogToken, config.registryUploadToken];
   if (registryValues.some(Boolean) && !registryValues.every(Boolean)) {
