@@ -120,60 +120,89 @@ test("requires an authenticated researcher session", async () => {
   assert.equal(new URL(modelTaskResponse.headers.get("location"), "http://localhost").pathname, "/auth/login");
 });
 
-test("records the current Artificial Analysis index as metadata and authoritative pointers", async () => {
-  const { artificialAnalysisIndex } = await modelBenchmarkDataModule();
+test("records standalone benchmark families separately from aggregate indexes", async () => {
+  const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, modelBenchmarks } = await modelBenchmarkDataModule();
 
   assert.equal(artificialAnalysisIndex.version, "4.1.1");
   assert.equal(artificialAnalysisIndex.releasedAt, "2026-08-06");
   assert.equal(artificialAnalysisIndex.verifiedAt, "2026-08-29");
-  assert.equal(artificialAnalysisIndex.benchmarks.length, 9);
-  assert.equal(artificialAnalysisIndex.benchmarks.reduce((total, benchmark) => total + benchmark.weight, 0), 100);
-  assert.equal(artificialAnalysisIndex.categories.reduce((total, category) => total + category.weight, 0), 100);
-  assert.ok([artificialAnalysisIndex.methodologyUrl, artificialAnalysisIndex.evaluationUrl, artificialAnalysisIndex.changelogUrl]
-    .every((url) => url.startsWith("https://artificialanalysis.ai/")));
+  assert.equal(aggregateBenchmarks.length, 1);
+  assert.equal(artificialAnalysisIndex.components.length, 9);
+  assert.equal(artificialAnalysisIndex.components.reduce((total, component) => total + component.weight, 0), 100);
+  assert.ok(artificialAnalysisIndex.links.every((link) => link.url.startsWith("https://artificialanalysis.ai/")));
 
-  const ids = artificialAnalysisIndex.benchmarks.map((benchmark) => benchmark.id);
+  assert.equal(modelBenchmarks.length, 38);
+  assert.equal(benchmarkReferenceCategories.length, 4);
+  const ids = modelBenchmarks.map((benchmark) => benchmark.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(artificialAnalysisIndex.benchmarks.map((benchmark) => [benchmark.name, benchmark.version]), [
-    ["GDPval-AA v2", "GDPval-AA v2 · GDPval public release v2"],
-    ["𝜏³-Banking", "tau2-bench v1.0.1"],
-    ["Terminal-Bench v2.1", "v2.1 · 2026-05-06"],
-    ["SciCode", "Current public test set · unversioned"],
-    ["AA-LCR", "Current public dataset · unversioned"],
-    ["AA-Omniscience", "Current production set · unversioned"],
-    ["Humanity's Last Exam", "May 2025 revision · text-only subset"],
-    ["GPQA Diamond", "Diamond subset · 198 questions"],
-    ["CritPt", "2025 public release · 70-test subset"],
+  assert.deepEqual(Object.fromEntries(benchmarkReferenceCategories.map((category) => [category.id, modelBenchmarks.filter((benchmark) => benchmark.categoryId === category.id).length])), {
+    "agents-professional": 14,
+    "coding-data": 10,
+    "knowledge-visual": 11,
+    cybersecurity: 3,
+  });
+  assert.deepEqual(modelBenchmarks.filter((benchmark) => ["gdpval-aa-v2", "terminal-bench-2-1", "hle", "gpqa-diamond"].includes(benchmark.id)).map((benchmark) => benchmark.name), [
+    "GDPval", "Terminal-Bench", "Humanity's Last Exam", "GPQA",
   ]);
+  assert.ok(artificialAnalysisIndex.components.every((component) => ids.includes(component.benchmarkId)));
 
-  for (const category of artificialAnalysisIndex.categories) {
-    const componentWeight = artificialAnalysisIndex.benchmarks
-      .filter((benchmark) => benchmark.categoryId === category.id)
-      .reduce((total, benchmark) => total + benchmark.weight, 0);
-    assert.equal(componentWeight, category.weight, `${category.id} weights should reconcile`);
-  }
-  for (const benchmark of artificialAnalysisIndex.benchmarks) {
+  for (const benchmark of modelBenchmarks) {
     assert.ok(benchmark.links.length > 0);
     assert.ok(benchmark.links.every((link) => link.url.startsWith("https://")));
-    assert.deepEqual(Object.keys(benchmark).sort(), [
-      "access", "categoryId", "id", "links", "name", "publisher", "questionCount", "repeats", "responseType", "scoring", "summary", "toolUse", "version", "versionNote", "weight",
-    ].sort());
+    assert.ok(benchmark.creators.en.length > 0 && benchmark.creators.zh.length > 0);
+    assert.ok(benchmark.summary.en.length > 0 && benchmark.summary.zh.length > 0);
+    assert.ok(benchmark.questionCount.en.length > 0 && benchmark.questionCount.zh.length > 0);
+    assert.ok(!Object.hasOwn(benchmark, "weight"));
   }
 });
 
-test("records two provenance-linked sample profiles per model benchmark without copying task payloads", async () => {
-  const { artificialAnalysisIndex } = await modelBenchmarkDataModule();
-  const { modelBenchmarkSamples, modelBenchmarkSampleContext } = await modelBenchmarkSamplesModule();
-  const benchmarkIds = artificialAnalysisIndex.benchmarks.map((benchmark) => benchmark.id);
+test("ships attributed official leaderboard snapshots for selected benchmark detail views", async () => {
+  const { modelBenchmarks } = await modelBenchmarkDataModule();
+  const benchmarksWithSnapshots = modelBenchmarks.filter((benchmark) => benchmark.leaderboardSnapshots?.length);
 
-  assert.deepEqual(Object.keys(modelBenchmarkSamples).sort(), benchmarkIds.toSorted());
+  assert.deepEqual(benchmarksWithSnapshots.map((benchmark) => benchmark.id), [
+    "terminal-bench-2-1",
+    "hle",
+    "critpt",
+    "agents-last-exam",
+    "mcp-atlas",
+    "deepswe",
+    "frontierswe",
+    "posttrainbench",
+    "spreadsheetbench",
+    "swe-bench-pro",
+    "frontiercode",
+  ]);
+
+  for (const benchmark of benchmarksWithSnapshots) {
+    assert.equal(benchmark.leaderboardSnapshots.length, 1);
+    const snapshot = benchmark.leaderboardSnapshots[0];
+    assert.ok(snapshot.sourceUrl.startsWith("https://"));
+    assert.equal(snapshot.capturedAt, "2026-08-31");
+    assert.match(snapshot.imagePath, /^\/benchmark-leaderboards\/[a-z0-9-]+\.jpg$/);
+    assert.ok(snapshot.alt.en.length > 0 && snapshot.alt.zh.length > 0);
+    assert.ok(snapshot.caption.en.length > 0 && snapshot.caption.zh.length > 0);
+
+    const image = await readFile(new URL(`../public${snapshot.imagePath}`, import.meta.url));
+    assert.deepEqual([...image.subarray(0, 3)], [255, 216, 255]);
+    assert.ok(image.length > 40_000);
+  }
+});
+
+test("retains public-task profiles for every open family and format archetypes for gated families", async () => {
+  const { modelBenchmarks } = await modelBenchmarkDataModule();
+  const { modelBenchmarkSamples, modelBenchmarkSampleContext } = await modelBenchmarkSamplesModule();
+  const benchmarkIds = Object.keys(modelBenchmarkSamples);
+
   assert.deepEqual(Object.keys(modelBenchmarkSampleContext).sort(), benchmarkIds.toSorted());
-  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 18);
+  assert.ok(benchmarkIds.every((id) => modelBenchmarks.some((benchmark) => benchmark.id === id)));
+  assert.equal(benchmarkIds.length, 35);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 44);
 
   const profileIds = [];
-  for (const benchmark of artificialAnalysisIndex.benchmarks) {
-    const profiles = modelBenchmarkSamples[benchmark.id];
-    assert.equal(profiles.length, 2, `${benchmark.id} should have two profiles`);
+  for (const benchmarkId of benchmarkIds) {
+    const profiles = modelBenchmarkSamples[benchmarkId];
+    assert.ok([1, 2].includes(profiles.length), `${benchmarkId} should have one or two profiles`);
     for (const profile of profiles) {
       profileIds.push(profile.id);
       assert.ok(profile.sourceUrl.startsWith("https://"));
@@ -185,6 +214,10 @@ test("records two provenance-linked sample profiles per model benchmark without 
     }
   }
   assert.equal(new Set(profileIds).size, profileIds.length);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 2).length, 9);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 1).length, 26);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].some((profile) => profile.sourceKind === "public-task")).length, 33);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().filter((profile) => profile.sourceKind === "public-task").length, 40);
 
   for (const benchmarkId of ["hle", "gpqa-diamond"]) {
     assert.ok(modelBenchmarkSamples[benchmarkId].every((profile) => profile.sourceKind === "format-archetype" && profile.sourceId === null));

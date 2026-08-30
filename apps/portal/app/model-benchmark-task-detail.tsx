@@ -64,10 +64,20 @@ const copy = {
     formats: {
       "file-deliverable": "File deliverable",
       "agent-simulation": "Agent simulation",
+      desktop: "Desktop interaction",
+      "web-research": "Web research",
+      "interactive-game": "Interactive game",
       harbor: "Harbor task",
+      "repository-engineering": "Repository engineering",
+      "program-reconstruction": "Program reconstruction",
+      "model-training": "Model training",
+      spreadsheet: "Spreadsheet editing",
       "scientific-code": "Scientific code",
       "long-context-qa": "Long-context Q&A",
       "open-qa": "Open-answer Q&A",
+      "visual-qa": "Visual Q&A",
+      "document-parsing": "Document parsing",
+      cybersecurity: "Cybersecurity",
       "format-archetype": "Format archetype",
     },
     roles: {
@@ -137,10 +147,20 @@ const copy = {
     formats: {
       "file-deliverable": "文件交付任务",
       "agent-simulation": "智能体模拟",
+      desktop: "桌面交互",
+      "web-research": "网络研究",
+      "interactive-game": "交互式游戏",
       harbor: "Harbor 任务",
+      "repository-engineering": "代码仓库工程",
+      "program-reconstruction": "程序重建",
+      "model-training": "模型训练",
+      spreadsheet: "电子表格编辑",
       "scientific-code": "科学代码",
       "long-context-qa": "长上下文问答",
       "open-qa": "开放式问答",
+      "visual-qa": "视觉问答",
+      "document-parsing": "文档解析",
+      cybersecurity: "网络安全",
       "format-archetype": "任务格式画像",
     },
     roles: {
@@ -191,7 +211,7 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
         <div><dt>{t.sourceId}</dt><dd><code>{sample.sourceId ?? "—"}</code></dd></div>
         <div><dt>{t.originalLanguage}</dt><dd>{context.originalLanguage}</dd></div>
         <div><dt>{t.taskFormat}</dt><dd>{formatLabel(context.format, language)}</dd></div>
-        <div><dt>{t.benchmarkVersion}</dt><dd>{benchmark.version}</dd></div>
+        <div><dt>{t.benchmarkVersion}</dt><dd>{benchmark.version ?? "—"}</dd></div>
       </dl>
       <a className="model-task-primary-link" href={sample.sourceUrl} rel="noreferrer" target="_blank"><span>{sample.sourceLabel[language]}</span><strong>{t.openOriginal} ↗</strong></a>
     </section>

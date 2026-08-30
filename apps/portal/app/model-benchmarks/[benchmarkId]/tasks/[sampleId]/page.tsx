@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { artificialAnalysisIndex } from "../../../../model-benchmark-data";
+import { modelBenchmarks } from "../../../../model-benchmark-data";
 import { modelBenchmarkSamples } from "../../../../model-benchmark-samples";
 import PortalClient from "../../../../portal-client";
 import { getPortalSession } from "../../../../feishu-auth";
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 export default async function ModelBenchmarkTaskPage({ params }: { params: Promise<{ benchmarkId: string; sampleId: string }> }) {
   const { benchmarkId, sampleId } = await params;
-  const benchmark = artificialAnalysisIndex.benchmarks.find((entry) => entry.id === benchmarkId);
+  const benchmark = modelBenchmarks.find((entry) => entry.id === benchmarkId);
   const sample = modelBenchmarkSamples[benchmarkId]?.find((entry) => entry.id === sampleId);
   if (!benchmark || !sample) notFound();
 

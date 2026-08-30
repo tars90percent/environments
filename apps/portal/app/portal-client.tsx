@@ -19,7 +19,7 @@ import {
   type HarborTaskContext,
 } from "./benchmark-landscape";
 import { groupSubmissionTasks, type SubmissionTaskGroup } from "./task-groups";
-import { artificialAnalysisIndex } from "./model-benchmark-data";
+import { aggregateBenchmarks, benchmarkReferenceVerifiedAt, modelBenchmarks } from "./model-benchmark-data";
 import { modelBenchmarkSamples, modelBenchmarkSampleContext } from "./model-benchmark-samples";
 import { ModelBenchmarkReferencePage } from "./model-benchmark-reference";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
@@ -40,12 +40,11 @@ const text = {
     benchmarks: "Benchmarks",
     modelBenchmarks: "Model benchmarks",
     modelBenchmarkEyebrow: "Model benchmark reference",
-    modelBenchmarkIntro: "The current constituent evaluations of a widely used model index, with version status, official sources, and task-level sample profiles.",
+    modelBenchmarkIntro: "Independent benchmark families with official sources and task-level sample profiles; aggregate indexes are documented separately with their constituents and weights.",
     searchModelBenchmarks: "Search benchmarks, versions, or task patterns",
-    evaluations: "Evaluations",
+    evaluations: "Benchmarks",
     sampleProfiles: "Sample profiles",
-    indexVersion: "Index version",
-    released: "Released",
+    aggregateBenchmarks: "Aggregate indexes",
     verified: "Verified",
     benchmark: "Benchmark",
     sourceId: "Source ID",
@@ -109,12 +108,11 @@ const text = {
     benchmarks: "基准",
     modelBenchmarks: "模型基准",
     modelBenchmarkEyebrow: "模型基准参考",
-    modelBenchmarkIntro: "记录主流模型指数的当前构成评测、版本状态、官方来源及任务级样例画像。",
+    modelBenchmarkIntro: "独立记录各基准家族、官方来源与任务级样例画像；综合指数另列其组成评测与权重。",
     searchModelBenchmarks: "搜索模型基准、版本或任务模式",
-    evaluations: "构成评测",
+    evaluations: "独立基准",
     sampleProfiles: "样例画像",
-    indexVersion: "指数版本",
-    released: "发布日期",
+    aggregateBenchmarks: "综合指数",
     verified: "核验日期",
     benchmark: "所属基准",
     sourceId: "来源 ID",
@@ -257,10 +255,10 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   }, [query, vendors]);
   const selectedVendor = matchingVendors.find((vendor) => vendor.id === selectedVendorId) ?? matchingVendors[0];
   const selectedBenchmarkCategory = landscape?.categories.find((category) => category.id === selectedBenchmark?.categoryId);
-  const initialModelBenchmark = artificialAnalysisIndex.benchmarks.find((benchmark) => benchmark.id === initialModelTask?.benchmarkId);
+  const initialModelBenchmark = modelBenchmarks.find((benchmark) => benchmark.id === initialModelTask?.benchmarkId);
   const initialModelSample = initialModelTask ? modelBenchmarkSamples[initialModelTask.benchmarkId]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
   const initialModelContext = initialModelTask ? modelBenchmarkSampleContext[initialModelTask.benchmarkId] : undefined;
-  const headerTitle = view === "model-task" && initialModelSample ? initialModelSample.title[language] : view === "model-benchmarks" ? artificialAnalysisIndex.name : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
+  const headerTitle = view === "model-task" && initialModelSample ? initialModelSample.title[language] : view === "model-benchmarks" ? (language === "zh" ? "模型基准参考" : "Model Benchmark Reference") : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
   const headerIntro = view === "model-task" && initialModelSample ? initialModelSample.objective[language] : view === "model-benchmarks" ? t.modelBenchmarkIntro : view === "benchmarks" ? selectedBenchmark
     ? `${selectedBenchmark.taskCount} ${t.taskRecords} · ${selectedBenchmark.vendorCount} ${t.vendors.toLowerCase()}`
     : t.landscapeIntro
@@ -322,11 +320,10 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
           <Stat label={t.taskFormat} value={initialModelContext?.format === "harbor" ? t.harborFormat : initialModelContext?.format === "format-archetype" ? t.formatOnly : t.publisherNative} />
           <Stat label={t.originalLanguage} value={initialModelContext?.originalLanguage} />
         </> : view === "model-benchmarks" ? <>
-          <Stat label={t.evaluations} value={artificialAnalysisIndex.benchmarks.length} />
+          <Stat label={t.evaluations} value={modelBenchmarks.length} />
           <Stat label={t.sampleProfiles} value={Object.values(modelBenchmarkSamples).flat().length} />
-          <Stat label={t.indexVersion} value={`v${artificialAnalysisIndex.version}`} />
-          <Stat label={t.released} value={formatDate(artificialAnalysisIndex.releasedAt, language)} />
-          <Stat label={t.verified} value={formatDate(artificialAnalysisIndex.verifiedAt, language)} />
+          <Stat label={t.aggregateBenchmarks} value={aggregateBenchmarks.length} />
+          <Stat label={t.verified} value={formatDate(benchmarkReferenceVerifiedAt, language)} />
         </> : view === "benchmarks" ? <>
           <Stat label={t.harbor} value={selectedBenchmark?.taskCount ?? landscape?.taskCount} />
           <Stat label={t.benchmarkDirections} value={selectedBenchmark ? 1 : landscape?.benchmarkCount} />

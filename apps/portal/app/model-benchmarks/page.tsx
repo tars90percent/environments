@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Model Benchmark Reference — 小环境",
-  description: "Current versions, weights, access status, official sources, and sample task profiles for widely used model benchmarks.",
+  description: "Standalone model benchmark families with official sources and sample task profiles, plus separate aggregate-index compositions and weights.",
 };
 
 export default async function ModelBenchmarksPage() {
