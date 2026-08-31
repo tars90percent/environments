@@ -29,6 +29,16 @@ export function localArtifactStore(environment: NodeJS.ProcessEnv = process.env)
   });
 }
 
+export function localHarborTaskStore(environment: NodeJS.ProcessEnv = process.env): ArtifactStore {
+  return new ArtifactStore({
+    endpoint: required(environment, "HARBOR_TASKS_S3_ENDPOINT"),
+    accessKeyId: required(environment, "HARBOR_TASKS_S3_ACCESS_KEY_ID"),
+    secretAccessKey: required(environment, "HARBOR_TASKS_S3_SECRET_ACCESS_KEY"),
+    bucket: required(environment, "HARBOR_TASKS_S3_BUCKET_NAME"),
+    region: environment.HARBOR_TASKS_S3_REGION?.trim() || "auto",
+  });
+}
+
 function required(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
   if (!value) throw new Error(`${name} is required for trusted local registry operations`);

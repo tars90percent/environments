@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safely inspect source ZIPs and build deterministic task packages.
+"""Safely inspect/extract source archives and build deterministic task packages.
 
 This utility treats every archive entry as untrusted data. It never imports or
 executes delivered code. The output package contains the selected task
@@ -23,7 +23,7 @@ import zipfile
 
 
 TOOL_NAME = "case-task-package"
-TOOL_VERSION = "1.0.1"
+TOOL_VERSION = "1.1.0"
 DEFAULT_MAX_ENTRIES = 20_000
 DEFAULT_MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024
 DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024 * 1024
@@ -187,6 +187,124 @@ def extract_zip(path: Path, destination: Path, limits: argparse.Namespace) -> di
     }
 
 
+def safe_tar_entries(
+    archive: tarfile.TarFile,
+    *,
+    max_entries: int,
+    max_total_bytes: int,
+    max_file_bytes: int,
+    max_depth: int,
+    max_ratio: int,
+) -> tuple[list[tuple[tarfile.TarInfo, PurePosixPath]], int]:
+    del max_ratio  # TAR compression is stream-wide; the expanded byte limit is authoritative.
+    members = archive.getmembers()
+    if len(members) > max_entries:
+        raise UnsafeArchiveError(f"archive has {len(members)} entries; limit is {max_entries}")
+
+    seen: set[str] = set()
+    entries: list[tuple[tarfile.TarInfo, PurePosixPath]] = []
+    total_bytes = 0
+    for member in members:
+        name = member.name.rstrip("/")
+        if not name or "\\" in name or "\x00" in name:
+            raise UnsafeArchiveError(f"unsafe TAR entry name: {member.name!r}")
+        path = PurePosixPath(name)
+        if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+            raise UnsafeArchiveError(f"unsafe TAR entry path: {member.name!r}")
+        if len(path.parts) > max_depth:
+            raise UnsafeArchiveError(f"TAR entry exceeds depth limit: {member.name!r}")
+        normalized = path.as_posix()
+        if normalized in seen:
+            raise UnsafeArchiveError(f"duplicate TAR entry path: {member.name!r}")
+        seen.add(normalized)
+        if not (member.isdir() or member.isreg()):
+            raise UnsafeArchiveError(f"TAR entry is a link, device, or special file: {member.name!r}")
+        if member.size < 0 or member.size > max_file_bytes:
+            raise UnsafeArchiveError(f"TAR entry has an invalid or excessive size: {member.name!r}")
+        if member.isreg():
+            total_bytes += member.size
+            if total_bytes > max_total_bytes:
+                raise UnsafeArchiveError(f"archive exceeds total uncompressed-size limit: {total_bytes}")
+        entries.append((member, path))
+    return entries, total_bytes
+
+
+def inspect_tar(path: Path, limits: argparse.Namespace) -> dict[str, object]:
+    with tarfile.open(path, "r:*") as archive:
+        entries, total_bytes = safe_tar_entries(archive, **limit_kwargs(limits))
+        return {
+            "tool": TOOL_NAME,
+            "toolVersion": TOOL_VERSION,
+            "archive": str(path.resolve()),
+            "archiveSha256": sha256_file(path),
+            "archiveSizeBytes": path.stat().st_size,
+            "entryCount": len(entries),
+            "uncompressedSizeBytes": total_bytes,
+            "safe": True,
+        }
+
+
+def extract_tar(path: Path, destination: Path, limits: argparse.Namespace) -> dict[str, object]:
+    if destination.exists() and any(destination.iterdir()):
+        raise UnsafeArchiveError(f"extraction destination is not empty: {destination}")
+    destination.mkdir(parents=True, exist_ok=True)
+    root = destination.resolve()
+    extracted_bytes = 0
+    extracted_files = 0
+    try:
+        with tarfile.open(path, "r:*") as archive:
+            entries, declared_total = safe_tar_entries(archive, **limit_kwargs(limits))
+            for member, relative in entries:
+                target = destination.joinpath(*relative.parts)
+                resolved_parent = target.parent.resolve()
+                if resolved_parent != root and root not in resolved_parent.parents:
+                    raise UnsafeArchiveError(f"TAR entry escapes extraction root: {member.name!r}")
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    target.chmod(0o755)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = archive.extractfile(member)
+                if source is None:
+                    raise UnsafeArchiveError(f"TAR file entry has no readable body: {member.name!r}")
+                output_mode = 0o755 if member.mode & 0o111 else 0o644
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                if hasattr(os, "O_NOFOLLOW"):
+                    flags |= os.O_NOFOLLOW
+                descriptor = os.open(target, flags, output_mode)
+                written = 0
+                try:
+                    with source, os.fdopen(descriptor, "wb") as output:
+                        descriptor = -1
+                        while chunk := source.read(COPY_CHUNK_BYTES):
+                            written += len(chunk)
+                            extracted_bytes += len(chunk)
+                            if written > member.size or extracted_bytes > limits.max_total_bytes:
+                                raise UnsafeArchiveError(f"TAR entry exceeded declared or configured size: {member.name!r}")
+                            output.write(chunk)
+                finally:
+                    if descriptor >= 0:
+                        os.close(descriptor)
+                if written != member.size:
+                    raise UnsafeArchiveError(f"TAR entry size changed during extraction: {member.name!r}")
+                target.chmod(output_mode)
+                extracted_files += 1
+        if extracted_bytes != declared_total:
+            raise UnsafeArchiveError("extracted byte count does not match the inspected archive")
+    except Exception:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+    return {
+        "tool": TOOL_NAME,
+        "toolVersion": TOOL_VERSION,
+        "archiveSha256": sha256_file(path),
+        "destination": str(destination.resolve()),
+        "fileCount": extracted_files,
+        "extractedSizeBytes": extracted_bytes,
+        "safe": True,
+    }
+
+
 def package_directory(source: Path, output: Path, limits: argparse.Namespace) -> dict[str, object]:
     source = source.resolve()
     if not source.is_dir():
@@ -292,6 +410,13 @@ def parser() -> argparse.ArgumentParser:
     extract.add_argument("archive", type=Path)
     extract.add_argument("destination", type=Path)
     add_limits(extract)
+    inspect_tar_parser = commands.add_parser("inspect-tar")
+    inspect_tar_parser.add_argument("archive", type=Path)
+    add_limits(inspect_tar_parser)
+    extract_tar_parser = commands.add_parser("extract-tar")
+    extract_tar_parser.add_argument("archive", type=Path)
+    extract_tar_parser.add_argument("destination", type=Path)
+    add_limits(extract_tar_parser)
     package = commands.add_parser("package-dir")
     package.add_argument("source", type=Path)
     package.add_argument("output", type=Path)
@@ -306,6 +431,10 @@ def main() -> None:
             result = inspect_zip(arguments.archive, arguments)
         elif arguments.command == "extract-zip":
             result = extract_zip(arguments.archive, arguments.destination, arguments)
+        elif arguments.command == "inspect-tar":
+            result = inspect_tar(arguments.archive, arguments)
+        elif arguments.command == "extract-tar":
+            result = extract_tar(arguments.archive, arguments.destination, arguments)
         else:
             result = package_directory(arguments.source, arguments.output, arguments)
         print(json.dumps(result, sort_keys=True))

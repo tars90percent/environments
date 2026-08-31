@@ -54,18 +54,20 @@ COPY apps/case/scripts ./scripts
 RUN npm run build \
     && npm prune --omit=dev \
     && chmod 0755 /app/scripts/case-task-package.py \
-    && chmod 0755 /app/dist/registry-cli.js /app/dist/intake-plan-cli.js /app/dist/mail-intake-plan-cli.js /app/dist/harbor-cli.js \
+    && chmod 0755 /app/dist/registry-cli.js /app/dist/intake-plan-cli.js /app/dist/mail-intake-plan-cli.js /app/dist/harbor-cli.js /app/dist/harbor-export-cli.js \
     && ln -sfn /app/dist/registry-cli.js /usr/local/bin/case-registry \
     && ln -sfn /app/dist/intake-plan-cli.js /usr/local/bin/case-intake \
     && ln -sfn /app/dist/mail-intake-plan-cli.js /usr/local/bin/case-mail-intake \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/harbor \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/case-harbor \
+    && ln -sfn /app/dist/harbor-export-cli.js /usr/local/bin/case-harbor-export \
     && ln -sfn /app/scripts/case-task-package.py /usr/local/bin/case-task-package \
     && test -x /usr/local/bin/case-registry \
     && test -x /usr/local/bin/case-intake \
     && test -x /usr/local/bin/case-mail-intake \
     && test -x /usr/local/bin/harbor \
     && test -x /usr/local/bin/case-harbor \
+    && test -x /usr/local/bin/case-harbor-export \
     && test -x /usr/local/bin/case-task-package \
     && test -x /usr/local/bin/modal
 

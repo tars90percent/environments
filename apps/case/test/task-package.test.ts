@@ -75,6 +75,33 @@ test("recovers UTF-8 ZIP paths whose encoding flag was omitted", { skip: !hasPyt
   }
 });
 
+test("safely extracts TAR task packages and rejects TAR links", { skip: !hasPython }, () => {
+  const directory = mkdtempSync(join(tmpdir(), "case-task-package-tar-"));
+  try {
+    const sourceTar = join(directory, "source.tar.gz");
+    makeTar(sourceTar, [
+      ["sample/task.toml", "schema_version = \"1.0\"\n", 0o644, "file"],
+      ["sample/solution/solve.sh", "#!/bin/sh\nexit 0\n", 0o755, "file"],
+    ]);
+    const inspected = run("inspect-tar", sourceTar);
+    assert.equal(inspected.safe, true);
+    assert.equal(inspected.entryCount, 2);
+
+    const extracted = join(directory, "extracted");
+    const extraction = run("extract-tar", sourceTar, extracted);
+    assert.equal(extraction.safe, true);
+    assert.equal(readFileSync(join(extracted, "sample/task.toml"), "utf8"), "schema_version = \"1.0\"\n");
+
+    const linkTar = join(directory, "link.tar.gz");
+    makeTar(linkTar, [["sample/link", "target", 0o777, "link"]]);
+    const linkResult = spawnSync("python3", [script, "inspect-tar", linkTar], { encoding: "utf8" });
+    assert.equal(linkResult.status, 2);
+    assert.equal(JSON.parse(linkResult.stdout).safe, false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 function run(command: string, ...arguments_: string[]): Record<string, unknown> {
   const result = spawnSync("python3", [script, command, ...arguments_], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -92,6 +119,27 @@ function makeZip(path: string, entries: Array<[string, string, number]>): void {
     "        info.external_attr = mode << 16",
     "        info.compress_type = zipfile.ZIP_DEFLATED",
     "        archive.writestr(info, content)",
+  ].join("\n");
+  const result = spawnSync("python3", ["-c", program, path, JSON.stringify(entries)], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+}
+
+function makeTar(path: string, entries: Array<[string, string, number, "file" | "link"]>): void {
+  const program = [
+    "import io, json, sys, tarfile",
+    "entries = json.loads(sys.argv[2])",
+    "with tarfile.open(sys.argv[1], 'w:gz') as archive:",
+    "    for name, content, mode, kind in entries:",
+    "        info = tarfile.TarInfo(name)",
+    "        info.mode = mode",
+    "        if kind == 'link':",
+    "            info.type = tarfile.SYMTYPE",
+    "            info.linkname = content",
+    "            archive.addfile(info)",
+    "        else:",
+    "            data = content.encode()",
+    "            info.size = len(data)",
+    "            archive.addfile(info, io.BytesIO(data))",
   ].join("\n");
   const result = spawnSync("python3", ["-c", program, path, JSON.stringify(entries)], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr || result.stdout);
