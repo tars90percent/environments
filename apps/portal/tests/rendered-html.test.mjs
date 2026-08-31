@@ -89,6 +89,17 @@ async function modelBenchmarkNativeRecordsModule() {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
 }
 
+async function modelBenchmarkAgentViewsModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/model-benchmark-agent-views.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+}
+
 function landscapeTask(id, benchmarkId, benchmarkName, kind = "task", format = "harbor") {
   return { id, stableKey: id, title: id, summary: null, kind, format, benchmark: { id: benchmarkId, displayName: benchmarkName } };
 }
@@ -228,11 +239,17 @@ test("retains public-task profiles for every open family and format archetypes f
 });
 
 test("records complete upstream filesystem metadata for Harbor sample tasks", async () => {
-  const { modelBenchmarkTaskFilesystems, upstreamFilesystemEntryUrl } = await modelBenchmarkFilesystemsModule();
-  assert.deepEqual(Object.keys(modelBenchmarkTaskFilesystems).sort(), ["terminal-financial-documents", "terminal-wal-recovery"]);
+  const { modelBenchmarkTaskFilesystems, upstreamFilesystemEntryContentUrl, upstreamFilesystemEntryUrl } = await modelBenchmarkFilesystemsModule();
+  assert.deepEqual(Object.keys(modelBenchmarkTaskFilesystems).sort(), ["deepswe-abs-module-cache", "terminal-financial-documents", "terminal-wal-recovery"]);
 
+  const deepSwe = modelBenchmarkTaskFilesystems["deepswe-abs-module-cache"];
   const financial = modelBenchmarkTaskFilesystems["terminal-financial-documents"];
   const wal = modelBenchmarkTaskFilesystems["terminal-wal-recovery"];
+  assert.equal(deepSwe.treeSha, "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea");
+  assert.equal(deepSwe.verifiedAt, "2026-08-31");
+  assert.equal(deepSwe.entries.filter((entry) => entry.kind === "file").length, 10);
+  assert.equal(deepSwe.entries.filter((entry) => entry.kind === "directory").length, 3);
+  assert.equal(deepSwe.entries.find((entry) => entry.path === "instruction.md")?.sizeBytes, 2624);
   assert.equal(financial.treeSha, "7131e4375048a0e408a8fb404b5f499d726b695b");
   assert.equal(financial.entries.filter((entry) => entry.kind === "file").length, 26);
   assert.equal(financial.entries.filter((entry) => entry.kind === "directory").length, 4);
@@ -241,10 +258,11 @@ test("records complete upstream filesystem metadata for Harbor sample tasks", as
   assert.equal(wal.entries.filter((entry) => entry.kind === "directory").length, 3);
 
   for (const filesystem of Object.values(modelBenchmarkTaskFilesystems)) {
-    assert.equal(filesystem.verifiedAt, "2026-08-29");
+    assert.match(filesystem.verifiedAt, /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(new Set(filesystem.entries.map((entry) => entry.path)).size, filesystem.entries.length);
     assert.ok(filesystem.entries.every((entry) => !entry.path.startsWith("/") && !entry.path.includes("..")));
-    assert.ok(filesystem.entries.every((entry) => upstreamFilesystemEntryUrl(filesystem, entry).startsWith("https://github.com/harbor-framework/terminal-bench-2-1/")));
+    assert.ok(filesystem.entries.every((entry) => upstreamFilesystemEntryUrl(filesystem, entry).startsWith(`https://github.com/${filesystem.repository}/`)));
+    assert.ok(filesystem.entries.every((entry) => upstreamFilesystemEntryContentUrl(filesystem, entry).startsWith(`https://raw.githubusercontent.com/${filesystem.repository}/${filesystem.treeSha}/`)));
     assert.ok(filesystem.entries.every((entry) => Object.keys(entry).sort().join(",") === "kind,path,role,sizeBytes"));
   }
 });
@@ -275,6 +293,104 @@ test("maps every non-Harbor sample in its publisher-native record shape without 
       assert.ok(stage.label.en.length > 0 && stage.label.zh.length > 0);
     }
   }
+});
+
+test("maps every non-Harbor task to an agent-input view", async () => {
+  const { modelBenchmarkAgentViews } = await modelBenchmarkAgentViewsModule();
+  const { modelBenchmarkNativeTaskRecords } = await modelBenchmarkNativeRecordsModule();
+
+  assert.deepEqual(Object.keys(modelBenchmarkAgentViews).sort(), Object.keys(modelBenchmarkNativeTaskRecords).sort());
+  assert.equal(Object.keys(modelBenchmarkAgentViews).length, 41);
+
+  const tauViews = Object.entries(modelBenchmarkAgentViews).filter(([, view]) => view.kind === "tau-runtime");
+  assert.deepEqual(tauViews.map(([sampleId]) => sampleId).sort(), ["tau-banking-card-selection", "tau-banking-credit-limit"]);
+
+  for (const [, view] of tauViews) {
+    assert.equal(view.repository, "sierra-research/tau2-bench");
+    assert.equal(view.revision, "a2c024725189473d2d7cea3a5cfdbcc67478e41f");
+    assert.equal(view.verifiedAt, "2026-08-31");
+    assert.equal(view.promptSources.components.length, 3);
+    assert.ok(view.toolGroups.length >= 2);
+    assert.ok(view.runtimeInputs.length >= 3);
+    assert.ok(view.hiddenInputs.length >= 3);
+
+    const sources = [
+      view.promptSources.agentRuntime,
+      view.promptSources.policyTemplate,
+      view.promptSources.retrievalRuntime,
+      ...view.promptSources.components,
+      view.taskDefinition,
+    ];
+    for (const source of sources) {
+      assert.ok(source.rawUrl.startsWith(`https://raw.githubusercontent.com/${view.repository}/${view.revision}/`));
+      assert.ok(source.sourceUrl.startsWith(`https://github.com/${view.repository}/blob/${view.revision}/`));
+      assert.ok(source.path.length > 0 && source.label.length > 0);
+    }
+  }
+
+  for (const [sampleId, view] of Object.entries(modelBenchmarkAgentViews)) {
+    if (sampleId.startsWith("tau-banking-")) continue;
+    assert.equal(view.kind, "publisher-contract");
+    const record = modelBenchmarkNativeTaskRecords[sampleId];
+    assert.equal(view.materials.length === 0, record.availability === "format-only");
+    for (const material of view.materials) {
+      assert.deepEqual(Object.keys(material).sort(), ["detail", "label", "origin", "path", "rawUrl", "sizeBytes", "sourceUrl"].filter((key) => Object.hasOwn(material, key)).sort());
+      assert.ok(material.path.length > 0);
+      assert.ok(material.sourceUrl.startsWith("https://"));
+      assert.ok(material.detail.en.length > 0 && material.detail.zh.length > 0);
+      if (material.rawUrl) assert.ok(material.rawUrl.startsWith("https://"));
+    }
+  }
+
+  const concreteViews = Object.values(modelBenchmarkAgentViews).filter((view) => view.kind === "publisher-contract" && view.materials.length > 0);
+  const concreteMaterials = concreteViews.flatMap((view) => view.materials);
+  assert.equal(concreteViews.length, 35);
+  assert.equal(concreteMaterials.length, 52);
+  assert.deepEqual([...new Set(concreteMaterials.map((material) => material.origin))].sort(), [
+    "environment", "open-web", "publisher-file", "publisher-record", "repository", "runtime-generated", "tool-access",
+  ]);
+
+  assert.match(modelBenchmarkAgentViews["tau-banking-card-selection"].taskDefinition.path, /task_001\.json$/);
+  assert.match(modelBenchmarkAgentViews["tau-banking-credit-limit"].taskDefinition.path, /task_050\.json$/);
+  const exploitGymMaterials = modelBenchmarkAgentViews["exploitgym-kernel-cve-2023-6111"].materials;
+  assert.deepEqual(exploitGymMaterials.map((material) => material.path), ["README.md", "vulnerability.md", "run_vm.sh"]);
+  assert.ok(exploitGymMaterials.every((material) => material.rawUrl.includes("e4123d043774623b2274e6bbe0155a423d631f0a")));
+  assert.deepEqual(modelBenchmarkAgentViews["scicode-lennard-jones"].materials.map((material) => material.path), [
+    "problem_id 51 / problem_background_main",
+    "problem_id 51 / problem_io + required_dependencies",
+  ]);
+  assert.equal(modelBenchmarkAgentViews["browsecomp-publisher-example-1"].materials[0].origin, "open-web");
+  assert.equal(modelBenchmarkAgentViews["osworld-fill-down-calc"].materials[0].origin, "environment");
+  assert.equal(modelBenchmarkAgentViews["mcp-atlas-assaultcube-dates"].materials[0].origin, "tool-access");
+  assert.equal(modelBenchmarkAgentViews["swe-bench-pro-nodebb-email-validation"].materials[1].origin, "repository");
+  assert.match(modelBenchmarkAgentViews["nl2repo-aiofiles"].materials[0].rawUrl, /NL2RepoBench\/781a1da1ee41fb8edb0bed22f586d69111610edf\/test_files\/aiofiles\/start\.md$/);
+  assert.match(modelBenchmarkAgentViews["mmmu-pro-clinical-emergency"].materials[0].rawUrl, /test_Clinical_Medicine_69_1\.png$/);
+  assert.match(modelBenchmarkAgentViews["omnidocbench-newspaper-page"].materials[0].rawUrl, /newspaper_5e266dfd9c498cab274e12a7b4a75755_4\.jpg$/);
+});
+
+test("keeps agent-visible inputs separate from top-level evaluation", async () => {
+  const source = await readFile(new URL("../app/model-benchmark-task-detail.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(source, /evaluationTab: "Evaluation"/);
+  assert.match(source, /evaluationTab: "评测"/);
+  assert.match(source, /id: "evaluation"/);
+  assert.match(source, /<TaskEvaluation /);
+  assert.match(source, /<TauEvaluationDetail /);
+  assert.match(source, /<PublisherEvaluationDetail /);
+  assert.match(source, /<HarborEvaluationArtifacts /);
+  assert.match(source, /useState<TaskDetailTab>\("overview"\)/);
+  assert.match(source, /\{ id: "overview", label: t\.overviewTab \}[\s\S]*id: "agent" as const/);
+  assert.match(source, /taskFormat: "Task type"/);
+  assert.match(source, /taskFormat: "任务类型"/);
+  assert.doesNotMatch(source, /Input envelope|Hidden evaluation|executionTab|inputTab|hiddenTab/);
+  assert.doesNotMatch(source, /publisher-agent-boundary|instructionFields/);
+  assert.doesNotMatch(source, /Agent input contract|智能体输入约定|Publisher format|发布方格式/);
+  assert.doesNotMatch(source, /responseInterface|agent-output-contract|agent-contract-columns/);
+  assert.doesNotMatch(source, /model-task-head-meta|Evaluation belongs to the task record|评测属于任务记录/);
+  assert.doesNotMatch(source, /agent-input-intro/);
+  assert.doesNotMatch(styles, /model-task-head-meta|agent-input-intro|agent-input-section-tabs|publisher-agent-execution-panel|agent-input-runtime-panel|agent-output-contract|agent-contract-columns/);
+  assert.doesNotMatch(styles, /publisher-agent-boundary/);
 });
 
 test("groups only Harbor tasks into benchmark directions and portal groups", async () => {

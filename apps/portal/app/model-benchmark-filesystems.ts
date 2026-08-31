@@ -19,6 +19,28 @@ const sharedRootEntries: UpstreamTaskFilesystemEntry[] = [
 ];
 
 export const modelBenchmarkTaskFilesystems: Record<string, UpstreamTaskFilesystem> = {
+  "deepswe-abs-module-cache": {
+    repository: "datacurve-ai/deep-swe",
+    repositoryPath: "tasks/abs-module-cache-flags",
+    rootUrl: "https://github.com/datacurve-ai/deep-swe/tree/0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea/tasks/abs-module-cache-flags",
+    treeSha: "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+    verifiedAt: "2026-08-31",
+    entries: [
+      { path: "environment", kind: "directory", sizeBytes: null, role: "environment" },
+      { path: "environment/Dockerfile", kind: "file", sizeBytes: 1575, role: "environment" },
+      { path: "instruction.md", kind: "file", sizeBytes: 2624, role: "task-instruction" },
+      { path: "solution", kind: "directory", sizeBytes: null, role: "reference-solution" },
+      { path: "solution/solution.patch", kind: "file", sizeBytes: 23719, role: "reference-solution" },
+      { path: "solution/solve.sh", kind: "file", sizeBytes: 364, role: "reference-solution" },
+      { path: "task.toml", kind: "file", sizeBytes: 1470, role: "task-config" },
+      { path: "tests", kind: "directory", sizeBytes: null, role: "verifier" },
+      { path: "tests/Dockerfile", kind: "file", sizeBytes: 383, role: "verifier" },
+      { path: "tests/config.json", kind: "file", sizeBytes: 2197, role: "verifier" },
+      { path: "tests/grader.py", kind: "file", sizeBytes: 13468, role: "verifier" },
+      { path: "tests/test.patch", kind: "file", sizeBytes: 30643, role: "verifier" },
+      { path: "tests/test.sh", kind: "file", sizeBytes: 5114, role: "verifier" },
+    ],
+  },
   "terminal-wal-recovery": {
     repository: "harbor-framework/terminal-bench-2-1",
     repositoryPath: "tasks/db-wal-recovery",
@@ -84,5 +106,13 @@ export const modelBenchmarkTaskFilesystems: Record<string, UpstreamTaskFilesyste
 
 export function upstreamFilesystemEntryUrl(filesystem: UpstreamTaskFilesystem, entry: UpstreamTaskFilesystemEntry): string {
   const view = entry.kind === "directory" ? "tree" : "blob";
-  return `https://github.com/${filesystem.repository}/${view}/main/${filesystem.repositoryPath}/${entry.path}`;
+  return `https://github.com/${filesystem.repository}/${view}/${filesystem.treeSha}/${filesystem.repositoryPath}/${entry.path}`;
+}
+
+export function upstreamFilesystemEntryContentUrl(filesystem: UpstreamTaskFilesystem, entry: UpstreamTaskFilesystemEntry): string {
+  const path = `${filesystem.repositoryPath}/${entry.path}`
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `https://raw.githubusercontent.com/${filesystem.repository}/${filesystem.treeSha}/${path}`;
 }

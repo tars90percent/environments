@@ -19,10 +19,11 @@ import {
   type HarborTaskContext,
 } from "./benchmark-landscape";
 import { groupSubmissionTasks, type SubmissionTaskGroup } from "./task-groups";
-import { aggregateBenchmarks, benchmarkReferenceVerifiedAt, modelBenchmarks } from "./model-benchmark-data";
-import { modelBenchmarkSamples, modelBenchmarkSampleContext } from "./model-benchmark-samples";
+import { aggregateBenchmarks, modelBenchmarks } from "./model-benchmark-data";
+import { modelBenchmarkSamples } from "./model-benchmark-samples";
 import { ModelBenchmarkReferencePage } from "./model-benchmark-reference";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
+import { MiniMaxMark } from "./minimax-mark";
 
 type Language = "zh" | "en";
 type PortalView = "benchmarks" | "vendors" | "model-benchmarks" | "model-task";
@@ -46,7 +47,6 @@ const text = {
     evaluations: "Benchmark families",
     sampleProfiles: "Sample profiles",
     aggregateBenchmarks: "Aggregate indexes",
-    verified: "Verified",
     benchmark: "Benchmark",
     sourceId: "Source ID",
     taskFormat: "Task format",
@@ -115,7 +115,6 @@ const text = {
     evaluations: "基准家族",
     sampleProfiles: "样例画像",
     aggregateBenchmarks: "综合指数",
-    verified: "核验日期",
     benchmark: "所属基准",
     sourceId: "来源 ID",
     taskFormat: "任务格式",
@@ -259,9 +258,8 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const selectedBenchmarkCategory = landscape?.categories.find((category) => category.id === selectedBenchmark?.categoryId);
   const initialModelBenchmark = modelBenchmarks.find((benchmark) => benchmark.id === initialModelTask?.benchmarkId);
   const initialModelSample = initialModelTask ? modelBenchmarkSamples[initialModelTask.benchmarkId]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
-  const initialModelContext = initialModelTask ? modelBenchmarkSampleContext[initialModelTask.benchmarkId] : undefined;
-  const headerTitle = view === "model-task" && initialModelSample ? initialModelSample.title[language] : view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
-  const headerIntro = view === "model-task" && initialModelSample ? initialModelSample.objective[language] : view === "model-benchmarks" ? t.modelBenchmarkIntro : view === "benchmarks" ? selectedBenchmark
+  const headerTitle = view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
+  const headerIntro = view === "model-benchmarks" ? t.modelBenchmarkIntro : view === "benchmarks" ? selectedBenchmark
     ? `${selectedBenchmark.taskCount} ${t.taskRecords} · ${selectedBenchmark.vendorCount} ${t.vendors.toLowerCase()}`
     : t.landscapeIntro
     : null;
@@ -295,7 +293,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
 
   return <div className="app-shell">
     <header className="global-header">
-      <a aria-label={t.landscapeTitle} className="wordmark" href="#top" onClick={showBenchmarks}><Image alt="" height={40} priority src="/octopus-icon.png" width={40} /></a>
+      <a aria-label={t.landscapeTitle} className="wordmark" href="#top" onClick={showBenchmarks}><MiniMaxMark /></a>
       <nav aria-label={t.title} className="market-switch">
         <button className={view === "benchmarks" ? "active" : ""} onClick={showBenchmarks} type="button">{t.benchmarks}</button>
         <button className={view === "vendors" ? "active" : ""} onClick={() => showVendors()} type="button">{t.byVendor}</button>
@@ -310,22 +308,16 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     </header>
 
     <main id="top">
-    <section className="registry-header">
+    {view !== "model-task" && <section className="registry-header">
       {view === "benchmarks" && selectedBenchmark && <button className="landscape-back registry-back" onClick={showBenchmarks} type="button"><span aria-hidden>←</span>{t.backToLandscape}</button>}
-      <div className="eyebrow">{view === "model-benchmarks" || view === "model-task" ? t.modelBenchmarkEyebrow : view === "benchmarks" && selectedBenchmarkCategory ? selectedBenchmarkCategory.label[language] : t.eyebrow}</div>
+      <div className="eyebrow">{view === "model-benchmarks" ? t.modelBenchmarkEyebrow : view === "benchmarks" && selectedBenchmarkCategory ? selectedBenchmarkCategory.label[language] : t.eyebrow}</div>
       <h1>{headerTitle}</h1>
       {headerIntro && <p className="registry-intro">{headerIntro}</p>}
-      <div className={`registry-stats${view === "model-benchmarks" || view === "model-task" ? " model-benchmark-stats" : ""}`}>
-        {view === "model-task" ? <>
-          <Stat label={t.benchmark} value={initialModelBenchmark?.name} />
-          <Stat label={t.sourceId} value={initialModelSample?.sourceId ?? "—"} />
-          <Stat label={t.taskFormat} value={initialModelContext?.format === "harbor" ? t.harborFormat : initialModelContext?.format === "format-archetype" ? t.formatOnly : t.publisherNative} />
-          <Stat label={t.originalLanguage} value={initialModelContext?.originalLanguage} />
-        </> : view === "model-benchmarks" ? <>
+      <div className={`registry-stats${view === "model-benchmarks" ? " model-benchmark-stats" : ""}`}>
+        {view === "model-benchmarks" ? <>
           <Stat label={t.evaluations} value={modelBenchmarks.length} />
           <Stat label={t.sampleProfiles} value={Object.values(modelBenchmarkSamples).flat().length} />
           <Stat label={t.aggregateBenchmarks} value={aggregateBenchmarks.length} />
-          <Stat label={t.verified} value={formatDate(benchmarkReferenceVerifiedAt, language)} />
         </> : view === "benchmarks" ? <>
           <Stat label={t.harbor} value={selectedBenchmark?.taskCount ?? landscape?.taskCount} />
           <Stat label={t.benchmarkDirections} value={selectedBenchmark ? 1 : landscape?.benchmarkCount} />
@@ -338,7 +330,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
           <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
         </>}
       </div>
-    </section>
+    </section>}
 
     <div className="page-body">
     {view !== "model-benchmarks" && view !== "model-task" && state === "loading" && <StateCard>{t.loading}</StateCard>}
