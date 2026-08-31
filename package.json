@@ -7,6 +7,7 @@
     "check:case": "npm --prefix apps/case run check",
     "lint:portal": "npm --prefix apps/portal run lint",
     "test:case": "npm --prefix apps/case test",
+    "test:harbor-task-gateway": "npm --prefix apps/harbor-task-gateway test",
     "test:portal": "npm --prefix apps/portal test"
   }
 }
