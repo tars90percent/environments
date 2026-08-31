@@ -151,7 +151,6 @@ async function artifactCandidates(
   if (task.artifactId) {
     const artifact = await repository.getArtifact(task.artifactId);
     if (!artifact) throw new Error(`Task artifact not found: ${task.artifactId}`);
-    if (artifact.kind !== "task_package") throw new Error(`Task artifact is not a task package: ${task.artifactId}`);
     if (!artifact.sizeBytes) throw new Error(`Task artifact has no recorded size: ${task.artifactId}`);
     if (task.contentSha256 && task.contentSha256 !== artifact.sha256) {
       throw new Error(`Task and artifact hashes differ for ${task.id}`);
@@ -226,10 +225,25 @@ async function extractArtifact(artifact: ArtifactInput, archivePath: string, ext
     || originalName.endsWith(".tgz")
     || originalName.endsWith(".tar");
   if (!isZip && !isTar) throw new Error(`Unsupported task artifact archive format: ${artifact.contentType ?? originalName}`);
-  const result = await execute("python3", [taskPackageScript, isZip ? "extract-zip" : "extract-tar", archivePath, extractedPath], {
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  const report = JSON.parse(result.stdout) as { safe?: boolean; error?: string };
+  let stdout: string;
+  try {
+    const result = await execute("python3", [taskPackageScript, isZip ? "extract-zip" : "extract-tar", archivePath, extractedPath], {
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    stdout = result.stdout;
+  } catch (error) {
+    const output = typeof error === "object" && error && "stdout" in error && typeof error.stdout === "string"
+      ? error.stdout
+      : "";
+    let report: { error?: string } | undefined;
+    try {
+      report = JSON.parse(output) as { error?: string };
+    } catch {}
+    if (report?.error) throw new Error(report.error);
+    throw error;
+  }
+  const report = JSON.parse(stdout) as { safe?: boolean; error?: string };
   if (!report.safe) throw new Error(report.error || "Task artifact extraction was rejected");
 }
 
