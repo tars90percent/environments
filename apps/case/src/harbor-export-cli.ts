@@ -17,6 +17,7 @@ import type { ArtifactInput, SampleCatalogSourceItem, SampleCatalogSubmission, S
 const execute = promisify(execFile);
 const taskPackageScript = fileURLToPath(new URL("../scripts/case-task-package.py", import.meta.url));
 const genericTaskNames = new Set(["task", "payload"]);
+const harborExportMaxArchiveEntries = 100_000;
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
 
 export type HarborExportFile = {
@@ -226,7 +227,14 @@ async function extractArtifact(artifact: ArtifactInput, archivePath: string, ext
   if (!isZip && !isTar) throw new Error(`Unsupported task artifact archive format: ${artifact.contentType ?? originalName}`);
   let stdout: string;
   try {
-    const result = await execute("python3", [taskPackageScript, isZip ? "extract-zip" : "extract-tar", archivePath, extractedPath], {
+    const result = await execute("python3", [
+      taskPackageScript,
+      isZip ? "extract-zip" : "extract-tar",
+      archivePath,
+      extractedPath,
+      "--max-entries",
+      String(harborExportMaxArchiveEntries),
+    ], {
       encoding: "utf8",
       maxBuffer: 10 * 1024 * 1024,
     });
