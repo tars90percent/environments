@@ -333,6 +333,13 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
 
   assert.match(source, /Environment & Task Samples/);
   assert.match(source, /RL task landscape/);
+  assert.match(source, /benchmarks: "By Domain"/);
+  assert.match(source, /byVendor: "By Vendor"/);
+  assert.match(source, /modelBenchmarks: "Benchmark Catalog"/);
+  assert.match(source, /benchmarks: "按领域"/);
+  assert.match(source, /byVendor: "按供应商"/);
+  assert.match(source, /modelBenchmarks: "基准目录"/);
+  assert.doesNotMatch(source, /Model benchmarks|模型基准/);
   assert.doesNotMatch(source, /Benchmark directions are grouped for navigation only/);
   assert.doesNotMatch(source, /基准分组仅用于浏览/);
   assert.match(source, /useState<PortalView>\(initialView\)/);

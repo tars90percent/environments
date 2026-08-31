@@ -18,7 +18,7 @@ import {
 
 const copy = {
   en: {
-    back: "Back to model benchmarks",
+    back: "Back to benchmark catalog",
     provenance: "Published task provenance",
     provenanceNote: "The original material remains in the publisher's language. This catalog describes the task; it does not translate or duplicate the prompt, answer, attachments, or package.",
     sourceId: "Source ID",
@@ -101,7 +101,7 @@ const copy = {
     },
   },
   zh: {
-    back: "返回模型基准",
+    back: "返回基准目录",
     provenance: "发布方任务来源",
     provenanceNote: "原始材料保持发布方语言。本目录仅用中文描述任务，不翻译或复制题面、答案、附件及任务包。",
     sourceId: "来源 ID",

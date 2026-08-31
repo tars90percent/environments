@@ -37,12 +37,13 @@ const text = {
     eyebrow: "CASE registry",
     title: "Environment & Task Samples",
     search: "Search vendors, submissions, or tasks",
-    benchmarks: "Benchmarks",
-    modelBenchmarks: "Model benchmarks",
-    modelBenchmarkEyebrow: "Model benchmark reference",
+    benchmarks: "By Domain",
+    byVendor: "By Vendor",
+    modelBenchmarks: "Benchmark Catalog",
+    modelBenchmarkEyebrow: "Benchmark reference",
     modelBenchmarkIntro: "Independent benchmark families with official sources and task-level sample profiles; aggregate indexes are documented separately with their constituents and weights.",
-    searchModelBenchmarks: "Search benchmarks, versions, or task patterns",
-    evaluations: "Benchmarks",
+    searchModelBenchmarks: "Search benchmark families, versions, or task patterns",
+    evaluations: "Benchmark families",
     sampleProfiles: "Sample profiles",
     aggregateBenchmarks: "Aggregate indexes",
     verified: "Verified",
@@ -105,12 +106,13 @@ const text = {
     eyebrow: "CASE 样本库",
     title: "环境与任务样本",
     search: "搜索供应商、提交记录或任务",
-    benchmarks: "基准",
-    modelBenchmarks: "模型基准",
-    modelBenchmarkEyebrow: "模型基准参考",
+    benchmarks: "按领域",
+    byVendor: "按供应商",
+    modelBenchmarks: "基准目录",
+    modelBenchmarkEyebrow: "基准参考",
     modelBenchmarkIntro: "独立记录各基准家族、官方来源与任务级样例画像；综合指数另列其组成评测与权重。",
-    searchModelBenchmarks: "搜索模型基准、版本或任务模式",
-    evaluations: "独立基准",
+    searchModelBenchmarks: "搜索基准家族、版本或任务模式",
+    evaluations: "基准家族",
     sampleProfiles: "样例画像",
     aggregateBenchmarks: "综合指数",
     verified: "核验日期",
@@ -258,7 +260,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const initialModelBenchmark = modelBenchmarks.find((benchmark) => benchmark.id === initialModelTask?.benchmarkId);
   const initialModelSample = initialModelTask ? modelBenchmarkSamples[initialModelTask.benchmarkId]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
   const initialModelContext = initialModelTask ? modelBenchmarkSampleContext[initialModelTask.benchmarkId] : undefined;
-  const headerTitle = view === "model-task" && initialModelSample ? initialModelSample.title[language] : view === "model-benchmarks" ? (language === "zh" ? "模型基准参考" : "Model Benchmark Reference") : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
+  const headerTitle = view === "model-task" && initialModelSample ? initialModelSample.title[language] : view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
   const headerIntro = view === "model-task" && initialModelSample ? initialModelSample.objective[language] : view === "model-benchmarks" ? t.modelBenchmarkIntro : view === "benchmarks" ? selectedBenchmark
     ? `${selectedBenchmark.taskCount} ${t.taskRecords} · ${selectedBenchmark.vendorCount} ${t.vendors.toLowerCase()}`
     : t.landscapeIntro
@@ -296,7 +298,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       <a aria-label={t.landscapeTitle} className="wordmark" href="#top" onClick={showBenchmarks}><Image alt="" height={40} priority src="/octopus-icon.png" width={40} /></a>
       <nav aria-label={t.title} className="market-switch">
         <button className={view === "benchmarks" ? "active" : ""} onClick={showBenchmarks} type="button">{t.benchmarks}</button>
-        <button className={view === "vendors" ? "active" : ""} onClick={() => showVendors()} type="button">{t.vendors}</button>
+        <button className={view === "vendors" ? "active" : ""} onClick={() => showVendors()} type="button">{t.byVendor}</button>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a className={view === "model-benchmarks" || view === "model-task" ? "active" : ""} href="/model-benchmarks" onClick={(event) => { event.preventDefault(); showModelBenchmarks(); }}>{t.modelBenchmarks}</a>
       </nav>
