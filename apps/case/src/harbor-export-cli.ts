@@ -133,7 +133,6 @@ async function prepareAndMaybePublishTask(input: {
     if (!selected) throw new Error(`No linked artifact resolved task ${task.id}: ${failures.join("; ")}`);
     const prefix = taskExportPrefix(vendor.id, submission.id, task.sourcePath);
     const files = await harborTaskFiles(selected.taskRoot, prefix);
-    if (!files.some((file) => file.relativePath === "task.toml")) throw new Error(`Task root has no task.toml: ${task.id}`);
     const sizeBytes = files.reduce((sum, file) => sum + file.sizeBytes, 0);
     let status: "planned" | "published" | "unchanged" = "planned";
     if (input.destinationStore) status = await publishTaskFiles(input.destinationStore, files, prefix, selected.artifact.sha256);
@@ -249,7 +248,18 @@ async function extractArtifact(artifact: ArtifactInput, archivePath: string, ext
 
 export async function findHarborTaskRoot(extractedRoot: string, sourcePath: string): Promise<string> {
   const taskFiles = await findNamedFiles(extractedRoot, "task.toml");
-  if (taskFiles.length === 0) throw new Error("Task artifact contains no task.toml");
+  if (taskFiles.length === 0) {
+    const archiveSeparator = sourcePath.indexOf("!/");
+    if (archiveSeparator >= 0) {
+      const parts = portableParts(sourcePath.slice(archiveSeparator + 2));
+      if (!parts.length || parts.some((part) => part === "..")) throw new Error(`Invalid recorded task archive path: ${sourcePath}`);
+      const recordedRoot = join(extractedRoot, ...parts);
+      try {
+        if ((await lstat(recordedRoot)).isDirectory()) return recordedRoot;
+      } catch {}
+    }
+    throw new Error("Task artifact contains no task.toml and its recorded archive directory was not found");
+  }
   if (taskFiles.length === 1) return dirname(taskFiles[0]!);
   const sourceParts = portableParts(sourcePath);
   const ranked = taskFiles.map((path) => {
@@ -299,8 +309,8 @@ export async function harborTaskFiles(taskRoot: string, prefix: string): Promise
 }
 
 export async function publishTaskFiles(store: ArtifactStore, files: HarborExportFile[], prefix: string, artifactSha256: string): Promise<"published" | "unchanged"> {
-  const marker = files.find((file) => file.relativePath === "task.toml");
-  if (!marker) throw new Error(`Cannot publish a task without task.toml: ${prefix}`);
+  const marker = files.find((file) => file.relativePath === "task.toml") ?? files.at(-1);
+  if (!marker) throw new Error(`Cannot publish an empty task: ${prefix}`);
   const expectedKeys = new Set(files.map((file) => file.key));
   const existingKeys = await store.listKeys(`${prefix}/`);
   const unexpected = existingKeys.filter((key) => !expectedKeys.has(key));
@@ -331,7 +341,7 @@ export async function publishTaskFiles(store: ArtifactStore, files: HarborExport
   await store.putFile({
     key: marker.key,
     path: marker.path,
-    contentType: "application/toml",
+    contentType: contentTypeFor(marker.relativePath),
     sha256: marker.sha256,
     sizeBytes: marker.sizeBytes,
     metadata: { mode: marker.mode.toString(8), "task-artifact-sha256": artifactSha256 },

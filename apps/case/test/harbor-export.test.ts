@@ -39,6 +39,23 @@ test("selects a task root by its recorded source path and preserves all files", 
   }
 });
 
+test("selects an exact recorded archive directory when a broken Harbor task has no task.toml", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "case-harbor-export-missing-manifest-"));
+  try {
+    const task = join(directory, "broken-task");
+    mkdirSync(join(task, "environment"), { recursive: true });
+    writeFileSync(join(task, "instruction.md"), "Do the task.\n");
+    writeFileSync(join(task, "environment", "Dockerfile"), "FROM scratch\n");
+
+    assert.equal(
+      await findHarborTaskRoot(directory, "delivery.zip!/broken-task/"),
+      task,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("publishes task.toml last and makes exact reruns idempotent", async () => {
   const directory = mkdtempSync(join(tmpdir(), "case-harbor-export-publish-"));
   try {
@@ -65,6 +82,36 @@ test("publishes task.toml last and makes exact reruns idempotent", async () => {
     assert.equal(writes.at(-1), "vendor/submission/example/task.toml");
     assert.equal(await publishTaskFiles(store, files, "vendor/submission/example", "a".repeat(64)), "unchanged");
     assert.equal(writes.length, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("publishes an exact task without inventing a missing task.toml", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "case-harbor-export-broken-publish-"));
+  try {
+    writeFileSync(join(directory, "instruction.md"), "Do it.\n");
+    writeFileSync(join(directory, "tests.py"), "assert True\n");
+    const files = await harborTaskFiles(directory, "vendor/submission/broken");
+    const objects = new Map<string, { sha256: string; sizeBytes: number }>();
+    const writes: string[] = [];
+    const store = {
+      async listKeys(prefix: string) {
+        return [...objects.keys()].filter((key) => key.startsWith(prefix)).sort();
+      },
+      async objectMetadata(key: string) {
+        const value = objects.get(key);
+        return value ? { ...value } : null;
+      },
+      async putFile(input: { key: string; sha256: string; sizeBytes: number }) {
+        writes.push(input.key);
+        objects.set(input.key, { sha256: input.sha256, sizeBytes: input.sizeBytes });
+      },
+    } as unknown as ArtifactStore;
+
+    assert.equal(await publishTaskFiles(store, files, "vendor/submission/broken", "b".repeat(64)), "published");
+    assert.equal(writes.at(-1), "vendor/submission/broken/tests.py");
+    assert.equal(await publishTaskFiles(store, files, "vendor/submission/broken", "b".repeat(64)), "unchanged");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

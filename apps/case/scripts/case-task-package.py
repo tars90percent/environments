@@ -206,6 +206,8 @@ def safe_tar_entries(
     total_bytes = 0
     for member in members:
         name = member.name.rstrip("/")
+        if name == "." and member.isdir():
+            continue
         if not name or "\\" in name or "\x00" in name:
             raise UnsafeArchiveError(f"unsafe TAR entry name: {member.name!r}")
         path = PurePosixPath(name)

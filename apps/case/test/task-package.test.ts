@@ -80,6 +80,7 @@ test("safely extracts TAR task packages and rejects TAR links", { skip: !hasPyth
   try {
     const sourceTar = join(directory, "source.tar.gz");
     makeTar(sourceTar, [
+      [".", "", 0o755, "directory"],
       ["sample/task.toml", "schema_version = \"1.0\"\n", 0o644, "file"],
       ["sample/solution/solve.sh", "#!/bin/sh\nexit 0\n", 0o755, "file"],
     ]);
@@ -124,7 +125,7 @@ function makeZip(path: string, entries: Array<[string, string, number]>): void {
   assert.equal(result.status, 0, result.stderr || result.stdout);
 }
 
-function makeTar(path: string, entries: Array<[string, string, number, "file" | "link"]>): void {
+function makeTar(path: string, entries: Array<[string, string, number, "file" | "link" | "directory"]>): void {
   const program = [
     "import io, json, sys, tarfile",
     "entries = json.loads(sys.argv[2])",
@@ -135,6 +136,9 @@ function makeTar(path: string, entries: Array<[string, string, number, "file" | 
     "        if kind == 'link':",
     "            info.type = tarfile.SYMTYPE",
     "            info.linkname = content",
+    "            archive.addfile(info)",
+    "        elif kind == 'directory':",
+    "            info.type = tarfile.DIRTYPE",
     "            archive.addfile(info)",
     "        else:",
     "            data = content.encode()",
