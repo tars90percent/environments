@@ -165,11 +165,45 @@ export type VendorEvent = VendorEventInput & {
   createdAt: string;
 };
 
+export type VendorInteractionChannel =
+  | "meeting"
+  | "email"
+  | "feishu"
+  | "slack"
+  | "wechat"
+  | "file_delivery"
+  | "internal"
+  | "other";
+
+export type VendorInteractionEvidence = "direct" | "relayed" | "automated" | "internal";
+export type VendorInteractionVisibility = "portal" | "internal";
+
+export type VendorInteractionInput = {
+  id: string;
+  vendorId: string;
+  kind: VendorEventKind;
+  eventType: string;
+  title: string;
+  summary: string;
+  channel: VendorInteractionChannel;
+  evidence: VendorInteractionEvidence;
+  visibility: VendorInteractionVisibility;
+  occurredAt: string;
+  sourceEventIds: string[];
+  batchIds: string[];
+  actor: string;
+};
+
+export type VendorInteraction = VendorInteractionInput & {
+  createdAt: string;
+};
+
 export type VendorDirectoryEntry = RegistryVendorInput & {
   aliases: string[];
   sourceEventCount: number;
   submissionCount: number;
   vendorEventCount: number;
+  interactionCount: number;
   latestActivityAt: string | null;
   archivedAt: string | null;
   archivedBy: string | null;
@@ -999,6 +1033,16 @@ export type SampleCatalogVendor = {
   id: string;
   name: string;
   short: string;
+  interactions: Array<{
+    id: string;
+    kind: VendorEventKind;
+    eventType: string;
+    title: string;
+    summary: string;
+    channel: VendorInteractionChannel;
+    evidence: VendorInteractionEvidence;
+    occurredAt: string;
+  }>;
   submissions: SampleCatalogSubmission[];
 };
 

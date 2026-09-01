@@ -39,6 +39,7 @@ import type {
   VendorArchiveInput,
   VendorArchiveResult,
   VendorDirectoryEntry,
+  VendorInteractionInput,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -61,6 +62,7 @@ export interface RegistryRepository {
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   vendorDirectory(includeArchived?: boolean): Promise<VendorDirectoryEntry[]>;
+  recordVendorInteraction(input: VendorInteractionInput): Promise<{ interactionId: string; created: boolean }>;
   archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   recordHarborAttempt(input: HarborCheckAttemptInput): Promise<void>;

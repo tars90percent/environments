@@ -73,6 +73,8 @@ import type {
   VendorDirectoryEntry,
   VendorEvent,
   VendorEventInput,
+  VendorInteraction,
+  VendorInteractionInput,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -292,6 +294,22 @@ type VendorEventRow = {
   metadata: Record<string, unknown>;
   created_at: string | Date;
 };
+type VendorInteractionRow = {
+  id: string;
+  vendor_id: string;
+  kind: VendorInteraction["kind"];
+  event_type: string;
+  title: string;
+  summary: string;
+  channel: VendorInteraction["channel"];
+  evidence: VendorInteraction["evidence"];
+  visibility: VendorInteraction["visibility"];
+  occurred_at: string | Date;
+  source_event_ids: string[];
+  batch_ids: string[];
+  actor: string;
+  created_at: string | Date;
+};
 type VendorDirectoryRow = {
   id: string;
   name: string;
@@ -301,6 +319,7 @@ type VendorDirectoryRow = {
   source_event_count: string;
   submission_count: string;
   vendor_event_count: string;
+  interaction_count: string;
   latest_activity_at: string | Date | null;
   archived_at: string | Date | null;
   archived_by: string | null;
@@ -727,6 +746,64 @@ export class PostgresRegistry implements RegistryRepository {
     return result.rows.map(vendorEventFromRow);
   }
 
+  async recordVendorInteraction(input: VendorInteractionInput): Promise<{ interactionId: string; created: boolean }> {
+    const payloadSha256 = hashValue(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const vendor = await client.query<{ id: string }>("SELECT id FROM registry_vendors WHERE id = $1", [input.vendorId]);
+      if (!vendor.rowCount) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
+
+      const existing = await client.query<{ payload_sha256: string }>(
+        "SELECT payload_sha256 FROM registry_vendor_interactions WHERE id = $1",
+        [input.id],
+      );
+      if (existing.rows[0]?.payload_sha256 && existing.rows[0].payload_sha256 !== payloadSha256) {
+        throw new RegistryConflictError(`Vendor interaction ${input.id} already exists with different immutable contents`);
+      }
+      if (existing.rowCount) {
+        await client.query("COMMIT");
+        return { interactionId: input.id, created: false };
+      }
+
+      if (input.sourceEventIds.length) {
+        const sources = await client.query<{ id: string }>(
+          "SELECT id FROM registry_source_events WHERE vendor_id = $1 AND id = ANY($2::text[])",
+          [input.vendorId, input.sourceEventIds],
+        );
+        if (sources.rowCount !== input.sourceEventIds.length) {
+          throw new RegistryNotFoundError(`One or more source events do not belong to vendor ${input.vendorId}`);
+        }
+      }
+      if (input.batchIds.length) {
+        const batches = await client.query<{ id: string }>(
+          "SELECT id FROM registry_submission_batches WHERE vendor_id = $1 AND id = ANY($2::text[])",
+          [input.vendorId, input.batchIds],
+        );
+        if (batches.rowCount !== input.batchIds.length) {
+          throw new RegistryNotFoundError(`One or more submissions do not belong to vendor ${input.vendorId}`);
+        }
+      }
+
+      await client.query(
+        `INSERT INTO registry_vendor_interactions(
+           id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
+           occurred_at, source_event_ids, batch_ids, actor, payload_sha256
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)`,
+        [input.id, input.vendorId, input.kind, input.eventType, input.title, input.summary, input.channel,
+          input.evidence, input.visibility, input.occurredAt, json(input.sourceEventIds), json(input.batchIds),
+          input.actor, payloadSha256],
+      );
+      await client.query("COMMIT");
+      return { interactionId: input.id, created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async vendorDirectory(includeArchived = false): Promise<VendorDirectoryEntry[]> {
     const result = await this.pool.query<VendorDirectoryRow>(
       `SELECT v.id, v.name, v.short, v.description, v.aliases, v.updated_at,
@@ -734,7 +811,8 @@ export class PostgresRegistry implements RegistryRepository {
               COALESCE(se.event_count, 0)::text AS source_event_count,
               COALESCE(sb.batch_count, 0)::text AS submission_count,
               COALESCE(ve.event_count, 0)::text AS vendor_event_count,
-              GREATEST(se.latest_at, sb.latest_at, ve.latest_at) AS latest_activity_at
+              COALESCE(vi.interaction_count, 0)::text AS interaction_count,
+              GREATEST(se.latest_at, sb.latest_at, ve.latest_at, vi.latest_at) AS latest_activity_at
        FROM registry_vendors v
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS event_count, MAX(received_at) AS latest_at
@@ -748,6 +826,10 @@ export class PostgresRegistry implements RegistryRepository {
          SELECT COUNT(*) AS event_count, MAX(occurred_at) AS latest_at
          FROM registry_vendor_events WHERE vendor_id = v.id
        ) ve ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS interaction_count, MAX(occurred_at) AS latest_at
+         FROM registry_vendor_interactions WHERE vendor_id = v.id
+       ) vi ON true
        WHERE ($1::boolean OR v.archived_at IS NULL)
        ORDER BY v.name, v.id`,
       [includeArchived],
@@ -761,6 +843,7 @@ export class PostgresRegistry implements RegistryRepository {
       sourceEventCount: Number(row.source_event_count),
       submissionCount: Number(row.submission_count),
       vendorEventCount: Number(row.vendor_event_count),
+      interactionCount: Number(row.interaction_count),
       latestActivityAt: row.latest_activity_at ? new Date(row.latest_activity_at).toISOString() : null,
       archivedAt: row.archived_at ? new Date(row.archived_at).toISOString() : null,
       archivedBy: row.archived_by,
@@ -3568,12 +3651,22 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot> {
-    const [vendorsResult, submissionsResult, tasksResult, checksResult, attemptsResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
+    const [vendorsResult, interactionsResult, submissionsResult, tasksResult, checksResult, attemptsResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
       this.pool.query<VendorRow>(
         `SELECT id, name, short, description
          FROM registry_vendors
          WHERE archived_at IS NULL
          ORDER BY name, id`,
+      ),
+      this.pool.query<VendorInteractionRow>(
+        `SELECT vi.id, vi.vendor_id, vi.kind, vi.event_type, vi.title, vi.summary, vi.channel,
+                vi.evidence, vi.visibility, vi.occurred_at, vi.source_event_ids, vi.batch_ids,
+                vi.actor, vi.created_at
+         FROM registry_vendor_interactions vi
+         JOIN registry_vendors v ON v.id = vi.vendor_id
+         WHERE vi.visibility = 'portal'
+           AND v.archived_at IS NULL
+         ORDER BY vi.vendor_id, vi.occurred_at, vi.created_at, vi.id`,
       ),
       this.pool.query<BatchRow>(
         `SELECT id, vendor_id, submission_date, label, source_label, declared_task_count,
@@ -3776,10 +3869,21 @@ export class PostgresRegistry implements RegistryRepository {
       });
     }
 
+    const interactionsByVendor = group(interactionsResult.rows, (row) => row.vendor_id);
     const vendors = vendorsResult.rows.map((row) => ({
       id: row.id,
       name: row.name,
       short: row.short,
+      interactions: (interactionsByVendor.get(row.id) ?? []).map((interaction) => ({
+        id: interaction.id,
+        kind: interaction.kind,
+        eventType: interaction.event_type,
+        title: interaction.title,
+        summary: interaction.summary,
+        channel: interaction.channel,
+        evidence: interaction.evidence,
+        occurredAt: new Date(interaction.occurred_at).toISOString(),
+      })),
       submissions: submissionsByVendor.get(row.id) ?? [],
     }));
     const submissions = vendors.flatMap((vendor) => vendor.submissions);

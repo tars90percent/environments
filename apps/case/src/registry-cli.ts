@@ -35,6 +35,7 @@ import {
   parseSubmissionManifest,
   parseSubmissionRemoval,
   parseVendorArchive,
+  parseVendorInteraction,
   parseWorkCompletion,
 } from "./registry/validation.js";
 
@@ -56,6 +57,9 @@ if (command === "operations") {
       case "vendors":
         if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: case-registry vendors [--all]");
         output(await repository.vendorDirectory(argument === "--all"));
+        break;
+      case "record-vendor-interaction":
+        output(await repository.recordVendorInteraction(parseVendorInteraction(await jsonFile(argument))));
         break;
       case "vendor": {
         const vendorId = required(argument, "vendor id");
@@ -289,6 +293,13 @@ function operationSchemas() {
     summary: { arguments: [], result: "registry counts" },
     catalog: { arguments: [], result: "researcher-facing sample catalog" },
     vendors: { arguments: ["[--all]"], result: "vendor directory" },
+    "record-vendor-interaction": {
+      arguments: ["<interaction.json>"],
+      fields: ["id", "vendorId", "kind", "eventType", "title", "summary", "channel", "evidence", "visibility", "occurredAt", "sourceEventIds", "batchIds", "actor"],
+      channels: ["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"],
+      evidence: ["direct", "relayed", "automated", "internal"],
+      note: "Appends one immutable vendor interaction. Portal entries expose only the curated title, summary, date, channel, and evidence class; source locators and internal actor data remain private.",
+    },
     vendor: { arguments: ["<vendor-id>"] },
     batch: { arguments: ["<submission-id>"] },
     task: { arguments: ["<task-id>"] },

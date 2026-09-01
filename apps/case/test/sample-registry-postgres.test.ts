@@ -124,8 +124,51 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     await assert.rejects(() => repository!.recordHarborCheck(check("task-trace", evidenceSha)), RegistryConflictError);
     await repository.recordHarborCheck(check("task-one", evidenceSha));
     await repository.recordHarborFinding({ id: "finding-environment", taskId: "task-one", checkRunId: "check-environment", finding: "Harbor could not prepare the task environment." });
+    const interaction = {
+      id: "interaction:vendor-one:starter-delivery",
+      vendorId: "vendor-one",
+      kind: "delivery" as const,
+      eventType: "starter_delivery_received",
+      title: "Starter delivery received",
+      summary: "The vendor delivered the agreed starter set.",
+      channel: "file_delivery" as const,
+      evidence: "direct" as const,
+      visibility: "portal" as const,
+      occurredAt: "2026-08-21T00:00:00.000Z",
+      sourceEventIds: ["source-one"],
+      batchIds: ["submission-one"],
+      actor: "TARS",
+    };
+    assert.deepEqual(await repository.recordVendorInteraction(interaction), {
+      interactionId: interaction.id,
+      created: true,
+    });
+    assert.equal((await repository.recordVendorInteraction(interaction)).created, false);
+    await assert.rejects(
+      () => repository!.recordVendorInteraction({ ...interaction, summary: "Changed immutable narrative." }),
+      /different immutable contents/,
+    );
+    await repository.recordVendorInteraction({
+      ...interaction,
+      id: "interaction:vendor-one:internal-note",
+      title: "Internal note",
+      summary: "This entry must not appear in the portal catalog.",
+      visibility: "internal",
+    });
 
     const catalog = await repository.sampleCatalogSnapshot();
+    assert.deepEqual(catalog.vendors[0]?.interactions, [{
+      id: interaction.id,
+      kind: interaction.kind,
+      eventType: interaction.eventType,
+      title: interaction.title,
+      summary: interaction.summary,
+      channel: interaction.channel,
+      evidence: interaction.evidence,
+      occurredAt: interaction.occurredAt,
+    }]);
+    assert.equal("sourceEventIds" in (catalog.vendors[0]?.interactions[0] ?? {}), false);
+    assert.equal("actor" in (catalog.vendors[0]?.interactions[0] ?? {}), false);
     const submission = catalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-one");
     const secondSubmission = catalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-two");
     assert.deepEqual(submission?.sourceEvents[0]?.items.map((item) => item.artifactKind), [null, "source_payload", "source_payload"]);

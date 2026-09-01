@@ -1676,6 +1676,39 @@ const migrations: Migration[] = [
         'Current GPU requirement per exact task version; false means no positive requirement is currently recorded.';
     `,
   },
+  {
+    id: "022_vendor_interaction_timeline",
+    sql: `
+      CREATE TABLE registry_vendor_interactions (
+        id text PRIMARY KEY,
+        vendor_id text NOT NULL REFERENCES registry_vendors(id),
+        kind text NOT NULL CHECK (kind IN ('contact', 'sample', 'evaluation', 'commercial', 'delivery', 'acceptance', 'payment', 'relationship', 'note')),
+        event_type text NOT NULL,
+        title text NOT NULL,
+        summary text NOT NULL,
+        channel text NOT NULL CHECK (channel IN ('meeting', 'email', 'feishu', 'slack', 'wechat', 'file_delivery', 'internal', 'other')),
+        evidence text NOT NULL CHECK (evidence IN ('direct', 'relayed', 'automated', 'internal')),
+        visibility text NOT NULL CHECK (visibility IN ('portal', 'internal')),
+        occurred_at timestamptz NOT NULL,
+        source_event_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+        batch_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+        actor text NOT NULL,
+        payload_sha256 text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (length(trim(title)) > 0),
+        CHECK (length(trim(summary)) > 0),
+        CHECK (jsonb_typeof(source_event_ids) = 'array'),
+        CHECK (jsonb_typeof(batch_ids) = 'array'),
+        CHECK (payload_sha256 ~ '^[0-9a-f]{64}$')
+      );
+
+      CREATE INDEX registry_vendor_interactions_timeline_idx
+        ON registry_vendor_interactions(vendor_id, occurred_at, created_at, id);
+
+      COMMENT ON TABLE registry_vendor_interactions IS
+        'Append-only, provenance-aware vendor interaction chronology. Portal visibility is explicit and the portal projection omits private source locators.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

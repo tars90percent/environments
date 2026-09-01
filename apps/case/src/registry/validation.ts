@@ -32,6 +32,10 @@ import type {
   TaskSourceLinksInput,
   VendorArchiveInput,
   VendorEventInput,
+  VendorInteractionChannel,
+  VendorInteractionEvidence,
+  VendorInteractionInput,
+  VendorInteractionVisibility,
   WorkCompletionInput,
 } from "./types.js";
 
@@ -56,6 +60,9 @@ const SOURCE_FETCH_STATUSES = new Set(["not_requested", "queued", "fetching", "s
 const SOURCE_PARSE_STATUSES = new Set(["not_requested", "queued", "parsing", "parsed", "partial", "blocked", "failed"]);
 const SOURCE_RELATIONS = new Set(["contains", "links_to", "derived_from", "describes", "mirrors", "supersedes"]);
 const VENDOR_EVENT_KINDS = new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]);
+const VENDOR_INTERACTION_CHANNELS = new Set<VendorInteractionChannel>(["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"]);
+const VENDOR_INTERACTION_EVIDENCE = new Set<VendorInteractionEvidence>(["direct", "relayed", "automated", "internal"]);
+const VENDOR_INTERACTION_VISIBILITIES = new Set<VendorInteractionVisibility>(["portal", "internal"]);
 const REPRESENTATION_KINDS = new Set<TaskRepresentationKind>(["harbor", "native", "unknown"]);
 const REPRESENTATION_PATHS = new Set<TaskRepresentationPath>(["already_harbor", "normalized_to_harbor", "native_format_exception"]);
 const NORMALIZATION_OUTCOMES = new Set<TaskNormalizationOutcome>(["already_harbor", "normalized", "needs_review", "incomplete", "blocked", "not_a_task"]);
@@ -651,6 +658,29 @@ export function parseVendorEvent(value: unknown): VendorEventInput {
     batchIds: uniqueIdentifiers(input.batchIds, "batchIds"),
     metadata: optionalObject(input.metadata, "metadata"),
   } as VendorEventInput;
+}
+
+export function parseVendorInteraction(value: unknown): VendorInteractionInput {
+  const input = object(value, "vendor interaction");
+  onlyKeys(input, new Set([
+    "id", "vendorId", "kind", "eventType", "title", "summary", "channel", "evidence", "visibility",
+    "occurredAt", "sourceEventIds", "batchIds", "actor",
+  ]), "vendor interaction");
+  return {
+    id: identifier(input.id, "id"),
+    vendorId: identifier(input.vendorId, "vendorId"),
+    kind: enumValue(input.kind, VENDOR_EVENT_KINDS, "kind"),
+    eventType: identifier(input.eventType, "eventType"),
+    title: boundedString(input.title, "title", 300),
+    summary: boundedString(input.summary, "summary", 5_000),
+    channel: enumValue(input.channel, VENDOR_INTERACTION_CHANNELS, "channel"),
+    evidence: enumValue(input.evidence, VENDOR_INTERACTION_EVIDENCE, "evidence"),
+    visibility: enumValue(input.visibility, VENDOR_INTERACTION_VISIBILITIES, "visibility"),
+    occurredAt: timestamp(input.occurredAt, "occurredAt"),
+    sourceEventIds: uniqueIdentifiers(input.sourceEventIds, "sourceEventIds"),
+    batchIds: uniqueIdentifiers(input.batchIds, "batchIds"),
+    actor: boundedString(input.actor, "actor", 500),
+  } as VendorInteractionInput;
 }
 
 export function parseVendorArchive(value: unknown): VendorArchiveInput {
