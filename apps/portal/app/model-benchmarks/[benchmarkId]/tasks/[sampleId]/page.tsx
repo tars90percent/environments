@@ -8,7 +8,7 @@ import { getPortalSession } from "../../../../feishu-auth";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Sample Task Analysis — 小环境",
+  title: "Environment Resource Management",
   description: "Task-level structure, provenance, evaluation, and upstream filesystem metadata for a model benchmark sample.",
 };
 

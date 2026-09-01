@@ -480,6 +480,25 @@ test("keeps the benchmark catalog heading and cards minimal", async () => {
   assert.equal(modelBenchmarks.find((benchmark) => benchmark.id === "apex-agents")?.publisher, "Mercor");
 });
 
+test("uses the site soundwave and name in browser metadata", async () => {
+  const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const catalogPage = await readFile(new URL("../app/model-benchmarks/page.tsx", import.meta.url), "utf8");
+  const taskPage = await readFile(new URL("../app/model-benchmarks/[benchmarkId]/tasks/[sampleId]/page.tsx", import.meta.url), "utf8");
+  const soundwaveSvg = await readFile(new URL("../public/soundwave-icon.svg", import.meta.url), "utf8");
+  const favicon = await readFile(new URL("../public/favicon.png", import.meta.url));
+  const appleIcon = await readFile(new URL("../public/apple-touch-icon.png", import.meta.url));
+  const soundwaveIcon = await readFile(new URL("../public/soundwave-icon.png", import.meta.url));
+
+  for (const source of [layout, catalogPage, taskPage]) assert.match(source, /title: "Environment Resource Management"/);
+  assert.match(layout, /soundwave-icon\.svg/);
+  assert.match(layout, /soundwave-icon\.png/);
+  assert.doesNotMatch(layout, /octopus-icon/);
+  assert.match(soundwaveSvg, /id="soundwave-gradient"/);
+  assert.deepEqual([favicon.readUInt32BE(16), favicon.readUInt32BE(20)], [64, 64]);
+  assert.deepEqual([appleIcon.readUInt32BE(16), appleIcon.readUInt32BE(20)], [180, 180]);
+  assert.deepEqual([soundwaveIcon.readUInt32BE(16), soundwaveIcon.readUInt32BE(20)], [512, 512]);
+});
+
 test("groups only Harbor tasks into benchmark directions and portal groups", async () => {
   const { benchmarkCategoryId, buildBenchmarkLandscape } = await benchmarkLandscapeModule();
   const catalog = {

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Benchmark Catalog — 小环境",
+  title: "Environment Resource Management",
   description: "Benchmarks, task examples, official sources, and composite indexes.",
 };
 
