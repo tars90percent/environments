@@ -10,6 +10,12 @@ non-conclusive check attempts, findings, and operational work.
 S3-compatible object storage holds immutable payloads, task artifacts,
 and check evidence.
 
+Registered Harbor tasks are also copied, after their canonical registry
+transaction commits, into the separate `harbor-tasks` distribution bucket as
+individual files under `<vendor-id>/<submission-id>/<task-name>/`. This mirror
+contains no archives, stable-key directory, or generated wrapper; the canonical
+CASE artifact remains the source of truth.
+
 The workflow is deliberately narrow: preserve a submission, identify clear tasks
 or traces, assign each one a registered general benchmark direction, label each
 task `harbor` or `non_harbor`, and run Environment, Oracle, and Nop only for
@@ -112,6 +118,14 @@ provide a bulk default for every supplied task linked to that item; a task-level
 benchmark ID is available for a mixed package. Benchmark versions are not
 tracked. Historical task versions are assigned `unspecified` rather than being
 inferred from filenames. Non-Harbor tasks stop there.
+
+When `append-tasks` or `reconcile-submission-tasks` receives a desired set that
+contains a Harbor task, it publishes every active Harbor task in that submission
+to `harbor-tasks` after the database transaction succeeds. Exact reruns are
+idempotent. A publication error makes the command fail without undoing the
+canonical registration, so rerunning the same input safely completes or verifies
+the mirror. The four `HARBOR_TASKS_S3_*` connection values and optional region
+configure this destination independently from CASE's canonical artifact store.
 
 Benchmark reviews are append-only annotations on an existing task or trace
 version. `assign-task-benchmarks` changes the current benchmark without replacing

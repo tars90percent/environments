@@ -7,6 +7,7 @@ import { basename } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { contentTypeFor, storeSourcePayload } from "./capture-runtime.js";
+import { publishSubmissionHarborTasks, registerTaskSetWithHarborPublication } from "./harbor-publication.js";
 import type { ArtifactStore } from "./registry/artifacts.js";
 import { localArtifactStore, openLocalRepository } from "./registry/local.js";
 import type { RegistryRepository } from "./registry/repository.js";
@@ -105,12 +106,24 @@ if (command === "operations") {
       case "reconcile-submission-source-items":
         output(await repository.reconcileSubmissionSourceItems(parseReconcileSubmissionSourceItems(await jsonFile(argument))));
         break;
-      case "append-tasks":
-        output(await repository.appendTasks(parseAppendTasks(await jsonFile(argument))));
+      case "append-tasks": {
+        const registration = parseAppendTasks(await jsonFile(argument));
+        output(await registerTaskSetWithHarborPublication({
+          registration,
+          register: () => repository.appendTasks(registration),
+          publish: (submissionId) => publishSubmissionHarborTasks(repository, submissionId),
+        }));
         break;
-      case "reconcile-submission-tasks":
-        output(await repository.reconcileSubmissionTasks(parseReconcileSubmissionTasks(await jsonFile(argument))));
+      }
+      case "reconcile-submission-tasks": {
+        const registration = parseReconcileSubmissionTasks(await jsonFile(argument));
+        output(await registerTaskSetWithHarborPublication({
+          registration,
+          register: () => repository.reconcileSubmissionTasks(registration),
+          publish: (submissionId) => publishSubmissionHarborTasks(repository, submissionId),
+        }));
         break;
+      }
       case "classify-submission":
         output(await repository.classifySubmissionIntake(parseSubmissionIntakeClassification(await jsonFile(argument))));
         break;
@@ -303,12 +316,12 @@ function operationSchemas() {
     "append-tasks": {
       arguments: ["<tasks.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "actor"],
-      note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override.",
+      note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override. After the registry transaction commits, every active Harbor task in the submission is published as exact individual files to harbor-tasks; an export failure leaves the registration committed and makes this command fail so the same input can be retried safely.",
     },
     "reconcile-submission-tasks": {
       arguments: ["<reconciliation.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "reason", "actor"],
-      note: "Atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version.",
+      note: "Atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version. When the desired active set contains Harbor tasks, publication to harbor-tasks runs after commit and is safely retryable.",
     },
     "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },

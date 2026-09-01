@@ -124,6 +124,31 @@ CASE owns the canonical registry and sample artifacts:
 - The durable queue may schedule capture, parsing, and Harbor-check work. A queued item does not prove that a worker ran it.
 - Use the `case-registry` CLI rather than raw database writes. It calls the canonical registry library directly. Inspect the existing record first, choose the narrowest operation, and run `case-registry operations` for the current command schemas instead of guessing fields. The HTTP API serves the portal-facing catalog. A dormant researcher-upload adapter may remain for compatibility, but it is not an active capture path.
 
+### Harbor task distribution bucket
+
+The Railway `harbor-tasks` bucket is the programmatic distribution mirror for registered Harbor sample tasks. It is not CASE's canonical artifact store, a second registry, a check-evidence store, or a place for non-Harbor material. CASE's content-addressed artifacts remain authoritative; the distribution bucket exposes the exact individual files of each registered Harbor task so automated consumers do not need to understand CASE provenance records or unpack source archives.
+
+The bucket has exactly this logical shape:
+
+```text
+harbor-tasks/
+  <vendor-id>/
+    <submission-id>/
+      <task-name>/
+        task.toml
+        instruction.md
+        environment/
+        tests/
+        solution/
+        ...any other exact task files
+```
+
+Object keys begin with `<vendor-id>/<submission-id>/<task-name>/`; the bucket name is not part of the key. The vendor and submission components are their registry IDs. The task name comes from the task's recorded source path. Do not add a task stable key, version directory, generated manifest, archive, or other wrapper to this layout. Preserve the task package exactly: publish regular files separately with their original relative paths and bytes, including missing or extra files, and never invent a missing `task.toml`. When `task.toml` exists, write it last so its presence marks a completed publication.
+
+`case-registry append-tasks` and `case-registry reconcile-submission-tasks` own automatic publication. They must first commit the ordinary canonical metadata, benchmark assignment, source links, task version, and artifact relationship. Only after that transaction succeeds, when the supplied active set contains a Harbor task, publish every active catalog-visible Harbor task for that submission from its exact registered artifact into `harbor-tasks`. Non-Harbor tasks and traces are never published there. Publication must be idempotent: an exact rerun verifies and reuses the existing objects, while a differing or incomplete occupied prefix fails instead of overwriting registered task files.
+
+Distribution failure does not roll back or disguise a successful registry transaction. The registration command must fail visibly after commit, and the operator should rerun the exact same supported command; registry registration and exact-file publication are both idempotent. A persistent prefix collision requires correcting the registered mapping through the normal audited submission/task-version workflow, never editing bucket objects by hand. The separately deployed Harbor task gateway is the external read interface over this bucket; its API documentation describes discovery, recursive listing, and file download. Bucket credentials remain confined to CASE and the gateway.
+
 Trusted CASE capture commands call the same registry library directly with CASE's database and object-store credentials so that artifact, source, submission, and link records are committed through one canonical transaction. This is not permission for ad hoc SQL; humans and agents still use the supported commands.
 
 小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, summarized arrival provenance, parsed material, general benchmark directions, GPU requirements, original-vendor-file and task-artifact downloads, the three Harbor tags, whether an unset check was attempted without a conclusive result, and findings. It does not expose source records or external source links. It has no submission upload, procurement, research-demand, status, scoring, recommendation, or review workflow.
@@ -157,7 +182,7 @@ Before claiming Harbor checking is available, verify the live Harbor and Modal v
 
 ## Repository and instruction boundary
 
-[`tars90percent/environments`](https://github.com/tars90percent/environments) is the source repository for the complete system. CASE lives in `apps/case`, and the portal lives in `apps/portal`. Their packages, tests, build commands, secrets, Railway services, and deployment checks remain independent even though they share one Git history. Never commit or publish vendor sample folders or material.
+[`tars90percent/environments`](https://github.com/tars90percent/environments) is the source repository for the complete system. CASE lives in `apps/case`, and the portal lives in `apps/portal`. Their packages, tests, build commands, secrets, Railway services, and deployment checks remain independent even though they share one Git history. Never commit vendor sample folders or material to Git, and never publish them outside the controlled `harbor-tasks` distribution path described above.
 
 This root `AGENTS.md` is the only source-controlled agent policy. Codex tasks opened anywhere in the monorepo inherit it from the Git root. Do not add a second application-level `AGENTS.md` that restates or modifies the operating philosophy. Production CASE packages this exact root file into its image and copies it into `AGENT_WORKSPACE/AGENTS.md` before starting or resuming a Codex thread. A source-controlled policy change is therefore a CASE production change and must trigger and pass the CASE deployment workflow.
 
@@ -165,4 +190,4 @@ Both Railway services deploy independently from `main` using scoped paths. CASE 
 
 ## Completion
 
-A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked, assigned a registered general benchmark direction, and classified; every parsed Harbor task has an accurate GPU requirement; and each non-GPU Harbor task has accurate Environment, Oracle, and Nop tags for every conclusive check, an operational attempt record for each check that was tried without a conclusive result, and only directly supported task-specific findings. GPU-required checks and prerequisite-blocked checks that were never attempted remain unset without an attempt record. Non-Harbor material requires no Harbor checks.
+A submission is complete for this system when its original payload and arrival provenance are preserved; any clearly identifiable tasks or traces are linked, assigned a registered general benchmark direction, and classified; every active Harbor task has been published or exactly verified in the `harbor-tasks` distribution bucket; every parsed Harbor task has an accurate GPU requirement; and each non-GPU Harbor task has accurate Environment, Oracle, and Nop tags for every conclusive check, an operational attempt record for each check that was tried without a conclusive result, and only directly supported task-specific findings. GPU-required checks and prerequisite-blocked checks that were never attempted remain unset without an attempt record. Non-Harbor material requires neither Harbor publication nor Harbor checks.

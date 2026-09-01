@@ -29,6 +29,26 @@ export type HarborExportFile = {
   mode: number;
 };
 
+export type HarborExportTaskResult = {
+  taskId: string;
+  prefix: string;
+  fileCount: number;
+  sizeBytes: number;
+  status: "planned" | "published" | "unchanged";
+};
+
+export type HarborExportResult = {
+  mode: "plan" | "publish";
+  submissions: string[] | "all_catalog_visible_harbor_submissions";
+  selectedTaskCount: number;
+  completedTaskCount: number;
+  failedTaskCount: number;
+  fileCount: number;
+  sizeBytes: number;
+  tasks: HarborExportTaskResult[];
+  errors: Array<{ taskId: string; error: string }>;
+};
+
 export async function exportSubmissions(input: {
   repository: RegistryRepository;
   sourceStore: ArtifactStore;
@@ -37,7 +57,7 @@ export async function exportSubmissions(input: {
   allCatalogHarborTasks?: boolean;
   continueOnError?: boolean;
   onProgress?: (event: Record<string, unknown>) => void;
-}): Promise<unknown> {
+}): Promise<HarborExportResult> {
   const requested = new Set(input.submissionIds);
   if (requested.size !== input.submissionIds.length) throw new Error("Submission IDs must not be repeated");
   const snapshot = await input.repository.sampleCatalogSnapshot();
@@ -102,7 +122,7 @@ async function prepareAndMaybePublishTask(input: {
   repository: RegistryRepository;
   sourceStore: ArtifactStore;
   destinationStore?: ArtifactStore;
-}): Promise<{ taskId: string; prefix: string; fileCount: number; sizeBytes: number; status: "planned" | "published" | "unchanged" }> {
+}): Promise<HarborExportTaskResult> {
   const { vendor, submission, task } = input;
   if (!task.sourcePath) throw new Error(`Harbor task has no source path: ${task.id}`);
   const candidates = await artifactCandidates(input.repository, submission, task);

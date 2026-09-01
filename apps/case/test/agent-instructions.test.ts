@@ -92,6 +92,19 @@ test("the CASE guide keeps registry mechanics self-describing", async () => {
   assert.match(guide, /run `case-registry operations` for the current command schemas/);
 });
 
+test("the CASE guide defines automatic exact-file Harbor task distribution", async () => {
+  const guide = await readFile(rootGuide, "utf8");
+
+  assert.match(guide, /Railway `harbor-tasks` bucket is the programmatic distribution mirror/);
+  assert.match(guide, /<vendor-id>\/<submission-id>\/<task-name>\//);
+  assert.match(guide, /Do not add a task stable key, version directory, generated manifest, archive, or other wrapper/);
+  assert.match(guide, /publish regular files separately with their original relative paths and bytes/);
+  assert.match(guide, /first commit the ordinary canonical metadata.*Only after that transaction succeeds/s);
+  assert.match(guide, /Non-Harbor tasks and traces are never published there/);
+  assert.match(guide, /Distribution failure does not roll back.*successful registry transaction/s);
+  assert.match(guide, /every active Harbor task has been published or exactly verified/);
+});
+
 test("the image does not package CASE-specific skills", async () => {
   const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
