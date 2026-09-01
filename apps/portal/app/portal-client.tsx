@@ -82,6 +82,9 @@ const text = {
     directCaseImport: "Direct CASE import",
     dataset: "Download tasks",
     downloadAllHarbor: "Download all Harbor tasks",
+    preparingHarborDownload: "Preparing ZIP…",
+    retryHarborDownload: "Retry download",
+    harborDownloadFailed: "Couldn’t prepare the ZIP.",
     datasetNote: "Download the exact task or trace artifacts retained for this submission.",
     taskDownload: "Download",
     task: "Task",
@@ -146,6 +149,9 @@ const text = {
     directCaseImport: "直接导入 CASE",
     dataset: "下载任务",
     downloadAllHarbor: "下载全部 Harbor 任务",
+    preparingHarborDownload: "正在准备 ZIP…",
+    retryHarborDownload: "重新下载",
+    harborDownloadFailed: "ZIP 准备失败。",
     datasetNote: "下载这次提交中保留的精确任务或轨迹文件。",
     taskDownload: "下载",
     task: "任务",
@@ -408,14 +414,38 @@ function StateCard({ children }: { children: string }) {
 
 function VendorHarborTasks({ vendor, categories, downloadHref, language }: { vendor: CatalogVendor; categories: BenchmarkCategoryGroup[]; downloadHref: string; language: Language }) {
   const t = text[language];
+  const [downloadState, setDownloadState] = useState<"idle" | "preparing" | "error">("idle");
   const groups = categories.map((category) => ({
     category,
     records: category.groups.flatMap((group) => group.records).filter((record) => record.vendor.id === vendor.id),
   })).filter((group) => group.records.length > 0);
   const taskCount = groups.reduce((sum, group) => sum + group.records.length, 0);
   if (taskCount === 0) return null;
+  const prepareDownload = async () => {
+    if (downloadState === "preparing") return;
+    setDownloadState("preparing");
+    try {
+      const response = await fetch(downloadHref, { method: "POST", headers: { accept: "application/json" } });
+      const archive = await response.json() as { status?: unknown; downloadUrl?: unknown; filename?: unknown };
+      if (!response.ok || archive.status !== "ready" || typeof archive.downloadUrl !== "string" || typeof archive.filename !== "string") {
+        throw new Error("Archive is not ready");
+      }
+      const target = new URL(archive.downloadUrl, window.location.href);
+      if (target.protocol !== "https:" && target.origin !== window.location.origin) throw new Error("Unsafe archive URL");
+      const link = document.createElement("a");
+      link.href = target.href;
+      link.download = archive.filename;
+      link.rel = "noopener";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setDownloadState("idle");
+    } catch {
+      setDownloadState("error");
+    }
+  };
   return <section className="vendor-harbor-tasks">
-    <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><a href={downloadHref}>{t.downloadAllHarbor}</a></div>
+    <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><button disabled={downloadState === "preparing"} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>
     <div className="vendor-harbor-category-list">{groups.map((group) => <section className="vendor-harbor-category" key={group.category.id}>
       <header className="vendor-harbor-category-header"><h3>{group.category.label[language]}</h3></header>
       <div className="task-list">{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>

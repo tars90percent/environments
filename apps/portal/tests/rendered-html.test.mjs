@@ -45,17 +45,6 @@ async function taskGroupsModule() {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
 }
 
-async function datasetArchiveModule() {
-  const result = await buildModule({
-    entryPoints: [new URL("../app/dataset-archive.ts", import.meta.url).pathname],
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    write: false,
-  });
-  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
-}
-
 async function modelBenchmarkDataModule() {
   const result = await buildModule({
     entryPoints: [new URL("../app/model-benchmark-data.ts", import.meta.url).pathname],
@@ -485,7 +474,9 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /BenchmarkDetail/);
   assert.match(source, /<VendorHarborTasks categories=\{landscape\?\.categories \?\? \[\]\} downloadHref=[\s\S]*vendor=\{selectedVendor\} \/>[\s\S]*className="submission-history"/);
   assert.match(source, /category\.groups\.flatMap\(\(group\) => group\.records\)/);
-  assert.match(source, /className="vendor-harbor-toolbar">[\s\S]*\{taskCount\} \{t\.harbor\}[\s\S]*\{t\.downloadAllHarbor\}/);
+  assert.match(source, /className="vendor-harbor-toolbar">[\s\S]*\{taskCount\} \{t\.harbor\}[\s\S]*<button disabled=\{downloadState === "preparing"\}[\s\S]*t\.downloadAllHarbor/);
+  assert.match(source, /fetch\(downloadHref, \{ method: "POST"/);
+  assert.match(workerSource, /fetch\(`\$\{gatewayUrl\}\/zip-archives`/);
   assert.match(source, /className="vendor-harbor-category-header">[\s\S]*group\.category\.label\[language\]/);
   assert.match(source, /group\.records\.map\(\(\{ task \}\) => <TaskRow key=\{task\.id\} language=\{language\} task=\{task\} \/>/);
   assert.doesNotMatch(source, /vendorHarborNote|noHarborTasks/);
@@ -683,9 +674,8 @@ test("downloads every available task artifact", async () => {
   }
 });
 
-test("downloads every Harbor task from the distribution gateway across vendor submissions", async () => {
+test("prepares one cached ZIP for every Harbor task across vendor submissions", async () => {
   const app = await worker();
-  const { tarBytes } = await datasetArchiveModule();
   const submissions = [
     { id: "submission-new", date: "2026-08-20", label: "New sample", source: "Captured delivery", formats: ["harbor", "non_harbor"], sourceEvents: [], tasks: [
       task("task-terminal", "terminal-task", "task", "harbor", "artifact:terminal"),
@@ -702,47 +692,50 @@ test("downloads every Harbor task from the distribution gateway across vendor su
     vendors: [{ id: "vendor-1", name: "Vendor One", short: "V1", submissions }],
     totals: { vendors: 1, submissions: 2, tasks: 3, harborTasks: 2 },
   };
-  const gatewayBytes = tarBytes([
-    { path: "vendor-1/submission-new/terminal-task/instruction.md", bytes: new TextEncoder().encode("terminal instructions") },
-    { path: "vendor-1/submission-new/terminal-task/task.toml", bytes: new TextEncoder().encode("terminal metadata") },
-    { path: "vendor-1/submission-old/coding-task/instruction.md", bytes: new TextEncoder().encode("coding instructions") },
-    { path: "vendor-1/submission-old/coding-task/task.toml", bytes: new TextEncoder().encode("coding metadata") },
-  ]);
   const gatewayRequests = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(target);
     if (url.href === "https://case.example/v1/catalog") return Response.json(catalog);
-    if (url.href === "https://gateway.example/archives") {
+    if (url.href === "https://gateway.example/zip-archives") {
       gatewayRequests.push({
         method: init.method,
         authorization: new Headers(init.headers).get("authorization"),
         body: JSON.parse(init.body),
       });
-      return new Response(gatewayBytes, { headers: { "content-type": "application/x-tar" } });
+      return Response.json({
+        status: "ready",
+        cacheHit: false,
+        downloadUrl: "https://archive-cache.example/vendor/archive.zip?signature=test",
+        filename: "Vendor-One-harbor-tasks.zip",
+        sizeBytes: 123456,
+        sourceBytes: 234567,
+        fileCount: 4,
+        taskCount: 2,
+        expiresInSeconds: 900,
+      });
     }
     throw new Error(`Unexpected fetch: ${url.href}`);
   };
 
   try {
     const response = await app.fetch(
-      new Request("http://localhost/api/vendors/vendor-1/harbor-download", { headers: { cookie: sessionCookie() } }),
+      new Request("http://localhost/api/vendors/vendor-1/harbor-download", { method: "POST", headers: { cookie: sessionCookie() } }),
       { ...authEnv, CASE_REGISTRY_URL: "https://case.example", CASE_REGISTRY_CATALOG_TOKEN: "catalog-test", HARBOR_TASK_GATEWAY_URL: "https://gateway.example", HARBOR_TASK_GATEWAY_TOKEN: "gateway-test", ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
       { waitUntil() {}, passThroughOnException() {} },
     );
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-case-task-count"), "2");
-    assert.match(response.headers.get("content-disposition"), /Vendor-One-harbor-tasks\.tar/);
-    const entries = tarEntries(new Uint8Array(await response.arrayBuffer()));
-    assert.deepEqual([...entries.keys()], [
-      "manifest.json",
-      "vendor-1/submission-new/terminal-task/instruction.md",
-      "vendor-1/submission-new/terminal-task/task.toml",
-      "vendor-1/submission-old/coding-task/instruction.md",
-      "vendor-1/submission-old/coding-task/task.toml",
-    ]);
-    const manifest = JSON.parse(new TextDecoder().decode(entries.get("manifest.json")));
+    assert.deepEqual(await response.json(), {
+      status: "ready",
+      cacheHit: false,
+      downloadUrl: "https://archive-cache.example/vendor/archive.zip?signature=test",
+      filename: "Vendor-One-harbor-tasks.zip",
+      sizeBytes: 123456,
+      taskCount: 2,
+      expiresInSeconds: 900,
+    });
+    const manifest = gatewayRequests[0].body.manifest;
     assert.equal(manifest.schemaVersion, "case.vendor-harbor-task-files.v1");
     assert.deepEqual(manifest.vendor, { id: "vendor-1", name: "Vendor One" });
     assert.deepEqual(manifest.selection, { kind: "all_active_vendor_harbor_tasks", source: "harbor-task-gateway", included: 2 });
@@ -753,7 +746,11 @@ test("downloads every Harbor task from the distribution gateway across vendor su
     assert.deepEqual(gatewayRequests, [{
       method: "POST",
       authorization: "Bearer gateway-test",
-      body: { roots: ["vendor-1/submission-new/terminal-task", "vendor-1/submission-old/coding-task"] },
+      body: {
+        roots: ["vendor-1/submission-new/terminal-task", "vendor-1/submission-old/coding-task"],
+        manifest,
+        filename: "Vendor-One-harbor-tasks.zip",
+      },
     }]);
   } finally {
     globalThis.fetch = originalFetch;

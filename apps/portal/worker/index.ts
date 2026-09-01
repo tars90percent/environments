@@ -6,7 +6,6 @@ import {
   taskDatasetArchive,
   taskDatasetFilename,
   taskDatasetManifest,
-  vendorHarborDatasetArchive,
   vendorHarborDatasetFilename,
   vendorHarborDatasetManifest,
   type DatasetPackage,
@@ -62,7 +61,7 @@ const worker = {
 
     const vendorHarborDownloadMatch = url.pathname.match(/^\/api\/vendors\/([^/]+)\/harbor-download$/);
     if (vendorHarborDownloadMatch?.[1]) {
-      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
       if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
       if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
         return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
@@ -81,26 +80,36 @@ const worker = {
         if (!vendor) return Response.json({ error: "vendor_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
         const manifest = vendorHarborDatasetManifest(vendor);
         if (!manifest.tasks.length) return Response.json({ error: "vendor_harbor_dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
-        const gateway = await fetch(`${gatewayUrl}/archives`, {
+        const filename = vendorHarborDatasetFilename(vendor);
+        const gateway = await fetch(`${gatewayUrl}/zip-archives`, {
           method: "POST",
           headers: {
             authorization: `Bearer ${runtimeEnv.HARBOR_TASK_GATEWAY_TOKEN}`,
             "content-type": "application/json",
-            accept: "application/x-tar, application/json",
+            accept: "application/json",
           },
-          body: JSON.stringify({ roots: manifest.tasks.map((task) => task.bucketPrefix) }),
+          body: JSON.stringify({
+            roots: manifest.tasks.map((task) => task.bucketPrefix),
+            manifest,
+            filename,
+          }),
         });
         if (!gateway.ok) return registryErrorResponse(gateway, "vendor_harbor_dataset_unavailable");
-        const archive = vendorHarborDatasetArchive(vendor, gateway);
-        return new Response(archive, {
-          status: 200,
-          headers: {
-            "content-type": "application/x-tar",
-            "content-disposition": `attachment; filename="${vendorHarborDatasetFilename(vendor)}"`,
-            "cache-control": "no-store",
-            "x-content-type-options": "nosniff",
-            "x-case-task-count": String(manifest.tasks.length),
-          },
+        const archive = await gateway.json() as Record<string, unknown>;
+        const downloadUrl = preparedArchiveUrl(archive.downloadUrl);
+        if (archive.status !== "ready" || archive.filename !== filename || archive.taskCount !== manifest.tasks.length) {
+          throw new Error("Harbor task gateway returned invalid archive metadata");
+        }
+        return Response.json({
+          status: "ready",
+          cacheHit: archive.cacheHit === true,
+          downloadUrl,
+          filename,
+          sizeBytes: positiveInteger(archive.sizeBytes, "archive size"),
+          taskCount: manifest.tasks.length,
+          expiresInSeconds: positiveInteger(archive.expiresInSeconds, "archive expiry"),
+        }, {
+          headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
         });
       } catch {
         return Response.json({ error: "vendor_harbor_dataset_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
@@ -333,4 +342,16 @@ function harborTaskGatewayUrl(env: Env): string | null {
   const url = new URL(raw);
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Harbor task gateway URL must use HTTP or HTTPS");
   return url.href.replace(/\/$/, "");
+}
+
+function preparedArchiveUrl(value: unknown): string {
+  if (typeof value !== "string") throw new Error("Harbor task gateway returned no archive URL");
+  const url = new URL(value);
+  if (url.protocol !== "https:") throw new Error("Harbor task gateway returned an unsafe archive URL");
+  return url.href;
+}
+
+function positiveInteger(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) throw new Error(`Harbor task gateway returned an invalid ${label}`);
+  return value as number;
 }

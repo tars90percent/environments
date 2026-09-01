@@ -1,5 +1,6 @@
 import type { CatalogTask, CatalogVendor } from "../../catalog";
-import { tarBytes, vendorHarborDatasetArchive, vendorHarborDatasetFilename, vendorHarborDatasetManifest } from "../../dataset-archive";
+import { strToU8, zipSync } from "fflate";
+import { vendorHarborDatasetFilename, vendorHarborDatasetManifest } from "../../dataset-archive";
 
 const vendor: CatalogVendor = {
   id: "preview-vendor",
@@ -18,18 +19,31 @@ const vendor: CatalogVendor = {
   ],
 };
 
-export function GET() {
+export function POST() {
   if (process.env.NODE_ENV !== "development") return new Response("Not found", { status: 404 });
   const manifest = vendorHarborDatasetManifest(vendor);
-  const encode = (value: string) => new TextEncoder().encode(value);
-  const gatewayArchive = new Response(tarBytes(manifest.tasks.flatMap((task) => [
-    { path: `${task.bucketPrefix}/instruction.md`, bytes: encode(`# ${task.title}\n`) },
-    { path: `${task.bucketPrefix}/task.toml`, bytes: encode(`schema_version = "1.3"\n`) },
-  ])), { headers: { "content-type": "application/x-tar" } });
-  const archive = vendorHarborDatasetArchive(vendor, gatewayArchive);
-  return new Response(archive, {
+  return Response.json({
+    status: "ready",
+    cacheHit: true,
+    downloadUrl: "/local-preview/vendor-harbor-download?download=1",
+    filename: vendorHarborDatasetFilename(vendor),
+    taskCount: manifest.tasks.length,
+  }, { headers: { "cache-control": "no-store" } });
+}
+
+export function GET(request: Request) {
+  if (process.env.NODE_ENV !== "development" || new URL(request.url).searchParams.get("download") !== "1") return new Response("Not found", { status: 404 });
+  const manifest = vendorHarborDatasetManifest(vendor);
+  const files: Record<string, Uint8Array> = {
+    "manifest.json": strToU8(`${JSON.stringify(manifest, null, 2)}\n`),
+  };
+  for (const task of manifest.tasks) {
+    files[`${task.bucketPrefix}/instruction.md`] = strToU8(`# ${task.title}\n`);
+    files[`${task.bucketPrefix}/task.toml`] = strToU8(`schema_version = "1.3"\n`);
+  }
+  return new Response(zipSync(files, { level: 6 }), {
     headers: {
-      "content-type": "application/x-tar",
+      "content-type": "application/zip",
       "content-disposition": `attachment; filename="${vendorHarborDatasetFilename(vendor)}"`,
       "cache-control": "no-store",
       "x-case-task-count": String(manifest.tasks.length),

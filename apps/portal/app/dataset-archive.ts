@@ -123,13 +123,7 @@ export function vendorHarborDatasetManifest(vendor: CatalogVendor) {
 }
 
 export function vendorHarborDatasetFilename(vendor: CatalogVendor): string {
-  return `${safeFilenameSegment(vendor.name, "case-vendor")}-harbor-tasks.tar`;
-}
-
-export function vendorHarborDatasetArchive(vendor: CatalogVendor, gatewayArchive: Response): ReadableStream<Uint8Array> {
-  if (!gatewayArchive.ok || !gatewayArchive.body) throw new Error("Harbor task gateway returned no archive body");
-  const manifest = vendorHarborDatasetManifest(vendor);
-  return iteratorStream(vendorHarborDatasetChunks(manifest, gatewayArchive.body)[Symbol.asyncIterator]());
+  return `${safeFilenameSegment(vendor.name, "case-vendor")}-harbor-tasks.zip`;
 }
 
 function datasetArchiveStream(tasks: DatasetPackage[], manifest: unknown, readme: string, resolvePackage: PackageResolver): ReadableStream<Uint8Array> {
@@ -201,25 +195,6 @@ async function* datasetArchiveChunks(tasks: DatasetPackage[], manifest: unknown,
   }
 
   yield new Uint8Array(1024);
-}
-
-async function* vendorHarborDatasetChunks(manifest: ReturnType<typeof vendorHarborDatasetManifest>, gatewayBody: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
-  yield* inlineTarEntry("manifest.json", encoder.encode(`${JSON.stringify(manifest, null, 2)}\n`));
-  const reader = gatewayBody.getReader();
-  let completed = false;
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) {
-        completed = true;
-        break;
-      }
-      yield chunk.value;
-    }
-  } finally {
-    if (!completed) await reader.cancel();
-    reader.releaseLock();
-  }
 }
 
 function datasetPackages(submission: DatasetSubmission): DatasetPackage[] {
