@@ -3,15 +3,14 @@ import { useEffect, useState } from "react";
 import type { BenchmarkReferenceLanguage, ModelBenchmarkReference } from "./model-benchmark-data";
 import {
   modelBenchmarkAgentViews,
-  type ModelBenchmarkAgentView,
   type PublisherAgentMaterial,
   type PublisherContractAgentView,
+  type PublisherTaskPromptSource,
   type TauAgentRuntimeView,
 } from "./model-benchmark-agent-views";
 import {
-  modelBenchmarkSampleContext,
+  modelBenchmarkSamples,
   type BenchmarkSampleTask,
-  type BenchmarkSampleTaskFormat,
 } from "./model-benchmark-samples";
 import {
   modelBenchmarkTaskFilesystems,
@@ -28,105 +27,53 @@ import {
 const copy = {
   en: {
     back: "Back to benchmark catalog",
-    overviewTab: "Overview",
-    agentTab: "Agent view",
-    evaluationTab: "Evaluation",
-    recordTab: "Publisher record",
-    filesTab: "Prompt & files",
-    provenanceTab: "Provenance",
-    taskBrief: "Task brief",
-    taskBriefNote: "A compact description of the work, its inputs, and expected deliverable.",
-    taskContext: "Task context",
-    benchmark: "Benchmark",
-    source: "Source",
-    path: "Path",
-    role: "Role",
-    kind: "Kind",
-    size: "Size",
-    file: "File",
-    directory: "Directory",
+    systemPromptTab: "System prompt",
+    taskBriefTab: "Assignment",
+    taskTab: "Task JSON",
+    materialsTab: "Materials",
+    recordTab: "Record",
+    filesTab: "Files",
+    taskContext: "Task contents",
+    taskProfiles: "Tasks",
+    taskNumber: "Task",
+    openOriginal: "Publisher source",
     openUpstream: "Open upstream",
-    selectFile: "Select a file to preview it.",
-    previewSource: "Publisher-hosted preview",
-    previewSourceNote: "Loaded directly from the pinned upstream revision. The catalog does not proxy or store this file.",
-    loadingPreview: "Loading file from the publisher…",
-    previewError: "This file could not be loaded from the publisher.",
-    binaryPreview: "This binary format cannot be rendered in the browser preview.",
+    selectFile: "Select a file.",
+    previewSource: "Upstream file",
+    loadingPreview: "Loading file…",
+    previewError: "File unavailable.",
+    binaryPreview: "Preview unavailable for this file type.",
     openRaw: "Open raw file",
-    field: "Field",
-    contains: "Contains",
-    availability: "Availability",
-    provenance: "Published task provenance",
-    provenanceNote: "The original material remains publisher-hosted and in the publisher's language. This catalog stores descriptive metadata; file previews load directly from the pinned publisher revision.",
-    sourceId: "Source ID",
-    originalLanguage: "Original language",
-    taskFormat: "Task type",
-    benchmarkVersion: "Benchmark version",
-    openOriginal: "Open publisher source",
-    anatomy: "Task anatomy",
-    anatomyNote: "A descriptive map of what the task asks the model to consume, produce, and satisfy.",
-    objective: "Objective",
-    inputs: "Inputs",
-    expectedOutput: "Expected output",
-    evaluation: "Evaluation",
-    capabilities: "Capability pattern",
-    filesystem: "Harbor task filesystem",
-    filesystemNote: "Complete upstream package tree at the recorded Git snapshot. Select a file to preview its publisher-hosted contents.",
+    filesystem: "Files",
     repository: "Repository",
-    snapshot: "Tree snapshot",
+    snapshot: "Revision",
     verified: "Verified",
     files: "files",
     directories: "directories",
-    totalSize: "total file size",
-    openRoot: "Open task root",
-    nativeRecord: "Publisher-native task record",
-    nativeRecordNote: "The task is mapped in the structure used by its publisher: record fields, linked inputs, execution path, output contract, and grading contract.",
-    formatBoundary: "Protected benchmark",
-    formatBoundaryNote: "Only the publisher's documented record shape is shown. No gated item, option, answer, rationale, or attachment is reproduced.",
-    publicBoundary: "Source-linked profile",
-    publicBoundaryNote: "Field names and task structure are recorded here. The English prompt, answer, rubric, tests, and linked file contents stay at the publisher source.",
-    recordFormat: "Record format",
+    nativeRecord: "Publisher record",
+    recordFormat: "Format",
     recordDomain: "Domain",
     recordSplit: "Split",
     sourceObject: "Source object",
-    sourceMap: "Source record map",
-    sourceMapNote: "Every publisher field that participates in the task, with its role and the material it carries.",
-    taskFlow: "Task execution path",
-    taskFlowNote: "How the original record becomes a scored response or deliverable.",
-    outputContract: "Output contract",
-    gradingContract: "Grading contract",
-    catalogedMetadata: "Cataloged metadata",
-    publisherOnly: "Payload stays upstream",
-    openEntry: "Open upstream",
-    formats: {
-      "file-deliverable": "File deliverable",
-      "agent-simulation": "Agent simulation",
-      desktop: "Desktop interaction",
-      "web-research": "Web research",
-      "interactive-game": "Interactive game",
-      harbor: "Harbor task",
-      "repository-engineering": "Repository engineering",
-      "program-reconstruction": "Program reconstruction",
-      "model-training": "Model training",
-      spreadsheet: "Spreadsheet editing",
-      "scientific-code": "Scientific code",
-      "long-context-qa": "Long-context Q&A",
-      "open-qa": "Open-answer Q&A",
-      "visual-qa": "Visual Q&A",
-      "document-parsing": "Document parsing",
-      cybersecurity: "Cybersecurity",
-      "format-archetype": "Format archetype",
-    },
+    sourceMap: "Fields",
+    field: "Field",
+    role: "Role",
+    contains: "Contents",
+    availability: "Availability",
+    outputContract: "Output",
+    gradingContract: "Grading",
+    catalogedMetadata: "Cataloged",
+    publisherOnly: "Upstream only",
     roles: {
       documentation: "Documentation",
-      "task-instruction": "Task instruction",
-      "task-config": "Task configuration",
+      "task-instruction": "Instruction",
+      "task-config": "Configuration",
       environment: "Environment",
-      "input-artifact": "Input artifact",
+      "input-artifact": "Input",
       "environment-helper": "Environment helper",
-      "reference-solution": "Reference solution",
+      "reference-solution": "Solution",
       verifier: "Verifier",
-      repository: "Repository metadata",
+      repository: "Repository",
     },
     nativeRoles: {
       identity: "Identity",
@@ -138,96 +85,44 @@ const copy = {
     },
   },
   zh: {
-    back: "返回 Benchmark Catalog",
-    overviewTab: "概览",
-    agentTab: "智能体视角",
-    evaluationTab: "评测",
-    recordTab: "发布方记录",
-    filesTab: "题面与文件",
-    provenanceTab: "来源",
-    taskBrief: "任务简报",
-    taskBriefNote: "简洁说明任务内容、输入及预期交付物。",
-    taskContext: "任务上下文",
-    benchmark: "Benchmark",
-    source: "来源",
-    path: "路径",
-    role: "角色",
-    kind: "类型",
-    size: "大小",
-    file: "文件",
-    directory: "目录",
-    openUpstream: "打开上游文件",
-    selectFile: "选择文件以预览内容。",
-    previewSource: "发布方托管的预览",
-    previewSourceNote: "内容直接从已固定版本的上游仓库加载，本目录不代理或存储该文件。",
-    loadingPreview: "正在从发布方加载文件…",
-    previewError: "无法从发布方加载此文件。",
-    binaryPreview: "浏览器预览无法呈现这种二进制格式。",
+    back: "返回基准目录",
+    systemPromptTab: "系统指令",
+    taskBriefTab: "任务说明",
+    taskTab: "任务 JSON",
+    materialsTab: "材料",
+    recordTab: "记录",
+    filesTab: "文件",
+    taskContext: "任务内容",
+    taskProfiles: "任务",
+    taskNumber: "任务",
+    openOriginal: "发布方来源",
+    openUpstream: "打开上游",
+    selectFile: "选择文件。",
+    previewSource: "上游文件",
+    loadingPreview: "正在加载文件…",
+    previewError: "文件不可用。",
+    binaryPreview: "无法预览此文件类型。",
     openRaw: "打开原始文件",
-    field: "字段",
-    contains: "承载内容",
-    availability: "可用范围",
-    provenance: "发布方任务来源",
-    provenanceNote: "原始材料仍由发布方托管并保持发布方语言。本目录只保存描述性元数据；文件预览直接从已固定版本的发布方仓库加载。",
-    sourceId: "来源 ID",
-    originalLanguage: "原始语言",
-    taskFormat: "任务类型",
-    benchmarkVersion: "Benchmark 版本",
-    openOriginal: "打开发布方来源",
-    anatomy: "任务结构解析",
-    anatomyNote: "描述模型需要读取什么、产出什么，以及满足何种评分条件。",
-    objective: "任务目标",
-    inputs: "输入信息",
-    expectedOutput: "预期输出",
-    evaluation: "评分方式",
-    capabilities: "能力模式",
-    filesystem: "Harbor 任务文件系统",
-    filesystemNote: "记录 Git 树快照中的完整上游任务包结构。选择文件即可预览发布方托管的内容。",
+    filesystem: "文件",
     repository: "代码仓库",
-    snapshot: "Git 树快照",
+    snapshot: "版本",
     verified: "核验日期",
     files: "个文件",
     directories: "个目录",
-    totalSize: "文件总大小",
-    openRoot: "打开任务根目录",
-    nativeRecord: "发布方原生任务记录",
-    nativeRecordNote: "按照发布方实际使用的结构解析任务：记录字段、外链输入、执行路径、输出约定及评分约定。",
-    formatBoundary: "受限 Benchmark",
-    formatBoundaryNote: "仅展示发布方公开说明的记录结构，不复现任何受控题目、选项、答案、解析或附件。",
-    publicBoundary: "来源链接式画像",
-    publicBoundaryNote: "这里只记录字段名与任务结构；英文题面、答案、评分细则、测试及外链文件内容均保留在发布方源站。",
-    recordFormat: "记录格式",
+    nativeRecord: "发布方记录",
+    recordFormat: "格式",
     recordDomain: "领域",
     recordSplit: "数据集划分",
     sourceObject: "来源对象",
-    sourceMap: "来源记录字段图",
-    sourceMapNote: "列出参与任务的每个发布方字段、字段角色及其承载的材料。",
-    taskFlow: "任务执行路径",
-    taskFlowNote: "展示原始记录如何转化为可评分的回答或交付物。",
-    outputContract: "输出约定",
-    gradingContract: "评分约定",
-    catalogedMetadata: "已记录元数据",
-    publisherOnly: "内容保留在上游",
-    openEntry: "打开上游文件",
-    formats: {
-      "file-deliverable": "文件交付任务",
-      "agent-simulation": "智能体模拟",
-      desktop: "桌面交互",
-      "web-research": "网络研究",
-      "interactive-game": "交互式游戏",
-      harbor: "Harbor 任务",
-      "repository-engineering": "代码仓库工程",
-      "program-reconstruction": "程序重建",
-      "model-training": "模型训练",
-      spreadsheet: "电子表格编辑",
-      "scientific-code": "科学代码",
-      "long-context-qa": "长上下文问答",
-      "open-qa": "开放式问答",
-      "visual-qa": "视觉问答",
-      "document-parsing": "文档解析",
-      cybersecurity: "网络安全",
-      "format-archetype": "任务格式画像",
-    },
+    sourceMap: "字段",
+    field: "字段",
+    role: "角色",
+    contains: "内容",
+    availability: "可用范围",
+    outputContract: "输出",
+    gradingContract: "评分",
+    catalogedMetadata: "已记录",
+    publisherOnly: "仅上游",
     roles: {
       documentation: "说明文档",
       "task-instruction": "任务指令",
@@ -257,20 +152,21 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
   sample: BenchmarkSampleTask;
 }) {
   const t = copy[language];
-  const context = modelBenchmarkSampleContext[benchmark.id];
   const filesystem = modelBenchmarkTaskFilesystems[sample.id];
   const nativeRecord = modelBenchmarkNativeTaskRecords[sample.id];
   const agentView = modelBenchmarkAgentViews[sample.id];
+  const siblingSamples = modelBenchmarkSamples[benchmark.id] ?? [sample];
   const backHref = localPreview ? "/local-preview/model-benchmarks" : "/model-benchmarks";
-  const [activeTab, setActiveTab] = useState<TaskDetailTab>("overview");
-  const tabs: Array<{ id: TaskDetailTab; label: string }> = [
-    { id: "overview", label: t.overviewTab },
-    ...(agentView ? [{ id: "agent" as const, label: t.agentTab }] : []),
-    ...(nativeRecord ? [{ id: "record" as const, label: t.recordTab }] : []),
-    ...(filesystem ? [{ id: "files" as const, label: t.filesTab }] : []),
-    { id: "evaluation", label: t.evaluationTab },
-    { id: "provenance", label: t.provenanceTab },
-  ];
+  const tabs: Array<{ id: TaskDetailTab; label: string }> = filesystem
+    ? [{ id: "files", label: t.filesTab }]
+    : agentView?.kind === "tau-runtime"
+      ? [{ id: "prompt", label: t.systemPromptTab }, { id: "task", label: t.taskTab }]
+      : [
+        ...(agentView?.promptSource ? [{ id: "prompt" as const, label: t.taskBriefTab }] : []),
+        ...(agentView?.materials.length ? [{ id: "materials" as const, label: t.materialsTab }] : []),
+        ...(nativeRecord ? [{ id: "record" as const, label: t.recordTab }] : []),
+      ];
+  const [activeTab, setActiveTab] = useState<TaskDetailTab>(tabs[0]?.id ?? "record");
 
   return <article className="model-task-detail">
     <header className="model-task-browser-head">
@@ -283,9 +179,18 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
         </div>
         <a className="model-task-primary-link" href={sample.sourceUrl} rel="noreferrer" target="_blank"><span>{sample.sourceLabel[language]}</span><strong>{t.openOriginal} ↗</strong></a>
       </div>
+      {siblingSamples.length > 1 ? <nav aria-label={t.taskProfiles} className="model-task-profile-switcher">
+        <span>{t.taskProfiles}</span>
+        <div>{siblingSamples.map((entry, index) => <a
+          aria-current={entry.id === sample.id ? "page" : undefined}
+          className={entry.id === sample.id ? "active" : ""}
+          href={`${localPreview ? "/local-preview" : ""}/model-benchmarks/${benchmark.id}/tasks/${entry.id}`}
+          key={entry.id}
+        ><small>{t.taskNumber} {index + 1}</small><strong>{entry.title[language]}</strong></a>)}</div>
+      </nav> : null}
     </header>
 
-    <div aria-label={t.taskContext} className="model-task-tabs" role="tablist">
+    {tabs.length > 1 ? <div aria-label={t.taskContext} className="model-task-tabs" role="tablist">
       {tabs.map((tab) => <button
         aria-controls={`model-task-panel-${tab.id}`}
         aria-selected={activeTab === tab.id}
@@ -295,66 +200,55 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
         role="tab"
         type="button"
       >{tab.label}</button>)}
-    </div>
+    </div> : null}
 
-    <div className="model-task-panel" id={`model-task-panel-${activeTab}`} role="tabpanel">
-      {activeTab === "agent" && agentView?.kind === "tau-runtime" ? <TauAgentInputView language={language} view={agentView} /> : null}
-      {activeTab === "agent" && agentView?.kind === "publisher-contract" ? <PublisherAgentInputView language={language} sample={sample} view={agentView} /> : null}
-      {activeTab === "overview" ? <TaskOverview language={language} sample={sample} /> : null}
+    <div className={`model-task-panel${tabs.length === 1 ? " single" : ""}`} id={`model-task-panel-${activeTab}`} role="tabpanel">
+      {activeTab === "prompt" && agentView?.kind === "tau-runtime" ? <TauAgentInputView language={language} view={agentView} /> : null}
+      {activeTab === "prompt" && agentView?.kind === "publisher-contract" && agentView.promptSource ? <PublisherTaskPromptView language={language} source={agentView.promptSource} /> : null}
+      {activeTab === "task" && agentView?.kind === "tau-runtime" ? <TauTaskDefinitionView language={language} view={agentView} /> : null}
+      {activeTab === "materials" && agentView?.kind === "publisher-contract" ? <PublisherAgentInputView language={language} view={agentView} /> : null}
       {activeTab === "record" && nativeRecord ? <NativeTaskRecordSection language={language} record={nativeRecord} sourceUrl={sample.sourceUrl} /> : null}
       {activeTab === "files" && filesystem ? <FilesystemBrowser filesystem={filesystem} language={language} /> : null}
-      {activeTab === "evaluation" ? <TaskEvaluation agentView={agentView} filesystem={filesystem} language={language} nativeRecord={nativeRecord} sample={sample} /> : null}
-      {activeTab === "provenance" ? <TaskProvenance benchmark={benchmark} context={context} language={language} sample={sample} /> : null}
     </div>
   </article>;
 }
 
-type TaskDetailTab = "agent" | "evaluation" | "overview" | "record" | "files" | "provenance";
+type TaskDetailTab = "files" | "materials" | "prompt" | "record" | "task";
 
 const agentViewCopy = {
   en: {
     prompt: "System prompt",
-    runtime: "Runtime inputs",
-    hidden: "Hidden task state",
-    defaultRuntime: "Default retrieval configuration: alltools",
-    promptNote: "This text is sent in the system role. Tool schemas are supplied separately with the model request.",
+    configuration: "alltools",
     loading: "Loading and composing publisher prompt sources…",
     error: "The publisher sources could not be loaded or composed.",
     sourceFiles: "Prompt sources",
     openSource: "Open source",
-    toolsTitle: "Tool payload",
-    toolsNote: "These tools are available through the default banking knowledge configuration; their typed schemas travel outside the text prompt.",
-    hiddenTitle: "Orchestrator-only task definition",
-    hiddenNote: "The JSON below drives the simulator and grader. It is not pasted into the evaluated agent's context.",
+    toolsTitle: "Tools",
+    taskDefinition: "Task definition",
+    loadingTask: "Loading task JSON…",
+    taskError: "The task JSON could not be loaded.",
     rawTask: "Open raw task",
   },
   zh: {
-    prompt: "系统提示",
-    runtime: "运行时输入",
-    hidden: "隐藏任务状态",
-    defaultRuntime: "默认检索配置：alltools",
-    promptNote: "该文本以 system 角色发送。工具 schema 随模型请求单独提供。",
-    loading: "正在加载并组合发布方提示源…",
-    error: "无法加载或组合发布方提示源。",
-    sourceFiles: "提示来源",
+    prompt: "系统指令",
+    configuration: "alltools",
+    loading: "正在加载并组合发布方指令来源…",
+    error: "无法加载或组合发布方指令来源。",
+    sourceFiles: "指令来源",
     openSource: "打开来源",
-    toolsTitle: "工具载荷",
-    toolsNote: "这些工具由默认 banking knowledge 配置提供；其类型化 schema 位于文本提示之外。",
-    hiddenTitle: "仅编排器可见的任务定义",
-    hiddenNote: "下方 JSON 用于驱动模拟器和评分器，不会粘贴进受测智能体的上下文。",
+    toolsTitle: "工具",
+    taskDefinition: "任务定义",
+    loadingTask: "正在加载任务 JSON…",
+    taskError: "无法加载任务 JSON。",
     rawTask: "打开原始任务",
   },
 } as const;
 
 const publisherAgentCopy = {
   en: {
-    instruction: "Task instruction",
-    instructionRole: "TASK / USER",
-    summaryBoundary: "Catalog description — not prompt text",
-    providedMaterial: "Provided material",
-    providedMaterialNote: "The concrete files, records, environments, or external access available to the evaluated agent.",
+    providedMaterial: "Materials",
     materialCount: "items",
-    noMaterial: "No benchmark item or attached material is publicly available for this task.",
+    noMaterial: "No public material is available for this task.",
     publisherFile: "Publisher file",
     publisherRecord: "Publisher record",
     runtimeGenerated: "Generated at runtime",
@@ -363,26 +257,16 @@ const publisherAgentCopy = {
     toolAccess: "Tool access",
     openWeb: "Open web",
     openMaterial: "Open upstream",
-    materialUnavailable: "This material is represented by the linked publisher record and is not directly previewable here.",
-    noSeparateField: "No separate field is documented here.",
-    payloadUpstream: "Payload at publisher",
-    metadataHere: "Metadata cataloged",
-    hiddenTitle: "State withheld from the evaluated agent",
-    hiddenNote: "Identity, reference, and grader fields belong to orchestration or evaluation unless the publisher explicitly includes them in the visible instruction.",
-    identity: "Orchestration metadata",
-    reference: "Reference state",
-    grader: "Grader inputs",
-    notVisible: "Not agent-visible",
-    gradingContract: "Scoring contract",
+    materialUnavailable: "Open the publisher record to inspect this material.",
+    taskPrompt: "Assignment",
+    loadingPrompt: "Loading the publisher prompt…",
+    promptError: "The publisher prompt could not be loaded.",
+    openDataset: "Publisher source",
   },
   zh: {
-    instruction: "任务指令",
-    instructionRole: "TASK / USER",
-    summaryBoundary: "目录描述，并非原始题面",
-    providedMaterial: "提供的材料",
-    providedMaterialNote: "受测智能体实际可用的文件、记录、环境或外部访问。",
+    providedMaterial: "材料",
     materialCount: "项",
-    noMaterial: "该任务没有公开 Benchmark 条目或随附材料。",
+    noMaterial: "该任务没有公开材料。",
     publisherFile: "发布方文件",
     publisherRecord: "发布方记录",
     runtimeGenerated: "运行时生成",
@@ -391,40 +275,11 @@ const publisherAgentCopy = {
     toolAccess: "工具访问",
     openWeb: "开放网络",
     openMaterial: "打开上游来源",
-    materialUnavailable: "该材料由所链接的发布方记录表示，无法在此直接预览。",
-    noSeparateField: "此处未说明独立字段。",
-    payloadUpstream: "内容保留在发布方",
-    metadataHere: "已记录元数据",
-    hiddenTitle: "不向受测智能体公开的状态",
-    hiddenNote: "标识、参考答案与评分器字段属于编排或评测状态，除非发布方明确将其包含在可见指令中。",
-    identity: "编排元数据",
-    reference: "参考状态",
-    grader: "评分器输入",
-    notVisible: "智能体不可见",
-    gradingContract: "评分约定",
-  },
-} as const;
-
-const taskEvaluationCopy = {
-  en: {
-    eyebrow: "Evaluation contract",
-    title: "How this task is evaluated",
-    verifierArtifacts: "Verifier artifacts",
-    verifierNote: "Publisher-hosted files that implement the task's checks.",
-    noVerifier: "No separate verifier artifact is listed for this task.",
-    openVerifier: "Open upstream",
-    loading: "Loading the publisher's task definition…",
-    error: "The publisher task definition could not be loaded.",
-  },
-  zh: {
-    eyebrow: "评测约定",
-    title: "该任务如何评测",
-    verifierArtifacts: "评分器文件",
-    verifierNote: "实现任务检查逻辑的发布方托管文件。",
-    noVerifier: "该任务没有单独列出的评分器文件。",
-    openVerifier: "打开上游文件",
-    loading: "正在加载发布方任务定义…",
-    error: "无法加载发布方任务定义。",
+    materialUnavailable: "在发布方记录中查看此材料。",
+    taskPrompt: "任务说明",
+    loadingPrompt: "正在加载发布方任务说明…",
+    promptError: "无法加载发布方任务说明。",
+    openDataset: "发布方来源",
   },
 } as const;
 
@@ -478,36 +333,169 @@ function TauAgentInputView({ language, view }: {
 
   return <section className="agent-input-view">
     <div className="agent-input-prompt-panel">
-      <header><div><span>{t.defaultRuntime}</span><h3>{t.prompt}</h3><p>{t.promptNote}</p></div><a href={view.promptSources.agentRuntime.sourceUrl} rel="noreferrer" target="_blank">{t.openSource} ↗</a></header>
+      <header><div><span>{t.configuration}</span><h3>{t.prompt}</h3></div><a href={view.promptSources.agentRuntime.sourceUrl} rel="noreferrer" target="_blank">{t.openSource} ↗</a></header>
       {loadState.status === "loading" ? <div className="agent-input-state"><span className="task-file-preview-spinner" /><p>{t.loading}</p></div> : null}
       {loadState.status === "error" ? <div className="agent-input-state"><strong>{t.error}</strong></div> : null}
       {loadState.status === "ready" ? <pre><code>{loadState.systemPrompt}</code></pre> : null}
       <footer><strong>{t.sourceFiles}</strong><div>{promptSources.map((source) => <a href={source.sourceUrl} key={source.path} rel="noreferrer" target="_blank"><code>{source.path}</code><span>↗</span></a>)}</div></footer>
     </div>
 
-    <div className="tau-agent-visible-inputs">
-      <section><header><h3>{t.runtime}</h3></header><ul className="agent-runtime-inputs">{view.runtimeInputs.map((input) => <li key={input.en}>{input[language]}</li>)}</ul></section>
-      <aside><header><h3>{t.toolsTitle}</h3><p>{t.toolsNote}</p></header>{view.toolGroups.map((group) => <div className="agent-tool-group" key={group.label.en}><strong>{group.label[language]}</strong><div>{group.tools.map((tool) => <code key={tool}>{tool}</code>)}</div></div>)}</aside>
-    </div>
+    <section className="tau-agent-tools"><header><h3>{t.toolsTitle}</h3></header>{view.toolGroups.map((group) => <div className="agent-tool-group" key={group.label.en}><strong>{group.label[language]}</strong><div>{group.tools.map((tool) => <code key={tool}>{tool}</code>)}</div></div>)}</section>
   </section>;
 }
 
-function PublisherAgentInputView({ language, sample, view }: {
+function PublisherAgentInputView({ language, view }: {
   language: BenchmarkReferenceLanguage;
-  sample: BenchmarkSampleTask;
   view: PublisherContractAgentView;
 }) {
-  const t = publisherAgentCopy[language];
-
   return <section className="agent-input-view publisher-agent-view">
-    <div className="publisher-agent-input-panel">
-      <section className="agent-message-contract">
-        <header><span>{t.instructionRole}</span><div><h3>{t.instruction}</h3><p>{t.summaryBoundary}</p></div></header>
-        <p className="agent-message-summary">{sample.objective[language]}</p>
-      </section>
+    <PublisherMaterialBrowser language={language} materials={view.materials} />
+  </section>;
+}
 
-      <PublisherMaterialBrowser language={language} materials={view.materials} />
-    </div>
+type PublisherPromptState =
+  | { status: "loading" }
+  | { status: "ready"; sections: PublisherPromptSection[] }
+  | { status: "error" };
+
+type PublisherPromptSection = {
+  field: string;
+  preformatted: boolean;
+  text: string;
+};
+
+type PublisherRowsResponse = {
+  rows?: Array<{
+    row?: Record<string, unknown>;
+    row_idx?: unknown;
+  }>;
+};
+
+function matchesPublisherIdentity(record: Record<string, unknown>, identity: Record<string, string | number>) {
+  return Object.entries(identity).every(([field, expected]) => record[field] === expected);
+}
+
+function findPublisherRecord(value: unknown, identity: Record<string, string | number>): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  if (!Array.isArray(value) && matchesPublisherIdentity(value as Record<string, unknown>, identity)) return value as Record<string, unknown>;
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    const match = findPublisherRecord(child, identity);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+function publisherPromptSections(record: Record<string, unknown>, fields: string[]): PublisherPromptSection[] {
+  return fields.flatMap((field) => {
+    const value = record[field];
+    if (typeof value === "string" && value.trim()) return [{ field, preformatted: false, text: value.trim() }];
+    if (value !== undefined && value !== null) return [{ field, preformatted: true, text: JSON.stringify(value, null, 2) }];
+    return [];
+  });
+}
+
+function parsePublisherCsv(text: string): Array<Record<string, string>> {
+  const rows: string[][] = [];
+  let cell = "";
+  let quoted = false;
+  let row: string[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"') {
+      if (quoted && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => value.length > 0)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  const headers = rows.shift() ?? [];
+  return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
+}
+
+function parsePublisherPythonTask(text: string, exampleId: string | number): Record<string, unknown> | undefined {
+  const marker = new RegExp(`["']example_id["']\\s*:\\s*${String(exampleId).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+  const markerIndex = text.search(marker);
+  if (markerIndex < 0) return undefined;
+  const blockStart = Math.max(0, text.lastIndexOf("\ndef ", markerIndex));
+  const nextFunction = text.indexOf("\ndef ", markerIndex + 1);
+  const block = text.slice(blockStart, nextFunction < 0 ? text.length : nextFunction);
+  const userMessage = block.match(/["']role["']\s*:\s*["']user["'][\s\S]*?["']content["']\s*:\s*\(([\s\S]*?)\)\s*,\s*\n\s*\}/)?.[1];
+  if (!userMessage) return undefined;
+  const literals = userMessage.match(/"(?:\\.|[^"\\])*"/g) ?? [];
+  const user = literals.map((literal) => JSON.parse(literal) as string).join("");
+  return user ? { example_id: exampleId, user } : undefined;
+}
+
+function PublisherTaskPromptView({ language, source }: {
+  language: BenchmarkReferenceLanguage;
+  source: PublisherTaskPromptSource;
+}) {
+  const t = publisherAgentCopy[language];
+  const [state, setState] = useState<PublisherPromptState>({ status: "loading" });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        let sections: PublisherPromptSection[] = [];
+        if (source.kind === "dataset-row") {
+          const response = await fetch(source.rowUrl, { cache: "force-cache", signal: controller.signal });
+          if (!response.ok) throw new Error(`The publisher row request failed with ${response.status}`);
+          const payload = await response.json() as PublisherRowsResponse;
+          const result = payload.rows?.[0];
+          const row = result?.row;
+          const identityMatches = row && matchesPublisherIdentity(row, source.identity);
+          sections = row ? publisherPromptSections(row, source.instructionFields) : [];
+          if (result?.row_idx !== source.rowIndex || !identityMatches) throw new Error("The publisher row did not match the expected task");
+        } else {
+          const response = await fetch(source.rawUrl, { cache: "force-cache", signal: controller.signal });
+          if (!response.ok) throw new Error(`The publisher file request failed with ${response.status}`);
+          const text = await response.text();
+          if (source.fileFormat === "text") {
+            sections = [{ field: source.instructionFields[0] ?? "instruction", preformatted: true, text: text.trim() }];
+          } else {
+            const payload = source.fileFormat === "jsonl"
+              ? text.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as unknown)
+              : source.fileFormat === "csv"
+                ? parsePublisherCsv(text)
+                : source.fileFormat === "python-task"
+                  ? parsePublisherPythonTask(text, source.identity.example_id ?? "")
+                  : JSON.parse(text) as unknown;
+            const record = findPublisherRecord(payload, source.identity);
+            sections = record ? publisherPromptSections(record, source.instructionFields) : [];
+          }
+        }
+        if (sections.length !== source.instructionFields.length) throw new Error("The publisher source did not contain the expected task instructions");
+        if (!controller.signal.aborted) setState({ sections, status: "ready" });
+      } catch {
+        if (!controller.signal.aborted) setState({ status: "error" });
+      }
+    })();
+    return () => controller.abort();
+  }, [source]);
+
+  return <section className="publisher-task-prompt">
+    <header><div><span>{source.sourceLabel[language]}</span><h3>{t.taskPrompt}</h3></div><a href={source.sourceUrl} rel="noreferrer" target="_blank">{t.openDataset} ↗</a></header>
+    {state.status === "loading" ? <div className="agent-input-state"><span className="task-file-preview-spinner" /><p>{t.loadingPrompt}</p></div> : null}
+    {state.status === "error" ? <div className="agent-input-state"><strong>{t.promptError}</strong><a href={source.sourceUrl} rel="noreferrer" target="_blank">{t.openDataset} ↗</a></div> : null}
+    {state.status === "ready" ? <div className="publisher-task-prompt-body">{state.sections.map((section) => <section className="publisher-task-prompt-section" key={section.field}>{state.sections.length > 1 ? <code>{section.field}</code> : null}{section.preformatted ? <pre><code>{section.text}</code></pre> : section.text.split(/\n{2,}/).map((paragraph, index) => <p key={`${section.field}-${index}`}>{paragraph}</p>)}</section>)}</div> : null}
   </section>;
 }
 
@@ -521,7 +509,7 @@ function PublisherMaterialBrowser({ language, materials }: {
   const hasPreviewableMaterial = materials.some((material) => Boolean(material.rawUrl));
 
   return <section className="publisher-material-browser">
-    <header><div><h3>{t.providedMaterial}</h3><p>{t.providedMaterialNote}</p></div><span>{materials.length} {t.materialCount}</span></header>
+    <header><h3>{t.providedMaterial}</h3><span>{materials.length} {t.materialCount}</span></header>
     {!hasPreviewableMaterial && materials.length > 0 ? <div className="publisher-material-records">{materials.map((material) => <article className="publisher-material-record" key={material.path}><span aria-hidden>{fileIcon(material.path)}</span><div><code>{material.path}</code><small>{materialOriginLabel(material.origin, language)}</small><p>{material.detail[language]}</p></div><a href={material.sourceUrl} rel="noreferrer" target="_blank">{t.openMaterial} ↗</a></article>)}</div> : null}
     {selected && hasPreviewableMaterial ? <div className="publisher-material-layout">
       <nav aria-label={t.providedMaterial} className="publisher-material-list">{materials.map((material) => <button className={selected.path === material.path ? "selected" : ""} key={material.path} onClick={() => setSelectedPath(material.path)} type="button"><span aria-hidden>{fileIcon(material.path)}</span><span><code>{material.path}</code><small>{materialOriginLabel(material.origin, language)}</small></span>{material.sizeBytes === undefined ? null : <small>{formatBytes(material.sizeBytes)}</small>}</button>)}</nav>
@@ -538,12 +526,12 @@ function AgentMaterialPreview({ language, material }: {
   const general = copy[language];
   const t = publisherAgentCopy[language];
   const previewKind = material.rawUrl ? filePreviewKind(material.path) : "binary";
-  const [preview, setPreview] = useState<FilePreviewState>(material.rawUrl && previewKind !== "image" && previewKind !== "binary" ? { status: "loading" } : { status: "ready" });
+  const [preview, setPreview] = useState<FilePreviewState>(material.rawUrl && previewKind !== "image" && previewKind !== "office" && previewKind !== "binary" ? { status: "loading" } : { status: "ready" });
 
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | undefined;
-    if (!material.rawUrl || previewKind === "image" || previewKind === "binary") return () => controller.abort();
+    if (!material.rawUrl || previewKind === "image" || previewKind === "office" || previewKind === "binary") return () => controller.abort();
     void (async () => {
       try {
         const response = await fetch(material.rawUrl, { cache: "force-cache", signal: controller.signal });
@@ -577,37 +565,10 @@ function AgentMaterialPreview({ language, material }: {
       {preview.status === "ready" && material.rawUrl && previewKind === "text" ? <pre><code>{preview.text}</code></pre> : null}
       {/* eslint-disable-next-line @next/next/no-img-element -- Upstream task images are publisher-hosted and must not be proxied. */}
       {preview.status === "ready" && material.rawUrl && previewKind === "image" ? <img alt={material.label[language]} src={material.rawUrl} /> : null}
+      {preview.status === "ready" && material.rawUrl && previewKind === "office" ? <iframe allowFullScreen loading="lazy" src={officeViewerUrl(material.rawUrl)} title={material.label[language]} /> : null}
       {preview.status === "ready" && material.rawUrl && previewKind === "pdf" && preview.objectUrl ? <iframe src={`${preview.objectUrl}#view=FitH`} title={material.label[language]} /> : null}
       {preview.status === "ready" && (!material.rawUrl || previewKind === "binary") ? <div className="task-file-preview-state"><strong>{material.label[language]}</strong><p>{material.detail[language]}</p><a href={material.sourceUrl} rel="noreferrer" target="_blank">{material.rawUrl ? general.openRaw : t.openMaterial} ↗</a>{!material.rawUrl ? <small>{t.materialUnavailable}</small> : null}</div> : null}
     </div>
-    <footer className="task-file-preview-note"><span aria-hidden>↗</span><p>{general.previewSourceNote}</p></footer>
-  </section>;
-}
-
-function AgentContractFieldList({ emptyLabel, fields, language, metadataLabel, upstreamLabel }: {
-  emptyLabel: string;
-  fields: NativeTaskRecord["fields"];
-  language: BenchmarkReferenceLanguage;
-  metadataLabel?: string;
-  upstreamLabel?: string;
-}) {
-  if (fields.length === 0) return <p className="agent-contract-empty">{emptyLabel}</p>;
-  return <dl className="agent-contract-fields">{fields.map((field) => <div key={`${field.role}:${field.name}`}><dt><code>{field.name}</code>{metadataLabel && upstreamLabel ? <span>{field.payload === "cataloged-metadata" ? metadataLabel : upstreamLabel}</span> : null}</dt><dd>{field.summary[language]}</dd></div>)}</dl>;
-}
-
-function TaskEvaluation({ agentView, filesystem, language, nativeRecord, sample }: {
-  agentView: ModelBenchmarkAgentView | undefined;
-  filesystem: NonNullable<(typeof modelBenchmarkTaskFilesystems)[string]> | undefined;
-  language: BenchmarkReferenceLanguage;
-  nativeRecord: NativeTaskRecord | undefined;
-  sample: BenchmarkSampleTask;
-}) {
-  const t = taskEvaluationCopy[language];
-  return <section className="task-evaluation-panel">
-    <header className="task-evaluation-overview"><span>{t.eyebrow}</span><h2>{t.title}</h2><p>{sample.evaluation[language]}</p></header>
-    {agentView?.kind === "tau-runtime" ? <TauEvaluationDetail language={language} view={agentView} /> : null}
-    {agentView?.kind === "publisher-contract" && nativeRecord ? <PublisherEvaluationDetail language={language} record={nativeRecord} /> : null}
-    {filesystem ? <HarborEvaluationArtifacts filesystem={filesystem} language={language} /> : null}
   </section>;
 }
 
@@ -616,12 +577,11 @@ type TauTaskDefinitionState =
   | { status: "ready"; taskDefinition: string }
   | { status: "error" };
 
-function TauEvaluationDetail({ language, view }: {
+function TauTaskDefinitionView({ language, view }: {
   language: BenchmarkReferenceLanguage;
   view: TauAgentRuntimeView;
 }) {
   const t = agentViewCopy[language];
-  const evaluationCopy = taskEvaluationCopy[language];
   const [loadState, setLoadState] = useState<TauTaskDefinitionState>({ status: "loading" });
 
   useEffect(() => {
@@ -639,74 +599,11 @@ function TauEvaluationDetail({ language, view }: {
     return () => controller.abort();
   }, [view]);
 
-  return <div className="agent-input-hidden-panel tau-evaluation-detail">
-    <header><div><span>{t.hidden}</span><h3>{t.hiddenTitle}</h3><p>{t.hiddenNote}</p></div><a href={view.taskDefinition.rawUrl} rel="noreferrer" target="_blank">{t.rawTask} ↗</a></header>
-    <ul>{view.hiddenInputs.map((input) => <li key={input.en}>{input[language]}</li>)}</ul>
-    {loadState.status === "loading" ? <div className="agent-input-state"><span className="task-file-preview-spinner" /><p>{evaluationCopy.loading}</p></div> : null}
-    {loadState.status === "error" ? <div className="agent-input-state"><strong>{evaluationCopy.error}</strong></div> : null}
+  return <section className="tau-task-definition">
+    <header><div><h3>{t.taskDefinition}</h3><code>{view.taskDefinition.path}</code></div><a href={view.taskDefinition.rawUrl} rel="noreferrer" target="_blank">{t.rawTask} ↗</a></header>
+    {loadState.status === "loading" ? <div className="agent-input-state"><span className="task-file-preview-spinner" /><p>{t.loadingTask}</p></div> : null}
+    {loadState.status === "error" ? <div className="agent-input-state"><strong>{t.taskError}</strong></div> : null}
     {loadState.status === "ready" ? <pre><code>{loadState.taskDefinition}</code></pre> : null}
-  </div>;
-}
-
-function PublisherEvaluationDetail({ language, record }: {
-  language: BenchmarkReferenceLanguage;
-  record: NativeTaskRecord;
-}) {
-  const t = publisherAgentCopy[language];
-  const hiddenGroups: Array<{ label: string; role: NativeTaskFieldRole }> = [
-    { label: t.identity, role: "identity" },
-    { label: t.reference, role: "reference" },
-    { label: t.grader, role: "grader" },
-  ];
-  return <div className="publisher-agent-hidden-panel">
-    <header><div><span>{t.notVisible}</span><h3>{t.hiddenTitle}</h3><p>{t.hiddenNote}</p></div></header>
-    <div className="publisher-hidden-groups">{hiddenGroups.map((group) => <section key={group.role}><header><h4>{group.label}</h4></header><AgentContractFieldList emptyLabel={t.noSeparateField} fields={record.fields.filter((item) => item.role === group.role)} language={language} metadataLabel={t.metadataHere} upstreamLabel={t.payloadUpstream} /></section>)}</div>
-    <div className="publisher-grading-contract"><span>{t.gradingContract}</span><p>{record.gradingContract[language]}</p></div>
-  </div>;
-}
-
-function HarborEvaluationArtifacts({ filesystem, language }: {
-  filesystem: NonNullable<(typeof modelBenchmarkTaskFilesystems)[string]>;
-  language: BenchmarkReferenceLanguage;
-}) {
-  const t = taskEvaluationCopy[language];
-  const verifierEntries = filesystem.entries.filter((entry) => entry.kind === "file" && entry.role === "verifier");
-  return <section className="harbor-evaluation-artifacts"><header><h3>{t.verifierArtifacts}</h3><p>{t.verifierNote}</p></header>{verifierEntries.length > 0 ? <ul>{verifierEntries.map((entry) => <li key={entry.path}><code>{entry.path}</code><a href={upstreamFilesystemEntryUrl(filesystem, entry)} rel="noreferrer" target="_blank">{t.openVerifier} ↗</a></li>)}</ul> : <p>{t.noVerifier}</p>}</section>;
-}
-
-function TaskOverview({ language, sample }: {
-  language: BenchmarkReferenceLanguage;
-  sample: BenchmarkSampleTask;
-}) {
-  const t = copy[language];
-  return <section className="task-overview-panel">
-    <header><h2>{t.taskBrief}</h2><p>{t.taskBriefNote}</p></header>
-    <dl className="task-brief-rows">
-      <div><dt>{t.inputs}</dt><dd>{sample.inputs[language]}</dd></div>
-      <div><dt>{t.expectedOutput}</dt><dd>{sample.expectedOutput[language]}</dd></div>
-    </dl>
-    <aside className="task-capability-list"><span>{t.capabilities}</span><ul>{sample.capabilities[language].map((capability) => <li key={capability}>{capability}</li>)}</ul></aside>
-  </section>;
-}
-
-function TaskProvenance({ benchmark, context, language, sample }: {
-  benchmark: ModelBenchmarkReference;
-  context: (typeof modelBenchmarkSampleContext)[string];
-  language: BenchmarkReferenceLanguage;
-  sample: BenchmarkSampleTask;
-}) {
-  const t = copy[language];
-  return <section className="task-provenance-panel">
-    <header><h2>{t.provenance}</h2><p>{t.provenanceNote}</p></header>
-    <dl className="task-provenance-rows">
-      <div><dt>{t.benchmark}</dt><dd>{benchmark.name}</dd></div>
-      <div><dt>{t.sourceId}</dt><dd><code>{sample.sourceId ?? "—"}</code></dd></div>
-      <div><dt>{t.taskFormat}</dt><dd>{formatLabel(context.format, language)}</dd></div>
-      <div><dt>{t.originalLanguage}</dt><dd>{context.originalLanguage}</dd></div>
-      <div><dt>{t.benchmarkVersion}</dt><dd>{benchmark.version ?? "—"}</dd></div>
-      <div><dt>{t.source}</dt><dd>{sample.sourceLabel[language]}</dd></div>
-    </dl>
-    <a className="task-upstream-action" href={sample.sourceUrl} rel="noreferrer" target="_blank">{t.openOriginal}<span aria-hidden>↗</span></a>
   </section>;
 }
 
@@ -791,13 +688,13 @@ function FilePreview({ entry, filesystem, language }: {
   const t = copy[language];
   const contentUrl = upstreamFilesystemEntryContentUrl(filesystem, entry);
   const previewKind = filePreviewKind(entry.path);
-  const [preview, setPreview] = useState<FilePreviewState>(previewKind === "image" || previewKind === "binary" ? { status: "ready" } : { status: "loading" });
+  const [preview, setPreview] = useState<FilePreviewState>(previewKind === "image" || previewKind === "office" || previewKind === "binary" ? { status: "ready" } : { status: "loading" });
 
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | undefined;
 
-    if (previewKind === "image" || previewKind === "binary") {
+    if (previewKind === "image" || previewKind === "office" || previewKind === "binary") {
       return () => controller.abort();
     }
 
@@ -843,10 +740,10 @@ function FilePreview({ entry, filesystem, language }: {
       {preview.status === "ready" && previewKind === "text" ? <pre><code>{preview.text}</code></pre> : null}
       {/* eslint-disable-next-line @next/next/no-img-element -- Upstream task images are publisher-hosted and must not be proxied. */}
       {preview.status === "ready" && previewKind === "image" ? <img alt={entry.path} src={contentUrl} /> : null}
+      {preview.status === "ready" && previewKind === "office" ? <iframe allowFullScreen loading="lazy" src={officeViewerUrl(contentUrl)} title={entry.path} /> : null}
       {preview.status === "ready" && previewKind === "pdf" && preview.objectUrl ? <iframe src={`${preview.objectUrl}#view=FitH`} title={entry.path} /> : null}
       {preview.status === "ready" && previewKind === "binary" ? <div className="task-file-preview-state"><strong>{t.binaryPreview}</strong><a href={contentUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
     </div>
-    <footer className="task-file-preview-note"><span aria-hidden>↗</span><p>{t.previewSourceNote}</p></footer>
   </>;
 }
 
@@ -856,16 +753,11 @@ function NativeTaskRecordSection({ language, record, sourceUrl }: {
   sourceUrl: string;
 }) {
   const t = copy[language];
-  const formatOnly = record.availability === "format-only";
   return <section className="native-record-panel">
     <header className="native-record-intro">
-      <div><h2>{t.nativeRecord}</h2><p>{t.nativeRecordNote}</p></div>
+      <h2>{t.nativeRecord}</h2>
       <a href={sourceUrl} rel="noreferrer" target="_blank">{t.openOriginal} ↗</a>
     </header>
-
-    <div className={`native-record-boundary ${formatOnly ? "protected" : "public"}`}>
-      <strong>{formatOnly ? t.formatBoundary : t.publicBoundary}</strong><p>{formatOnly ? t.formatBoundaryNote : t.publicBoundaryNote}</p>
-    </div>
 
     <dl className="native-record-facts">
       <div><dt>{t.recordFormat}</dt><dd>{record.publisherFormat[language]}</dd></div>
@@ -875,7 +767,7 @@ function NativeTaskRecordSection({ language, record, sourceUrl }: {
     </dl>
 
     <section className="native-record-section">
-      <header><h3>{t.sourceMap}</h3><p>{t.sourceMapNote}</p></header>
+      <header><h3>{t.sourceMap}</h3></header>
       <div className="native-field-table-wrap"><table className="native-field-table">
         <thead><tr><th>{t.field}</th><th>{t.role}</th><th>{t.contains}</th><th>{t.availability}</th></tr></thead>
         <tbody>{record.fields.map((item) => <tr key={item.name}>
@@ -887,15 +779,10 @@ function NativeTaskRecordSection({ language, record, sourceUrl }: {
       </table></div>
     </section>
 
-    <div className="native-record-lower">
-      <section className="native-record-section"><header><h3>{t.taskFlow}</h3><p>{t.taskFlowNote}</p></header><ol className="native-task-flow">
-        {record.stages.map((item, index) => <li key={item.label.en}><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{item.label[language]}</h4><p>{item.summary[language]}</p></div></li>)}
-      </ol></section>
-      <dl className="native-contract-list">
-        <div><dt>{t.outputContract}</dt><dd>{record.outputContract[language]}</dd></div>
-        <div><dt>{t.gradingContract}</dt><dd>{record.gradingContract[language]}</dd></div>
-      </dl>
-    </div>
+    <dl className="native-contract-list">
+      <div><dt>{t.outputContract}</dt><dd>{record.outputContract[language]}</dd></div>
+      <div><dt>{t.gradingContract}</dt><dd>{record.gradingContract[language]}</dd></div>
+    </dl>
   </section>;
 }
 
@@ -945,10 +832,6 @@ function extractTauDenseInstructions(source: string): string {
   return fragments.replaceAll("{provider}", provider).replaceAll("{model}", model);
 }
 
-function formatLabel(format: BenchmarkSampleTaskFormat, language: BenchmarkReferenceLanguage): string {
-  return copy[language].formats[format];
-}
-
 function nativeRoleLabel(role: NativeTaskFieldRole, language: BenchmarkReferenceLanguage): string {
   return copy[language].nativeRoles[role];
 }
@@ -970,11 +853,16 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
-function filePreviewKind(path: string): "binary" | "image" | "pdf" | "text" {
+function filePreviewKind(path: string): "binary" | "image" | "office" | "pdf" | "text" {
   if (/\.(jpg|jpeg|png|gif|webp)$/i.test(path)) return "image";
   if (/\.pdf$/i.test(path)) return "pdf";
+  if (/\.(docx|pptx|xlsx)$/i.test(path)) return "office";
   if (/\.(db|encrypted)$/i.test(path)) return "binary";
   return "text";
+}
+
+function officeViewerUrl(sourceUrl: string): string {
+  return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(sourceUrl)}&wdStartOn=1`;
 }
 
 function fileIcon(path: string): string {
