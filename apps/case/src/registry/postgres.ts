@@ -17,7 +17,7 @@ import type {
   AppendNormalizedTasksResult,
   CaptureSubmissionInput,
   CaptureSubmissionResult,
-  CatalogBatch,
+  CatalogSubmission,
   CatalogCategory,
   CatalogScope,
   CatalogSnapshot,
@@ -124,7 +124,7 @@ type VendorArchiveRow = {
   archived_by: string | null;
   archive_reason: string | null;
 };
-type BatchRow = {
+type SubmissionRow = {
   id: string;
   vendor_id: string;
   submission_date: string | Date;
@@ -132,10 +132,10 @@ type BatchRow = {
   source_label: string;
   declared_task_count: number;
   formats: string[];
-  workflow_status: CatalogBatch["workflowStatus"];
-  catalog_visibility: CatalogBatch["catalogVisibility"];
+  workflow_status: CatalogSubmission["workflowStatus"];
+  catalog_visibility: CatalogSubmission["catalogVisibility"];
   revises_batch_id: string | null;
-  delta: CatalogBatch["delta"];
+  delta: CatalogSubmission["delta"];
 };
 type CategoryRow = {
   batch_id: string;
@@ -253,11 +253,11 @@ type SourceItemRow = {
   captured_at: string | Date | null;
   metadata: Record<string, unknown>;
 };
-type BatchSourceItemRow = SourceItemRow & {
+type SubmissionSourceItemRow = SourceItemRow & {
   batch_id: string;
   submission_roles: string[];
 };
-type SampleSourceItemRow = BatchSourceItemRow & {
+type SampleSourceItemRow = SubmissionSourceItemRow & {
   artifact_kind: ArtifactInput["kind"] | null;
 };
 type SourceRelationRow = {
@@ -706,12 +706,12 @@ export class PostgresRegistry implements RegistryRepository {
           throw new RegistryNotFoundError(`One or more source events do not belong to vendor ${input.vendorId}`);
         }
       }
-      if (input.batchIds.length) {
-        const batches = await client.query<{ id: string }>(
+      if (input.submissionIds.length) {
+        const submissions = await client.query<{ id: string }>(
           "SELECT id FROM registry_submission_batches WHERE vendor_id = $1 AND id = ANY($2::text[])",
-          [input.vendorId, input.batchIds],
+          [input.vendorId, input.submissionIds],
         );
-        if (batches.rowCount !== input.batchIds.length) {
+        if (submissions.rowCount !== input.submissionIds.length) {
           throw new RegistryNotFoundError(`One or more submissions do not belong to vendor ${input.vendorId}`);
         }
       }
@@ -722,7 +722,7 @@ export class PostgresRegistry implements RegistryRepository {
            source_event_ids, batch_ids, metadata, payload_sha256
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11)`,
         [input.id, input.vendorId, input.kind, input.eventType, input.summary, input.actor, input.occurredAt,
-          json(input.sourceEventIds), json(input.batchIds), json(input.metadata ?? {}), payloadSha256],
+          json(input.sourceEventIds), json(input.submissionIds), json(input.metadata ?? {}), payloadSha256],
       );
       await client.query("COMMIT");
       return { eventId: input.id, created: true };
@@ -775,12 +775,12 @@ export class PostgresRegistry implements RegistryRepository {
           throw new RegistryNotFoundError(`One or more source events do not belong to vendor ${input.vendorId}`);
         }
       }
-      if (input.batchIds.length) {
-        const batches = await client.query<{ id: string }>(
+      if (input.submissionIds.length) {
+        const submissions = await client.query<{ id: string }>(
           "SELECT id FROM registry_submission_batches WHERE vendor_id = $1 AND id = ANY($2::text[])",
-          [input.vendorId, input.batchIds],
+          [input.vendorId, input.submissionIds],
         );
-        if (batches.rowCount !== input.batchIds.length) {
+        if (submissions.rowCount !== input.submissionIds.length) {
           throw new RegistryNotFoundError(`One or more submissions do not belong to vendor ${input.vendorId}`);
         }
       }
@@ -791,7 +791,7 @@ export class PostgresRegistry implements RegistryRepository {
            occurred_at, source_event_ids, batch_ids, actor, payload_sha256
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)`,
         [input.id, input.vendorId, input.kind, input.eventType, input.title, input.summary, input.channel,
-          input.evidence, input.visibility, input.occurredAt, json(input.sourceEventIds), json(input.batchIds),
+          input.evidence, input.visibility, input.occurredAt, json(input.sourceEventIds), json(input.submissionIds),
           input.actor, payloadSha256],
       );
       await client.query("COMMIT");
@@ -948,7 +948,7 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  async ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }> {
+  async ingestSubmission(manifest: SubmissionManifest): Promise<{ submissionId: string; created: boolean }> {
     const manifestSha256 = hashManifest(manifest);
     const client = await this.pool.connect();
     try {
@@ -957,14 +957,14 @@ export class PostgresRegistry implements RegistryRepository {
 
       const existing = await client.query<{ manifest_sha256: string }>(
         "SELECT manifest_sha256 FROM registry_submission_batches WHERE id = $1",
-        [manifest.batch.id],
+        [manifest.submission.id],
       );
       if (existing.rows[0]) {
         if (existing.rows[0].manifest_sha256 !== manifestSha256) {
-          throw new RegistryConflictError(`Batch ${manifest.batch.id} already exists with different immutable contents`);
+          throw new RegistryConflictError(`Submission ${manifest.submission.id} already exists with different immutable contents`);
         }
         await client.query("COMMIT");
-        return { batchId: manifest.batch.id, created: false };
+        return { submissionId: manifest.submission.id, created: false };
       }
 
       await client.query(
@@ -982,16 +982,16 @@ export class PostgresRegistry implements RegistryRepository {
            declared_task_count, formats, workflow_status, catalog_visibility,
            revises_batch_id, delta, metadata, manifest_sha256, intake_purpose
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15)`,
-        [manifest.batch.id, manifest.vendor.id, manifest.sourceEvent.id, manifest.batch.date, manifest.batch.label,
-          manifest.batch.sourceLabel, manifest.batch.taskCount, json(manifest.batch.formats), manifest.batch.workflowStatus,
-          manifest.batch.catalogVisibility, manifest.batch.revisesBatchId ?? null, json(manifest.batch.delta),
-          json(manifest.batch.metadata ?? {}), manifestSha256, manifest.batch.metadata?.intakePurpose ?? null],
+        [manifest.submission.id, manifest.vendor.id, manifest.sourceEvent.id, manifest.submission.date, manifest.submission.label,
+          manifest.submission.sourceLabel, manifest.submission.taskCount, json(manifest.submission.formats), manifest.submission.workflowStatus,
+          manifest.submission.catalogVisibility, manifest.submission.revisesSubmissionId ?? null, json(manifest.submission.delta),
+          json(manifest.submission.metadata ?? {}), manifestSha256, manifest.submission.metadata?.intakePurpose ?? null],
       );
       await client.query(
         `INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
          VALUES ($1, $2, 'primary')
          ON CONFLICT(batch_id, source_event_id) DO NOTHING`,
-        [manifest.batch.id, manifest.sourceEvent.id],
+        [manifest.submission.id, manifest.sourceEvent.id],
       );
 
       for (const category of manifest.categories) {
@@ -1004,7 +1004,7 @@ export class PostgresRegistry implements RegistryRepository {
         await client.query(
           `INSERT INTO registry_batch_categories(batch_id, category_id, declared_count, examples)
            VALUES ($1, $2, $3, $4::jsonb)`,
-          [manifest.batch.id, category.id, category.count, json(category.examples ?? [])],
+          [manifest.submission.id, category.id, category.count, json(category.examples ?? [])],
         );
       }
 
@@ -1017,7 +1017,7 @@ export class PostgresRegistry implements RegistryRepository {
              summary = COALESCE(EXCLUDED.summary, registry_tasks.summary),
              updated_at = now()`,
           [stableTaskId(manifest.vendor.id, task.stableKey), manifest.vendor.id, task.stableKey, task.title,
-            task.summary ?? null, manifest.batch.id],
+            task.summary ?? null, manifest.submission.id],
         );
         await client.query(
           `INSERT INTO registry_task_versions(
@@ -1027,10 +1027,10 @@ export class PostgresRegistry implements RegistryRepository {
              task_kind, format_kind, task_stable_key, task_title, task_summary
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
                      $15, $16, $17, $18, $19)`,
-          [task.id, stableTaskId(manifest.vendor.id, task.stableKey), manifest.batch.id, task.categoryId,
+          [task.id, stableTaskId(manifest.vendor.id, task.stableKey), manifest.submission.id, task.categoryId,
             task.sourcePath ?? null, task.format, task.contentSha256 ?? null,
-            task.workflowStatus ?? manifest.batch.workflowStatus,
-            task.catalogVisibility ?? manifest.batch.catalogVisibility,
+            task.workflowStatus ?? manifest.submission.workflowStatus,
+            task.catalogVisibility ?? manifest.submission.catalogVisibility,
             json(task.metadata ?? {}), task.representationKind ?? "unknown",
             task.representationPath ?? null, task.normalizationOutcome ?? null,
             task.representationKind ? "recorded" : "unknown",
@@ -1047,14 +1047,14 @@ export class PostgresRegistry implements RegistryRepository {
         }
       }
 
-      await this.insertStatusEvent(client, "submission_batch", manifest.batch.id, "submission.ingested", "case", {
+      await this.insertStatusEvent(client, "submission_batch", manifest.submission.id, "submission.ingested", "case", {
         manifestSha256,
         sourceEventId: manifest.sourceEvent.id,
         taskVersions: manifest.tasks?.length ?? 0,
       });
-      await this.enqueueWork(client, "parse_submission", "submission_batch", manifest.batch.id, { manifestSha256 });
+      await this.enqueueWork(client, "parse_submission", "submission_batch", manifest.submission.id, { manifestSha256 });
       await client.query("COMMIT");
-      return { batchId: manifest.batch.id, created: true };
+      return { submissionId: manifest.submission.id, created: true };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1069,20 +1069,20 @@ export class PostgresRegistry implements RegistryRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const batchResult = await client.query<{
+      const submissionResult = await client.query<{
         vendor_id: string;
         source_event_id: string;
         intake_purpose: string | null;
       }>(
         `SELECT vendor_id, source_event_id, intake_purpose
          FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
-        [input.batchId],
+        [input.submissionId],
       );
-      const batch = batchResult.rows[0];
-      if (!batch) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
-      if (batch.intake_purpose && batch.intake_purpose !== input.purpose) {
+      const submission = submissionResult.rows[0];
+      if (!submission) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (submission.intake_purpose && submission.intake_purpose !== input.purpose) {
         throw new RegistryConflictError(
-          `Submission ${input.batchId} is already classified as ${batch.intake_purpose}`,
+          `Submission ${input.submissionId} is already classified as ${submission.intake_purpose}`,
         );
       }
 
@@ -1098,28 +1098,28 @@ export class PostgresRegistry implements RegistryRepository {
                WHERE bse.batch_id = $4 AND bse.source_event_id = se.id
              )
            )`,
-        [batch.vendor_id, input.sourceEventIds, batch.source_event_id, input.batchId],
+        [submission.vendor_id, input.sourceEventIds, submission.source_event_id, input.submissionId],
       );
       if (linkedSources.rowCount !== input.sourceEventIds.length) {
         throw new RegistryConflictError(
-          `Every governing source event must belong to vendor ${batch.vendor_id} and submission ${input.batchId}`,
+          `Every governing source event must belong to vendor ${submission.vendor_id} and submission ${input.submissionId}`,
         );
       }
 
-      const changed = batch.intake_purpose !== input.purpose;
+      const changed = submission.intake_purpose !== input.purpose;
       if (changed) {
         await client.query(
           "UPDATE registry_submission_batches SET intake_purpose = $2, updated_at = now() WHERE id = $1",
-          [input.batchId, input.purpose],
+          [input.submissionId, input.purpose],
         );
-        await this.insertStatusEvent(client, "submission_batch", input.batchId, "intake.purpose_classified", input.actor, {
+        await this.insertStatusEvent(client, "submission_batch", input.submissionId, "intake.purpose_classified", input.actor, {
           purpose: input.purpose,
           sourceEventIds: input.sourceEventIds,
           reason: input.reason,
         });
       }
       await client.query("COMMIT");
-      return { batchId: input.batchId, purpose: input.purpose, changed };
+      return { submissionId: input.submissionId, purpose: input.purpose, changed };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1551,7 +1551,7 @@ export class PostgresRegistry implements RegistryRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const batchResult = await client.query<{
+      const submissionResult = await client.query<{
         vendor_id: string;
         workflow_status: string;
         catalog_visibility: string;
@@ -1563,9 +1563,9 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
         [input.submissionId],
       );
-      const batch = batchResult.rows[0];
-      if (!batch) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
-      if (batch.intake_purpose !== "sample_evaluation") {
+      const submission = submissionResult.rows[0];
+      if (!submission) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (submission.intake_purpose !== "sample_evaluation") {
         throw new RegistryConflictError(`Submission ${input.submissionId} is not a sample submission`);
       }
 
@@ -1633,12 +1633,12 @@ export class PostgresRegistry implements RegistryRepository {
 
       let tasksAdded = 0;
       for (const task of input.tasks) {
-        const taskId = stableTaskId(batch.vendor_id, task.stableKey);
+        const taskId = stableTaskId(submission.vendor_id, task.stableKey);
         await client.query(
           `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT(vendor_id, stable_key) DO NOTHING`,
-          [taskId, batch.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
+          [taskId, submission.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
         );
 
         const existing = await client.query<{
@@ -1693,7 +1693,7 @@ export class PostgresRegistry implements RegistryRepository {
                $9, $10, '{}'::jsonb, 'unknown', NULL, NULL, 'unknown', $11, $12, $13, $14, $15, $16
              )`,
             [task.id, taskId, input.submissionId, compatibilityCategoryId, task.sourcePath, task.format,
-              task.artifactId, task.contentSha256, batch.workflow_status, batch.catalog_visibility,
+              task.artifactId, task.contentSha256, submission.workflow_status, submission.catalog_visibility,
               task.kind, task.format, task.stableKey, task.title, task.summary ?? null, task.benchmarkId],
           );
           await client.query(
@@ -1721,7 +1721,7 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       if (tasksAdded) {
-        const mergedFormats = [...new Set([...batch.formats, ...input.tasks.map((task) => task.format)])].sort();
+        const mergedFormats = [...new Set([...submission.formats, ...input.tasks.map((task) => task.format)])].sort();
         await client.query(
           "UPDATE registry_submission_batches SET formats = $2::jsonb, updated_at = now() WHERE id = $1",
           [input.submissionId, json(mergedFormats)],
@@ -1754,7 +1754,7 @@ export class PostgresRegistry implements RegistryRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const batchResult = await client.query<{
+      const submissionResult = await client.query<{
         vendor_id: string;
         workflow_status: string;
         catalog_visibility: string;
@@ -1765,9 +1765,9 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
         [input.submissionId],
       );
-      const batch = batchResult.rows[0];
-      if (!batch) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
-      if (batch.intake_purpose !== "sample_evaluation") {
+      const submission = submissionResult.rows[0];
+      if (!submission) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (submission.intake_purpose !== "sample_evaluation") {
         throw new RegistryConflictError(`Submission ${input.submissionId} is not a sample submission`);
       }
 
@@ -1887,7 +1887,7 @@ export class PostgresRegistry implements RegistryRepository {
       let benchmarkAssignmentsUnchanged = 0;
 
       for (const task of input.tasks) {
-        const taskId = stableTaskId(batch.vendor_id, task.stableKey);
+        const taskId = stableTaskId(submission.vendor_id, task.stableKey);
         if (desiredTaskIds.has(taskId)) {
           throw new RegistryConflictError(`Task stable key ${task.stableKey} is repeated`);
         }
@@ -1898,7 +1898,7 @@ export class PostgresRegistry implements RegistryRepository {
           `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT(vendor_id, stable_key) DO NOTHING`,
-          [taskId, batch.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
+          [taskId, submission.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
         );
 
         const current = activeByTaskId.get(taskId);
@@ -1975,7 +1975,7 @@ export class PostgresRegistry implements RegistryRepository {
            )`,
           [task.id, taskId, input.submissionId, current?.category_id ?? compatibilityCategoryId,
             task.sourcePath, task.format, task.artifactId, task.contentSha256,
-            batch.workflow_status, batch.catalog_visibility,
+            submission.workflow_status, submission.catalog_visibility,
             json({ reconciliationRequestSha256: requestSha256, reconciliationReason: input.reason }),
             task.kind, task.format, task.stableKey, task.title, task.summary ?? null, task.benchmarkId],
         );
@@ -2087,7 +2087,7 @@ export class PostgresRegistry implements RegistryRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const batchResult = await client.query<{
+      const submissionResult = await client.query<{
         vendor_id: string;
         workflow_status: string;
         catalog_visibility: string;
@@ -2096,12 +2096,12 @@ export class PostgresRegistry implements RegistryRepository {
         `SELECT vendor_id, workflow_status, catalog_visibility,
                 COALESCE(intake_purpose, metadata->>'intakePurpose') AS intake_purpose
          FROM registry_submission_batches WHERE id = $1 FOR UPDATE`,
-        [input.batchId],
+        [input.submissionId],
       );
-      const batch = batchResult.rows[0];
-      if (!batch) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
-      if (batch.intake_purpose !== "sample_evaluation") {
-        throw new RegistryConflictError(`Submission ${input.batchId} is not an evaluation-sample intake`);
+      const submission = submissionResult.rows[0];
+      if (!submission) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
+      if (submission.intake_purpose !== "sample_evaluation") {
+        throw new RegistryConflictError(`Submission ${input.submissionId} is not an evaluation-sample intake`);
       }
 
       const artifactIds = [...new Set(input.tasks.map((task) => task.artifactId))];
@@ -2133,12 +2133,12 @@ export class PostgresRegistry implements RegistryRepository {
                WHERE bse.batch_id = $2 AND bse.source_event_id = si.source_event_id
              )
            )`,
-        [sourceItemIds, input.batchId],
+        [sourceItemIds, input.submissionId],
       );
       const sources = new Map(sourceResult.rows.map((source) => [source.id, source]));
       for (const sourceItemId of sourceItemIds) {
         if (!sources.has(sourceItemId)) {
-          throw new RegistryConflictError(`Source item ${sourceItemId} is not linked to submission ${input.batchId}`);
+          throw new RegistryConflictError(`Source item ${sourceItemId} is not linked to submission ${input.submissionId}`);
         }
       }
       for (const task of input.tasks) {
@@ -2164,15 +2164,15 @@ export class PostgresRegistry implements RegistryRepository {
           );
         }
 
-        const existingBatchCategory = await client.query<{ declared_count: number; examples: string[] }>(
+        const existingSubmissionCategory = await client.query<{ declared_count: number; examples: string[] }>(
           `SELECT declared_count, examples FROM registry_batch_categories
            WHERE batch_id = $1 AND category_id = $2`,
-          [input.batchId, category.id],
+          [input.submissionId, category.id],
         );
-        if (existingBatchCategory.rows[0]) {
+        if (existingSubmissionCategory.rows[0]) {
           if (
-            existingBatchCategory.rows[0].declared_count !== category.count
-            || hashValue(existingBatchCategory.rows[0].examples) !== hashValue(category.examples ?? [])
+            existingSubmissionCategory.rows[0].declared_count !== category.count
+            || hashValue(existingSubmissionCategory.rows[0].examples) !== hashValue(category.examples ?? [])
           ) {
             throw new RegistryConflictError(`Submission category ${category.id} already exists with different contents`);
           }
@@ -2180,7 +2180,7 @@ export class PostgresRegistry implements RegistryRepository {
           await client.query(
             `INSERT INTO registry_batch_categories(batch_id, category_id, declared_count, examples)
              VALUES ($1, $2, $3, $4::jsonb)`,
-            [input.batchId, category.id, category.count, json(category.examples ?? [])],
+            [input.submissionId, category.id, category.count, json(category.examples ?? [])],
           );
           categoriesAdded += 1;
         }
@@ -2189,7 +2189,7 @@ export class PostgresRegistry implements RegistryRepository {
       let taskVersionsAdded = 0;
       let taskVersionsFinalized = 0;
       for (const task of input.tasks) {
-        const taskId = stableTaskId(batch.vendor_id, task.stableKey);
+        const taskId = stableTaskId(submission.vendor_id, task.stableKey);
         await client.query(
           `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
            VALUES ($1, $2, $3, $4, $5, $6)
@@ -2197,7 +2197,7 @@ export class PostgresRegistry implements RegistryRepository {
              title = EXCLUDED.title,
              summary = COALESCE(EXCLUDED.summary, registry_tasks.summary),
              updated_at = now()`,
-          [taskId, batch.vendor_id, task.stableKey, task.title, task.summary ?? null, input.batchId],
+          [taskId, submission.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
         );
 
         const existingVersion = await client.query<{
@@ -2224,12 +2224,12 @@ export class PostgresRegistry implements RegistryRepository {
            WHERE superseded_at IS NULL
              AND (id = $1 OR (batch_id = $2 AND task_id = $3))
            FOR UPDATE`,
-          [task.id, input.batchId, taskId],
+          [task.id, input.submissionId, taskId],
         );
         const expected = {
           id: task.id,
           task_id: taskId,
-          batch_id: input.batchId,
+          batch_id: input.submissionId,
           category_id: task.categoryId,
           source_path: task.sourcePath,
           format: task.format,
@@ -2239,8 +2239,8 @@ export class PostgresRegistry implements RegistryRepository {
           representation_basis: "recorded" as const,
           artifact_id: task.artifactId,
           content_sha256: task.contentSha256,
-          workflow_status: task.workflowStatus ?? batch.workflow_status,
-          catalog_visibility: task.catalogVisibility ?? batch.catalog_visibility,
+          workflow_status: task.workflowStatus ?? submission.workflow_status,
+          catalog_visibility: task.catalogVisibility ?? submission.catalog_visibility,
           metadata: task.metadata ?? {},
         };
         const current = existingVersion.rows[0];
@@ -2277,7 +2277,7 @@ export class PostgresRegistry implements RegistryRepository {
                task_stable_key, task_title, task_summary
              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, 'recorded',
                        $15, $16, $17, $18, $19)`,
-            [task.id, taskId, input.batchId, task.categoryId, task.sourcePath, task.format,
+            [task.id, taskId, input.submissionId, task.categoryId, task.sourcePath, task.format,
               task.artifactId, task.contentSha256, expected.workflow_status, expected.catalog_visibility,
               json(task.metadata ?? {}), task.representationKind, task.representationPath, task.normalizationOutcome,
               legacyTaskKind(task.metadata), legacyFormatKind(task.format, task.representationPath, task.normalizationOutcome),
@@ -2296,7 +2296,7 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       if (taskVersionsAdded > 0 || taskVersionsFinalized > 0 || categoriesAdded > 0) {
-        await this.insertStatusEvent(client, "submission_batch", input.batchId, "normalization.tasks_appended", input.actor, {
+        await this.insertStatusEvent(client, "submission_batch", input.submissionId, "normalization.tasks_appended", input.actor, {
           reason: input.reason,
           requestSha256,
           categoriesAdded,
@@ -2304,7 +2304,7 @@ export class PostgresRegistry implements RegistryRepository {
           taskVersionsFinalized,
           taskVersionIds: input.tasks.map((task) => task.id),
         });
-        await this.enqueueWork(client, "check_submission", "submission_batch", input.batchId, {
+        await this.enqueueWork(client, "check_submission", "submission_batch", input.submissionId, {
           reason: "normalized_tasks_appended",
           requestSha256,
           taskVersionIds: input.tasks.map((task) => task.id),
@@ -2312,7 +2312,7 @@ export class PostgresRegistry implements RegistryRepository {
       }
       await client.query("COMMIT");
       return {
-        batchId: input.batchId,
+        submissionId: input.submissionId,
         categoriesAdded,
         taskVersionsAdded,
         taskVersionsFinalized,
@@ -2330,26 +2330,26 @@ export class PostgresRegistry implements RegistryRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const batch = await client.query<{ vendor_id: string }>(
+      const submission = await client.query<{ vendor_id: string }>(
         "SELECT vendor_id FROM registry_submission_batches WHERE id = $1 FOR UPDATE",
-        [input.batchId],
+        [input.submissionId],
       );
-      const vendorId = batch.rows[0]?.vendor_id;
-      if (!vendorId) throw new RegistryNotFoundError(`Submission ${input.batchId} does not exist`);
+      const vendorId = submission.rows[0]?.vendor_id;
+      if (!vendorId) throw new RegistryNotFoundError(`Submission ${input.submissionId} does not exist`);
 
       const detachedRevisions = await client.query<{ id: string }>(
         `UPDATE registry_submission_batches
          SET revises_batch_id = NULL, updated_at = now()
          WHERE revises_batch_id = $1
          RETURNING id`,
-        [input.batchId],
+        [input.submissionId],
       );
-      const detachedRevisionBatchIds = detachedRevisions.rows.map((row) => row.id).sort();
-      for (const batchId of detachedRevisionBatchIds) {
-        await this.insertStatusEvent(client, "submission_batch", batchId, "submission.revision_reference_removed", input.actor, {
+      const detachedRevisionSubmissionIds = detachedRevisions.rows.map((row) => row.id).sort();
+      for (const submissionId of detachedRevisionSubmissionIds) {
+        await this.insertStatusEvent(client, "submission_batch", submissionId, "submission.revision_reference_removed", input.actor, {
           disposition: input.disposition,
           reason: input.reason,
-          removedSubmissionId: input.batchId,
+          removedSubmissionId: input.submissionId,
         });
       }
 
@@ -2358,7 +2358,7 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_task_versions
          WHERE batch_id = $1
          FOR UPDATE`,
-        [input.batchId],
+        [input.submissionId],
       );
       const removedTaskVersionIds = taskVersions.rows.map((row) => row.id).sort();
       const firstSeenTasks = await client.query<{ id: string; replacement_batch_id: string | null }>(
@@ -2374,7 +2374,7 @@ export class PostgresRegistry implements RegistryRepository {
          FROM registry_tasks t
          WHERE t.first_seen_batch_id = $1
          FOR UPDATE OF t`,
-        [input.batchId],
+        [input.submissionId],
       );
       const removedTaskIds = firstSeenTasks.rows
         .filter((row) => !row.replacement_batch_id)
@@ -2418,7 +2418,7 @@ export class PostgresRegistry implements RegistryRepository {
         `SELECT source_event_id AS id FROM registry_batch_source_events WHERE batch_id = $1
          UNION
          SELECT source_event_id AS id FROM registry_submission_batches WHERE id = $1`,
-        [input.batchId],
+        [input.submissionId],
       );
       const linkedEventIds = linkedEvents.rows.map((row) => row.id).sort();
       const removableEvents = linkedEventIds.length ? await client.query<{ id: string }>(
@@ -2449,7 +2449,7 @@ export class PostgresRegistry implements RegistryRepository {
              JOIN registry_task_versions tv ON tv.id = tsi.task_version_id
              WHERE si.source_event_id = se.id AND tv.batch_id <> $2
            )`,
-        [linkedEventIds, input.batchId],
+        [linkedEventIds, input.submissionId],
       ) : { rows: [] as Array<{ id: string }> };
       const removedSourceEventIds = removableEvents.rows.map((row) => row.id).sort();
       const retainedSourceEventIds = linkedEventIds.filter((id) => !removedSourceEventIds.includes(id));
@@ -2479,7 +2479,7 @@ export class PostgresRegistry implements RegistryRepository {
              JOIN registry_task_versions tv ON tv.id = tsi.task_version_id
              WHERE si.source_event_id = se.id AND tv.batch_id <> $2
            )`,
-        [retainedSourceEventIds, input.batchId],
+        [retainedSourceEventIds, input.submissionId],
       ) : { rows: [] as Array<{ id: string }> };
       const retainedOnlyEventIds = retainedOnlyEvents.rows.map((row) => row.id).sort();
       const cancelledEventIds = [...new Set([...removedSourceEventIds, ...retainedOnlyEventIds])];
@@ -2513,7 +2513,7 @@ export class PostgresRegistry implements RegistryRepository {
             OR (entity_type = 'source_event' AND entity_id = ANY($2::text[]))
             OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))
             OR (entity_type = 'task_version' AND entity_id = ANY($4::text[]))`,
-        [input.batchId, cancelledEventIds, sourceItemIds, removedTaskVersionIds],
+        [input.submissionId, cancelledEventIds, sourceItemIds, removedTaskVersionIds],
       );
       await client.query(
         `DELETE FROM registry_status_events
@@ -2521,7 +2521,7 @@ export class PostgresRegistry implements RegistryRepository {
             OR (entity_type = 'source_event' AND entity_id = ANY($2::text[]))
             OR (entity_type = 'source_item' AND entity_id = ANY($3::text[]))
             OR (entity_type = 'task_version' AND entity_id = ANY($4::text[]))`,
-        [input.batchId, removedSourceEventIds, removedSourceItemIds, removedTaskVersionIds],
+        [input.submissionId, removedSourceEventIds, removedSourceItemIds, removedTaskVersionIds],
       );
       if (removedTaskVersionIds.length) {
         await client.query("DELETE FROM registry_task_versions WHERE id = ANY($1::text[])", [removedTaskVersionIds]);
@@ -2548,19 +2548,19 @@ export class PostgresRegistry implements RegistryRepository {
           await this.insertStatusEvent(client, "source_event", sourceEventId, retainedSourceEventType, input.actor, {
             disposition: input.disposition,
             reason: input.reason,
-            removedSubmissionId: input.batchId,
+            removedSubmissionId: input.submissionId,
           });
         }
       }
-      await client.query("DELETE FROM registry_submission_batches WHERE id = $1", [input.batchId]);
+      await client.query("DELETE FROM registry_submission_batches WHERE id = $1", [input.submissionId]);
       if (removedSourceEventIds.length) {
         await client.query("DELETE FROM registry_source_events WHERE id = ANY($1::text[])", [removedSourceEventIds]);
       }
-      await this.insertStatusEvent(client, "removed_submission", input.batchId, "submission.removed", input.actor, {
+      await this.insertStatusEvent(client, "removed_submission", input.submissionId, "submission.removed", input.actor, {
         disposition: input.disposition,
         reason: input.reason,
         vendorId,
-        detachedRevisionBatchIds,
+        detachedRevisionSubmissionIds,
         removedTaskVersionIds,
         removedTaskIds,
         retainedTaskIds,
@@ -2583,10 +2583,10 @@ export class PostgresRegistry implements RegistryRepository {
       ) : { rows: [] as ArtifactRow[] };
       await client.query("COMMIT");
       return {
-        batchId: input.batchId,
+        submissionId: input.submissionId,
         vendorId,
         disposition: input.disposition,
-        detachedRevisionBatchIds,
+        detachedRevisionSubmissionIds,
         removedTaskVersionIds,
         removedTaskIds,
         retainedTaskIds,
@@ -3002,7 +3002,7 @@ export class PostgresRegistry implements RegistryRepository {
          sent_at = EXCLUDED.sent_at,
          external_ref = EXCLUDED.external_ref,
          updated_at = now()`,
-      [input.id, input.batchId, input.channel, input.recipient, input.status, input.reason,
+      [input.id, input.submissionId, input.channel, input.recipient, input.status, input.reason,
         json(input.evidenceCheckRunIds), input.sentAt ?? null, input.externalRef ?? null],
     );
   }
@@ -3011,20 +3011,20 @@ export class PostgresRegistry implements RegistryRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const batch = await client.query<{ id: string }>(
+      const submission = await client.query<{ id: string }>(
         "SELECT id FROM registry_submission_batches WHERE id = $1",
-        [input.batchId],
+        [input.submissionId],
       );
-      if (!batch.rowCount) throw new RegistryNotFoundError(`submission_batch ${input.batchId} does not exist`);
+      if (!submission.rowCount) throw new RegistryNotFoundError(`submission_batch ${input.submissionId} does not exist`);
 
       if (input.categoryIds.length) {
         const categories = await client.query<{ category_id: string }>(
           `SELECT category_id FROM registry_batch_categories
            WHERE batch_id = $1 AND category_id = ANY($2::text[])`,
-          [input.batchId, input.categoryIds],
+          [input.submissionId, input.categoryIds],
         );
         if (categories.rowCount !== input.categoryIds.length) {
-          throw new RegistryNotFoundError(`One or more review categories do not belong to submission ${input.batchId}`);
+          throw new RegistryNotFoundError(`One or more review categories do not belong to submission ${input.submissionId}`);
         }
       }
 
@@ -3035,11 +3035,11 @@ export class PostgresRegistry implements RegistryRepository {
          ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11::jsonb)
          RETURNING id, batch_id, signal, scope, category_ids, reviewer_open_id, reviewer_union_id,
                    reviewer_tenant_key, reviewer_name, comment, metadata, created_at`,
-        [input.id, input.batchId, input.signal, input.scope, json(input.categoryIds), input.reviewer.openId,
+        [input.id, input.submissionId, input.signal, input.scope, json(input.categoryIds), input.reviewer.openId,
           input.reviewer.unionId ?? null, input.reviewer.tenantKey, input.reviewer.name, input.comment ?? "",
           json(input.metadata ?? {})],
       );
-      await this.insertStatusEvent(client, "submission_batch", input.batchId, "review.recorded", input.reviewer.openId, {
+      await this.insertStatusEvent(client, "submission_batch", input.submissionId, "review.recorded", input.reviewer.openId, {
         reviewId: input.id,
         signal: input.signal,
         scope: input.scope,
@@ -3055,19 +3055,19 @@ export class PostgresRegistry implements RegistryRepository {
     }
   }
 
-  private async listSubmissionReviews(batchId: string): Promise<SubmissionReview[]> {
-    const batch = await this.pool.query<{ id: string }>(
+  private async listSubmissionReviews(submissionId: string): Promise<SubmissionReview[]> {
+    const submission = await this.pool.query<{ id: string }>(
       "SELECT id FROM registry_submission_batches WHERE id = $1",
-      [batchId],
+      [submissionId],
     );
-    if (!batch.rowCount) throw new RegistryNotFoundError(`submission_batch ${batchId} does not exist`);
+    if (!submission.rowCount) throw new RegistryNotFoundError(`submission_batch ${submissionId} does not exist`);
     const result = await this.pool.query<SubmissionReviewRow>(
       `SELECT id, batch_id, signal, scope, category_ids, reviewer_open_id, reviewer_union_id,
               reviewer_tenant_key, reviewer_name, comment, metadata, created_at
        FROM registry_submission_reviews
        WHERE batch_id = $1
        ORDER BY created_at DESC, id DESC`,
-      [batchId],
+      [submissionId],
     );
     return result.rows.map(submissionReviewFromRow);
   }
@@ -3401,7 +3401,7 @@ export class PostgresRegistry implements RegistryRepository {
 
   private async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
     const visibility = catalogVisibility(scope);
-    const [demandsResult, vendorsResult, batchesResult, categoriesResult, tasksResult, runtimeChecksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, taskFindingsResult, procurementEventsResult] = await Promise.all([
+    const [demandsResult, vendorsResult, submissionsResult, categoriesResult, tasksResult, runtimeChecksResult, sourceEventsResult, sourceItemsResult, sourceRelationsResult, taskSourcesResult, taskFindingsResult, procurementEventsResult] = await Promise.all([
       this.pool.query<ResearchDemandRow>(
         `SELECT id, domain_en, domain_zh, subdomain_en, subdomain_zh,
                 title_en, title_zh, note_en, note_zh,
@@ -3417,7 +3417,7 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY v.name`,
         [scope === "all"],
       ),
-      this.pool.query<BatchRow>(
+      this.pool.query<SubmissionRow>(
         `SELECT id, vendor_id, submission_date, label, source_label, declared_task_count,
                 formats, workflow_status, catalog_visibility, revises_batch_id, delta
          FROM registry_submission_batches
@@ -3487,7 +3487,7 @@ export class PostgresRegistry implements RegistryRepository {
          ORDER BY se.received_at, se.created_at`,
         [visibility],
       ),
-      this.pool.query<BatchSourceItemRow>(
+      this.pool.query<SubmissionSourceItemRow>(
         `SELECT bse.batch_id, si.source_event_id, si.id, si.kind, si.display_name, si.locator,
                 si.media_type, si.artifact_id, si.content_sha256, si.size_bytes,
                 si.fetch_status, si.parse_status, si.mutable, si.captured_at, si.metadata,
@@ -3560,7 +3560,7 @@ export class PostgresRegistry implements RegistryRepository {
     const taskFindings = group(taskFindingsResult.rows, (row) => row.task_version_id);
     const runtimeChecks = group(runtimeChecksResult.rows, (row) => row.task_version_id);
     const tasksByCategory = group(tasksResult.rows, (row) => `${row.batch_id}\u0000${row.category_id}`);
-    const categoriesByBatch = new Map<string, CatalogCategory[]>();
+    const categoriesBySubmission = new Map<string, CatalogCategory[]>();
     for (const row of categoriesResult.rows) {
       const tasks = (tasksByCategory.get(`${row.batch_id}\u0000${row.id}`) ?? [])
         .map((task) => taskFromRow(
@@ -3569,7 +3569,7 @@ export class PostgresRegistry implements RegistryRepository {
           (taskFindings.get(task.id) ?? []).map(taskFindingFromRow),
           (runtimeChecks.get(task.id) ?? []).map(runtimeCheckFactFromRow),
         ));
-      append(categoriesByBatch, row.batch_id, {
+      append(categoriesBySubmission, row.batch_id, {
         id: row.id,
         name: row.name,
         description: row.description,
@@ -3581,9 +3581,9 @@ export class PostgresRegistry implements RegistryRepository {
 
     const sourceItemsByEvent = group(sourceItemsResult.rows, (row) => `${row.batch_id}\u0000${row.source_event_id}`);
     const sourceRelationsByEvent = group(sourceRelationsResult.rows, (row) => row.source_event_id);
-    const sourceEventsByBatch = new Map<string, CatalogSourceEvent[]>();
+    const sourceEventsBySubmission = new Map<string, CatalogSourceEvent[]>();
     for (const row of sourceEventsResult.rows) {
-      append(sourceEventsByBatch, row.batch_id, {
+      append(sourceEventsBySubmission, row.batch_id, {
         id: row.id,
         role: row.role,
         channel: row.channel,
@@ -3596,10 +3596,10 @@ export class PostgresRegistry implements RegistryRepository {
       });
     }
 
-    const batchesByVendor = new Map<string, CatalogBatch[]>();
-    for (const row of batchesResult.rows) {
-      const categories = categoriesByBatch.get(row.id) ?? [];
-      append(batchesByVendor, row.vendor_id, {
+    const submissionsByVendor = new Map<string, CatalogSubmission[]>();
+    for (const row of submissionsResult.rows) {
+      const categories = categoriesBySubmission.get(row.id) ?? [];
+      append(submissionsByVendor, row.vendor_id, {
         id: row.id,
         date: isoDate(row.submission_date),
         label: row.label,
@@ -3609,9 +3609,9 @@ export class PostgresRegistry implements RegistryRepository {
         formats: row.formats,
         workflowStatus: row.workflow_status,
         catalogVisibility: row.catalog_visibility,
-        revisesBatchId: row.revises_batch_id,
+        revisesSubmissionId: row.revises_batch_id,
         delta: row.delta,
-        sourceEvents: sourceEventsByBatch.get(row.id) ?? [],
+        sourceEvents: sourceEventsBySubmission.get(row.id) ?? [],
         categories,
       });
     }
@@ -3626,9 +3626,9 @@ export class PostgresRegistry implements RegistryRepository {
       short: row.short,
       description: row.description,
       procurementSummary: procurementByVendor.get(row.id) ?? null,
-      batches: batchesByVendor.get(row.id) ?? [],
+      submissions: submissionsByVendor.get(row.id) ?? [],
     }));
-    const batches = vendors.flatMap((vendor) => vendor.batches);
+    const submissions = vendors.flatMap((vendor) => vendor.submissions);
     return {
       generatedAt: new Date().toISOString(),
       demands: demandsResult.rows.map((row) => ({
@@ -3644,8 +3644,8 @@ export class PostgresRegistry implements RegistryRepository {
       vendors,
       totals: {
         vendors: vendors.length,
-        batches: batches.length,
-        taskVersions: batches.reduce((sum, batch) => sum + batch.taskCount, 0),
+        submissions: submissions.length,
+        taskVersions: submissions.reduce((sum, submission) => sum + submission.taskCount, 0),
       },
     };
   }
@@ -3668,7 +3668,7 @@ export class PostgresRegistry implements RegistryRepository {
            AND v.archived_at IS NULL
          ORDER BY vi.vendor_id, vi.occurred_at, vi.created_at, vi.id`,
       ),
-      this.pool.query<BatchRow>(
+      this.pool.query<SubmissionRow>(
         `SELECT id, vendor_id, submission_date, label, source_label, declared_task_count,
                 formats, workflow_status, catalog_visibility, revises_batch_id, delta
          FROM registry_submission_batches
@@ -3917,14 +3917,14 @@ export class PostgresRegistry implements RegistryRepository {
     return (await this.catalogSnapshot(scope)).vendors.find((vendor) => vendor.id === id) ?? null;
   }
 
-  private async getBatch(id: string, scope: CatalogScope): Promise<CatalogBatch | null> {
-    return (await this.catalogSnapshot(scope)).vendors.flatMap((vendor) => vendor.batches).find((batch) => batch.id === id) ?? null;
+  private async getSubmission(id: string, scope: CatalogScope): Promise<CatalogSubmission | null> {
+    return (await this.catalogSnapshot(scope)).vendors.flatMap((vendor) => vendor.submissions).find((submission) => submission.id === id) ?? null;
   }
 
   private async getTask(id: string, scope: CatalogScope): Promise<CatalogTask | null> {
     return (await this.catalogSnapshot(scope)).vendors
-      .flatMap((vendor) => vendor.batches)
-      .flatMap((batch) => batch.categories)
+      .flatMap((vendor) => vendor.submissions)
+      .flatMap((submission) => submission.categories)
       .flatMap((category) => category.tasks)
       .find((task) => task.id === id) ?? null;
   }
@@ -4082,13 +4082,13 @@ export class PostgresRegistry implements RegistryRepository {
       );
     }
 
-    for (const link of envelope.batchLinks ?? []) {
+    for (const link of envelope.submissionLinks ?? []) {
       await client.query(
         `INSERT INTO registry_batch_source_events(batch_id, source_event_id, role)
          VALUES ($1, $2, $3)
          ON CONFLICT(batch_id, source_event_id) DO UPDATE SET
            role = CASE WHEN registry_batch_source_events.role = 'primary' THEN 'primary' ELSE EXCLUDED.role END`,
-        [link.batchId, envelope.sourceEvent.id, link.role],
+        [link.submissionId, envelope.sourceEvent.id, link.role],
       );
       const linkedItems = await client.query<{
         id: string;
@@ -4109,7 +4109,7 @@ export class PostgresRegistry implements RegistryRepository {
            VALUES ($1, $2, $3)
            ON CONFLICT(batch_id, source_item_id, role) DO NOTHING`,
           [
-            link.batchId,
+            link.submissionId,
             item.id,
             defaultSubmissionSourceItemRole(
               item.kind,
@@ -4466,7 +4466,7 @@ function sourceRelationFromRow(row: SourceRelationRow): CatalogSourceRelation {
 function submissionReviewFromRow(row: SubmissionReviewRow): SubmissionReview {
   return {
     id: row.id,
-    batchId: row.batch_id,
+    submissionId: row.batch_id,
     signal: row.signal,
     scope: row.scope,
     categoryIds: row.category_ids,
@@ -4492,7 +4492,7 @@ function vendorEventFromRow(row: VendorEventRow): VendorEvent {
     actor: row.actor,
     occurredAt: new Date(row.occurred_at).toISOString(),
     sourceEventIds: row.source_event_ids,
-    batchIds: row.batch_ids,
+    submissionIds: row.batch_ids,
     metadata: row.metadata,
     createdAt: new Date(row.created_at).toISOString(),
   };

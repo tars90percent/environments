@@ -48,7 +48,7 @@ test("reconciles only exact resolved Harbor work items", { skip: !testDatabaseUr
       evidenceArtifactId: `artifact:sha256:${evidenceSha}`,
       harborVersion: "0.21.0",
       modalVersion: "1.5.4",
-      command: "case-harbor run --agent oracle --provider modal",
+      command: "harbor run --agent oracle --provider modal",
       startedAt: "2026-09-01T00:00:00.000Z",
       completedAt: "2026-09-01T00:01:00.000Z",
     });

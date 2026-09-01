@@ -22,8 +22,8 @@ test("archives and restores vendors through the trusted repository", { skip: !te
       [schema],
     );
     assert.match(activeIndex.rows[0]?.indexdef ?? "", /\(name, id\).*WHERE \(archived_at IS NULL\)/i);
-    await repository.ingestSubmission(manifest("internal-vendor", "internal-batch", "internal"));
-    await repository.ingestSubmission(manifest("visible-vendor", "visible-batch", "available"));
+    await repository.ingestSubmission(manifest("internal-vendor", "internal-submission", "internal"));
+    await repository.ingestSubmission(manifest("visible-vendor", "visible-submission", "available"));
 
     const request = {
       vendorId: "internal-vendor",
@@ -52,7 +52,7 @@ test("archives and restores vendors through the trusted repository", { skip: !te
     assert.equal("procurementSummary" in (visibleCatalogVendor ?? {}), false);
     assert.equal("demands" in portalCatalog, false);
 
-    await repository.ingestSubmission(manifest("internal-vendor", "later-internal-batch", "internal"));
+    await repository.ingestSubmission(manifest("internal-vendor", "later-internal-submission", "internal"));
     const stillArchived = await repository.vendorDirectory();
     assert.equal(ids(stillArchived).includes("internal-vendor"), false);
 
@@ -88,7 +88,7 @@ test("archives and restores vendors through the trusted repository", { skip: !te
   }
 });
 
-function manifest(vendorId: string, batchId: string, visibility: "available" | "internal"): SubmissionManifest {
+function manifest(vendorId: string, submissionId: string, visibility: "available" | "internal"): SubmissionManifest {
   return {
     vendor: {
       id: vendorId,
@@ -98,16 +98,16 @@ function manifest(vendorId: string, batchId: string, visibility: "available" | "
       aliases: [],
     },
     sourceEvent: {
-      id: `${batchId}-source`,
+      id: `${submissionId}-source`,
       channel: "workspace",
-      externalRef: `workspace://${batchId}`,
+      externalRef: `workspace://${submissionId}`,
       receivedAt: "2026-08-14T00:00:00.000Z",
     },
-    batch: {
-      id: batchId,
+    submission: {
+      id: submissionId,
       date: "2026-08-14",
-      label: batchId,
-      sourceLabel: batchId,
+      label: submissionId,
+      sourceLabel: submissionId,
       taskCount: 0,
       formats: [],
       workflowStatus: visibility === "internal" ? "quarantined" : "unchecked",

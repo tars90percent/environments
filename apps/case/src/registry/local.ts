@@ -41,6 +41,6 @@ export function localHarborTaskStore(environment: NodeJS.ProcessEnv = process.en
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name]?.trim();
-  if (!value) throw new Error(`${name} is required for trusted local registry operations`);
+  if (!value) throw new Error(`${name} is required for trusted direct registry operations`);
   return value;
 }

@@ -53,27 +53,19 @@ COPY apps/case/src ./src
 COPY apps/case/scripts ./scripts
 RUN npm run build \
     && npm prune --omit=dev \
-    && chmod 0755 /app/scripts/case-task-package.py \
-    && chmod 0755 /app/dist/registry-cli.js /app/dist/intake-plan-cli.js /app/dist/mail-intake-plan-cli.js /app/dist/harbor-cli.js /app/dist/harbor-export-cli.js \
-    && ln -sfn /app/dist/registry-cli.js /usr/local/bin/case-registry \
-    && ln -sfn /app/dist/intake-plan-cli.js /usr/local/bin/case-intake \
-    && ln -sfn /app/dist/mail-intake-plan-cli.js /usr/local/bin/case-mail-intake \
+    && chmod 0755 /app/scripts/case-task-package.py /app/scripts/case-harbor-format.py \
+    && python3 /app/scripts/case-harbor-format.py --version \
+    && chmod 0755 /app/dist/case-cli.js /app/dist/harbor-cli.js \
+    && ln -sfn /app/dist/case-cli.js /usr/local/bin/casectl \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/harbor \
-    && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/case-harbor \
-    && ln -sfn /app/dist/harbor-export-cli.js /usr/local/bin/case-harbor-export \
-    && ln -sfn /app/scripts/case-task-package.py /usr/local/bin/case-task-package \
-    && test -x /usr/local/bin/case-registry \
-    && test -x /usr/local/bin/case-intake \
-    && test -x /usr/local/bin/case-mail-intake \
+    && test -x /usr/local/bin/casectl \
     && test -x /usr/local/bin/harbor \
-    && test -x /usr/local/bin/case-harbor \
-    && test -x /usr/local/bin/case-harbor-export \
-    && test -x /usr/local/bin/case-task-package \
     && test -x /usr/local/bin/modal
 
 ENV NODE_ENV=production \
     AGENT_INSTRUCTIONS_FILE=/app/AGENTS.md \
     CASE_HARBOR_BIN=/opt/harbor-bin/harbor \
+    CASE_HARBOR_PYTHON=/opt/uv/tools/harbor/bin/python \
     CASE_HARBOR_WORKDIR=/data/evaluations \
     CASE_HARBOR_HOME=/data/harbor-home
 

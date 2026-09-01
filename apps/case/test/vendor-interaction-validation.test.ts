@@ -14,7 +14,7 @@ const fixture = {
   visibility: "portal",
   occurredAt: "2026-08-01T00:00:00.000Z",
   sourceEventIds: ["source-one"],
-  batchIds: [],
+  submissionIds: [],
   actor: "TARS",
 } as const;
 

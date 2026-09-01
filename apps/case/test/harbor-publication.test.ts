@@ -4,8 +4,13 @@ import {
   reconcileTaskSetWithHarborPublication,
   registerTaskSetWithHarborPublication,
 } from "../src/harbor-publication.js";
-import type { HarborExportResult, HarborPruneResult } from "../src/harbor-export-cli.js";
-import type { TaskRegistrationInput } from "../src/registry/types.js";
+import type {
+  HarborExportResult,
+  HarborFormatValidation,
+  HarborPruneResult,
+  HarborTaskRegistrationClassification,
+} from "../src/harbor-export-cli.js";
+import type { AppendTasksInput, ReconcileSubmissionTasksInput, TaskRegistrationInput } from "../src/registry/types.js";
 
 const harborTask: TaskRegistrationInput = {
   id: "task-version-1",
@@ -46,23 +51,56 @@ const pruned: HarborPruneResult = {
   deletedPrefixes: [{ prefix: "vendor/submission-1/retired", objectCount: 5 }],
 };
 
+const validated: HarborFormatValidation = {
+  requestedHarborTaskCount: 1,
+  validHarborTaskCount: 1,
+  reclassifiedTaskCount: 0,
+  reclassifiedTasks: [],
+};
+
+function classified<T extends TaskRegistrationInput | ReconcileSubmissionTasksInput["tasks"][number]>(
+  tasks: T[],
+  validation: HarborFormatValidation = validated,
+): HarborTaskRegistrationClassification<T> {
+  return { tasks, validation };
+}
+
+function appendRegistration(tasks: TaskRegistrationInput[]): AppendTasksInput {
+  return { submissionId: "submission-1", benchmarkAssignments: [], tasks, actor: "CASE" };
+}
+
+function reconcileRegistration(tasks: ReconcileSubmissionTasksInput["tasks"]): ReconcileSubmissionTasksInput {
+  return {
+    submissionId: "submission-1",
+    benchmarkAssignments: [],
+    tasks,
+    reason: "Keep the active task set accurate.",
+    actor: "CASE",
+  };
+}
+
 test("publishes Harbor files only after the registry transaction succeeds", async () => {
   const events: string[] = [];
   const result = await registerTaskSetWithHarborPublication({
-    registration: { submissionId: "submission-1", tasks: [harborTask] },
-    async register() {
+    registration: appendRegistration([harborTask]),
+    async classify() {
+      events.push("classified");
+      return classified([harborTask]);
+    },
+    async register(registration) {
+      assert.equal(registration.tasks[0]?.format, "harbor");
       events.push("registered");
       return { tasksAdded: 1 };
     },
     async publish(submissionId) {
-      assert.deepEqual(events, ["registered"]);
+      assert.deepEqual(events, ["classified", "registered"]);
       assert.equal(submissionId, "submission-1");
       events.push("published");
       return published;
     },
   });
 
-  assert.deepEqual(events, ["registered", "published"]);
+  assert.deepEqual(events, ["classified", "registered", "published"]);
   assert.equal(result.tasksAdded, 1);
   assert.equal(result.harborTaskPublication.status, "completed");
   assert.equal(result.harborTaskPublication.completedTaskCount, 1);
@@ -70,10 +108,16 @@ test("publishes Harbor files only after the registry transaction succeeds", asyn
 
 test("does not require a Harbor bucket for a non-Harbor registration", async () => {
   let publishCalled = false;
+  const nonHarborTask = { ...harborTask, format: "non_harbor" as const };
   const result = await registerTaskSetWithHarborPublication({
-    registration: {
-      submissionId: "submission-1",
-      tasks: [{ ...harborTask, format: "non_harbor" }],
+    registration: appendRegistration([nonHarborTask]),
+    async classify() {
+      return classified([nonHarborTask], {
+        requestedHarborTaskCount: 0,
+        validHarborTaskCount: 0,
+        reclassifiedTaskCount: 0,
+        reclassifiedTasks: [],
+      });
     },
     async register() {
       return { tasksAdded: 1 };
@@ -96,7 +140,10 @@ test("surfaces publication failures after registration so the operation can be r
   let registered = false;
   await assert.rejects(
     registerTaskSetWithHarborPublication({
-      registration: { submissionId: "submission-1", tasks: [harborTask] },
+      registration: appendRegistration([harborTask]),
+      async classify() {
+        return classified([harborTask]);
+      },
       async register() {
         registered = true;
         return { tasksAdded: 1 };
@@ -111,37 +158,78 @@ test("surfaces publication failures after registration so the operation can be r
   assert.equal(registered, true);
 });
 
+test("retains a statically invalid task and registers it as non-Harbor", async () => {
+  let publishCalled = false;
+  const nonHarborTask = { ...harborTask, format: "non_harbor" as const };
+  const result = await registerTaskSetWithHarborPublication({
+    registration: appendRegistration([harborTask]),
+    async classify() {
+      return classified([nonHarborTask], {
+        requestedHarborTaskCount: 1,
+        validHarborTaskCount: 0,
+        reclassifiedTaskCount: 1,
+        reclassifiedTasks: [{ taskId: harborTask.id, reason: "Harbor 0.21.0: tests/test.sh is missing" }],
+      });
+    },
+    async register(registration) {
+      assert.equal(registration.tasks.length, 1);
+      assert.equal(registration.tasks[0]?.id, harborTask.id);
+      assert.equal(registration.tasks[0]?.format, "non_harbor");
+      return { tasksAdded: 1 };
+    },
+    async publish() {
+      publishCalled = true;
+      return published;
+    },
+  });
+
+  assert.equal(result.tasksAdded, 1);
+  assert.equal(result.harborFormatValidation.reclassifiedTaskCount, 1);
+  assert.equal(result.harborTaskPublication.status, "not_applicable");
+  assert.equal(publishCalled, false);
+});
+
 test("reconciliation publishes active Harbor tasks before pruning inactive prefixes", async () => {
   const events: string[] = [];
   const result = await reconcileTaskSetWithHarborPublication({
-    registration: { submissionId: "submission-1", tasks: [harborTask] },
+    registration: reconcileRegistration([harborTask]),
+    async classify() {
+      events.push("classified");
+      return classified([harborTask]);
+    },
     async register() {
       events.push("registered");
       return { taskVersionsAdded: 1 };
     },
     async publish() {
-      assert.deepEqual(events, ["registered"]);
+      assert.deepEqual(events, ["classified", "registered"]);
       events.push("published");
       return published;
     },
     async prune() {
-      assert.deepEqual(events, ["registered", "published"]);
+      assert.deepEqual(events, ["classified", "registered", "published"]);
       events.push("pruned");
       return pruned;
     },
   });
 
-  assert.deepEqual(events, ["registered", "published", "pruned"]);
+  assert.deepEqual(events, ["classified", "registered", "published", "pruned"]);
   assert.equal(result.harborTaskPublication.status, "completed");
   assert.deepEqual(result.harborTaskPruning, pruned);
 });
 
 test("reconciliation still prunes when no active task is Harbor", async () => {
   const events: string[] = [];
+  const nonHarborTask = { ...harborTask, format: "non_harbor" as const };
   const result = await reconcileTaskSetWithHarborPublication({
-    registration: {
-      submissionId: "submission-1",
-      tasks: [{ ...harborTask, format: "non_harbor" }],
+    registration: reconcileRegistration([nonHarborTask]),
+    async classify() {
+      return classified([nonHarborTask], {
+        requestedHarborTaskCount: 0,
+        validHarborTaskCount: 0,
+        reclassifiedTaskCount: 0,
+        reclassifiedTasks: [],
+      });
     },
     async register() {
       events.push("registered");

@@ -27,7 +27,7 @@ import {
 const manifest: SubmissionManifest = {
   vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "A vendor.", aliases: [] },
   sourceEvent: { id: "source-one", channel: "workspace", externalRef: "workspace://sample-one", sender: "Vendor One", receivedAt: "2026-08-13T00:00:00.000Z" },
-  batch: {
+  submission: {
     id: "vendor-one-2026-08-13",
     date: "2026-08-13",
     label: "First sample",
@@ -45,11 +45,14 @@ const manifest: SubmissionManifest = {
 
 test("captures a submission before parsing tasks", () => {
   const parsed = parseSubmissionManifest(manifest);
-  assert.equal(parsed.batch.id, manifest.batch.id);
+  assert.equal(parsed.submission.id, manifest.submission.id);
   assert.equal(parsed.sourceEvent.sender, "Vendor One");
-  assert.throws(() => parseSubmissionManifest({ ...manifest, categories: [{ id: "cat", name: "Category", description: "Extra layer", count: 0 }] }), /cannot include tasks/);
-  assert.throws(() => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, formats: ["native"] } }), /only harbor and non_harbor/);
-  assert.throws(() => parseSubmissionManifest({ ...manifest, batch: { ...manifest.batch, metadata: { intakePurpose: "purchased_delivery" } } }), ValidationError);
+  assert.throws(
+    () => parseSubmissionManifest({ ...manifest, categories: [{ id: "cat", name: "Category", description: "Extra layer", count: 0 }] }),
+    /register tasks separately after preserving the submission/,
+  );
+  assert.throws(() => parseSubmissionManifest({ ...manifest, submission: { ...manifest.submission, formats: ["native"] } }), /only harbor and non_harbor/);
+  assert.throws(() => parseSubmissionManifest({ ...manifest, submission: { ...manifest.submission, metadata: { intakePurpose: "purchased_delivery" } } }), ValidationError);
 });
 
 test("protects the portal catalog and upload scopes separately", () => {
@@ -111,7 +114,7 @@ test("validates audited submission source-item reconciliation", () => {
 test("registers only clearly identified tasks or traces with two formats", () => {
   const sha = "a".repeat(64);
   const input = {
-    submissionId: manifest.batch.id,
+    submissionId: manifest.submission.id,
     actor: "CASE",
     benchmarkAssignments: [{ sourceItemId: "source-archive", benchmarkId: "terminal-bench" }],
     tasks: [
@@ -123,6 +126,10 @@ test("registers only clearly identified tasks or traces with two formats", () =>
   assert.deepEqual(parsed.tasks.map((task) => [task.kind, task.format]), [["task", "harbor"], ["trace", "non_harbor"]]);
   assert.deepEqual(parsed.tasks.map((task) => task.benchmarkId), ["terminal-bench", "terminal-bench"]);
   assert.throws(() => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[0], format: "native" }] }), ValidationError);
+  assert.throws(
+    () => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[1], format: "harbor" }] }),
+    /cannot be a Harbor trace/,
+  );
   assert.throws(() => parseAppendTasks({ ...input, tasks: [{ ...input.tasks[0], sourceItemIds: [] }] }), ValidationError);
   assert.throws(() => parseAppendTasks({ ...input, benchmarkAssignments: [] }), /must have a benchmarkId/);
   assert.equal(parseAppendTasks({
@@ -135,7 +142,7 @@ test("registers only clearly identified tasks or traces with two formats", () =>
 test("validates complete audited task reconciliations", () => {
   const sha = "b".repeat(64);
   const input = {
-    submissionId: manifest.batch.id,
+    submissionId: manifest.submission.id,
     actor: "TARS",
     reason: "Correct trace classifications while preserving prior task versions.",
     benchmarkAssignments: [],
@@ -255,7 +262,7 @@ test("validates exactly three Harbor pass/fail phases and explicit control score
     evidenceArtifactId: "artifact:oracle-evidence",
     harborVersion: "0.1.0",
     modalVersion: "1.0.0",
-    command: "case-harbor run --agent oracle --provider modal",
+    command: "harbor run --agent oracle --provider modal",
     sandboxRef: "modal:sb-123",
     score: 1,
     startedAt: "2026-08-21T00:00:00.000Z",
@@ -279,7 +286,7 @@ test("validates non-conclusive Harbor attempts separately from results", () => {
     evidenceArtifactId: "artifact:oracle-attempt-evidence",
     harborVersion: "0.21.0",
     modalVersion: "1.5.4",
-    command: "case-harbor run --agent oracle --provider modal",
+    command: "harbor run --agent oracle --provider modal",
     startedAt: "2026-08-21T00:00:00.000Z",
     completedAt: "2026-08-21T00:01:00.000Z",
   };
@@ -313,13 +320,13 @@ test("findings cite one failed Harbor check and have no classification fields", 
 test("keeps content-addressed objects and explicit submission removal", () => {
   const sha = "a".repeat(64);
   assert.equal(contentAddressedStorageKey(sha), `objects/sha256/aa/${sha}`);
-  const removal = { batchId: "vendor-one-2026-08-13", disposition: "erroneous_registration" as const, reason: "Duplicate registration.", actor: "CASE" };
+  const removal = { submissionId: "vendor-one-2026-08-13", disposition: "erroneous_registration" as const, reason: "Duplicate registration.", actor: "CASE" };
   assert.deepEqual(parseSubmissionRemoval(removal), removal);
   assert.throws(() => parseSubmissionRemoval({ ...removal, disposition: "low_quality" }), ValidationError);
 });
 
 test("classifies a legacy submission only from linked sample evidence", () => {
-  const classification = { batchId: "legacy-sample", purpose: "sample_evaluation", sourceEventIds: ["source-event"], reason: "The dated message identifies a sample.", actor: "CASE" };
+  const classification = { submissionId: "legacy-sample", purpose: "sample_evaluation", sourceEventIds: ["source-event"], reason: "The dated message identifies a sample.", actor: "CASE" };
   assert.deepEqual(parseSubmissionIntakeClassification(classification), classification);
   assert.throws(() => parseSubmissionIntakeClassification({ ...classification, sourceEventIds: [] }), ValidationError);
 });

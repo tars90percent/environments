@@ -26,3 +26,33 @@ test("does not expose trusted registry writes through the portal API", async () 
     await server.close();
   }
 });
+
+test("serves submissions without the former batch route", async () => {
+  const catalogToken = "catalog-token-with-at-least-32-characters";
+  const submission = { id: "submission-one", tasks: [] };
+  const repository = {
+    getSampleSubmission: async (id: string) => id === submission.id ? submission : null,
+  } as unknown as RegistryRepository;
+  const server = await startRegistryServer({
+    repository,
+    catalogToken,
+    uploadToken: "upload-token-with-at-least-32-characters",
+    host: "127.0.0.1",
+    port: 0,
+  });
+
+  try {
+    const current = await fetch(`${server.url}/v1/submissions/${submission.id}`, {
+      headers: { authorization: `Bearer ${catalogToken}` },
+    });
+    assert.equal(current.status, 200);
+    assert.deepEqual(await current.json(), submission);
+
+    const former = await fetch(`${server.url}/v1/batches/${submission.id}`, {
+      headers: { authorization: `Bearer ${catalogToken}` },
+    });
+    assert.equal(former.status, 404);
+  } finally {
+    await server.close();
+  }
+});

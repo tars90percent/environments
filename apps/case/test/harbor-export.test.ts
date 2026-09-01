@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  classifyHarborTaskRegistrations,
   findHarborTaskRoot,
   harborTaskFiles,
   pruneInactiveSubmissionHarborTaskPrefixes,
@@ -12,6 +15,9 @@ import {
 } from "../src/harbor-export-cli.js";
 import type { ArtifactStore } from "../src/registry/artifacts.js";
 import type { RegistryRepository } from "../src/registry/repository.js";
+import type { TaskRegistrationInput } from "../src/registry/types.js";
+
+const hasPython = spawnSync("python3", ["--version"], { encoding: "utf8" }).status === 0;
 
 test("builds the requested vendor/submission/task export path without stable keys", () => {
   assert.equal(
@@ -46,7 +52,7 @@ test("selects a task root by its recorded source path and preserves all files", 
   }
 });
 
-test("selects an exact recorded archive directory when a broken Harbor task has no task.toml", async () => {
+test("rejects an exact recorded archive directory when the task has no task.toml", async () => {
   const directory = mkdtempSync(join(tmpdir(), "case-harbor-export-missing-manifest-"));
   try {
     const task = join(directory, "broken-task");
@@ -54,10 +60,141 @@ test("selects an exact recorded archive directory when a broken Harbor task has 
     writeFileSync(join(task, "instruction.md"), "Do the task.\n");
     writeFileSync(join(task, "environment", "Dockerfile"), "FROM scratch\n");
 
-    assert.equal(
-      await findHarborTaskRoot(directory, "delivery.zip!/broken-task/"),
-      task,
+    await assert.rejects(
+      () => findHarborTaskRoot(directory, "delivery.zip!/broken-task/"),
+      /exact task root contains no task\.toml/,
     );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("retains a task rejected by Harbor's static validator and reclassifies it as non-Harbor", { skip: !hasPython }, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "case-harbor-classification-"));
+  try {
+    const archive = join(directory, "task.zip");
+    makeZip(archive, [
+      ["delivery/task/task.toml", "schema_version = \"1.0\"\n", 0o100644],
+      ["delivery/task/instruction.md", "Do the task.\n", 0o100644],
+      ["delivery/task/environment/Dockerfile", "FROM scratch\n", 0o100644],
+    ]);
+    const sha256 = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    const task: TaskRegistrationInput = {
+      id: "task-version-1",
+      stableKey: "vendor:submission:task",
+      title: "Task",
+      kind: "task",
+      format: "harbor",
+      benchmarkId: "unspecified",
+      sourcePath: "delivery/task",
+      artifactId: `artifact:sha256:${sha256}`,
+      contentSha256: sha256,
+      sourceItemIds: ["source-item-1"],
+    };
+    const repository = {
+      async getArtifact() {
+        return {
+          id: task.artifactId,
+          kind: "task_package" as const,
+          storageKey: "objects/task.zip",
+          sha256,
+          sizeBytes: statSync(archive).size,
+          contentType: "application/zip",
+          metadata: { originalName: "task.zip" },
+          createdAt: "2026-09-02T00:00:00.000Z",
+        };
+      },
+    } as unknown as RegistryRepository;
+    const sourceStore = {
+      async downloadFile(input: { path: string }) {
+        copyFileSync(archive, input.path);
+      },
+    } as unknown as ArtifactStore;
+
+    const result = await classifyHarborTaskRegistrations({
+      repository,
+      sourceStore,
+      tasks: [task],
+      async validateTaskRoot(taskRoot) {
+        assert.equal(taskRoot.endsWith("/delivery/task"), true);
+        return { valid: false, harborVersion: "0.21.0", reason: "tests/ is missing" };
+      },
+    });
+
+    assert.equal(result.tasks.length, 1);
+    assert.equal(result.tasks[0]?.id, task.id);
+    assert.equal(result.tasks[0]?.format, "non_harbor");
+    assert.deepEqual(result.validation, {
+      requestedHarborTaskCount: 1,
+      validHarborTaskCount: 0,
+      reclassifiedTaskCount: 1,
+      reclassifiedTasks: [{ taskId: task.id, reason: "Harbor 0.21.0: tests/ is missing" }],
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("retains a task with no task.toml and classifies it as non-Harbor", { skip: !hasPython }, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "case-harbor-missing-manifest-classification-"));
+  try {
+    const archive = join(directory, "task.zip");
+    makeZip(archive, [
+      ["instruction.md", "Do the task.\n", 0o100644],
+      ["environment/Dockerfile", "FROM scratch\n", 0o100644],
+    ]);
+    const sha256 = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    const task: TaskRegistrationInput = {
+      id: "task-version-without-manifest",
+      stableKey: "vendor:submission:task-without-manifest",
+      title: "Task without manifest",
+      kind: "task",
+      format: "harbor",
+      benchmarkId: "unspecified",
+      sourcePath: "delivery/task-without-manifest",
+      artifactId: `artifact:sha256:${sha256}`,
+      contentSha256: sha256,
+      sourceItemIds: ["source-item-1"],
+    };
+    const repository = {
+      async getArtifact() {
+        return {
+          id: task.artifactId,
+          kind: "task_package" as const,
+          storageKey: "objects/task.zip",
+          sha256,
+          sizeBytes: statSync(archive).size,
+          contentType: "application/zip",
+          metadata: { originalName: "task.zip" },
+          createdAt: "2026-09-02T00:00:00.000Z",
+        };
+      },
+    } as unknown as RegistryRepository;
+    const sourceStore = {
+      async downloadFile(input: { path: string }) {
+        copyFileSync(archive, input.path);
+      },
+    } as unknown as ArtifactStore;
+    let staticValidatorCalled = false;
+
+    const result = await classifyHarborTaskRegistrations({
+      repository,
+      sourceStore,
+      tasks: [task],
+      async validateTaskRoot() {
+        staticValidatorCalled = true;
+        return { valid: true, harborVersion: "0.21.0" };
+      },
+    });
+
+    assert.equal(staticValidatorCalled, false);
+    assert.equal(result.tasks.length, 1);
+    assert.equal(result.tasks[0]?.id, task.id);
+    assert.equal(result.tasks[0]?.format, "non_harbor");
+    assert.deepEqual(result.validation.reclassifiedTasks, [{
+      taskId: task.id,
+      reason: "exact task root contains no task.toml",
+    }]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -94,7 +231,7 @@ test("publishes task.toml last and makes exact reruns idempotent", async () => {
   }
 });
 
-test("publishes an exact task without inventing a missing task.toml", async () => {
+test("refuses to publish a Harbor task without task.toml", async () => {
   const directory = mkdtempSync(join(tmpdir(), "case-harbor-export-broken-publish-"));
   try {
     writeFileSync(join(directory, "instruction.md"), "Do it.\n");
@@ -116,9 +253,11 @@ test("publishes an exact task without inventing a missing task.toml", async () =
       },
     } as unknown as ArtifactStore;
 
-    assert.equal(await publishTaskFiles(store, files, "vendor/submission/broken", "b".repeat(64)), "published");
-    assert.equal(writes.at(-1), "vendor/submission/broken/tests.py");
-    assert.equal(await publishTaskFiles(store, files, "vendor/submission/broken", "b".repeat(64)), "unchanged");
+    await assert.rejects(
+      () => publishTaskFiles(store, files, "vendor/submission/broken", "b".repeat(64)),
+      /without task\.toml/,
+    );
+    assert.deepEqual(writes, []);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -202,3 +341,19 @@ test("prunes only inactive task prefixes for one submission and is idempotent", 
   assert.equal(second.deletedPrefixCount, 0);
   assert.equal(second.deletedObjectCount, 0);
 });
+
+function makeZip(path: string, entries: Array<[string, string, number]>): void {
+  const program = [
+    "import json, sys, zipfile",
+    "entries = json.loads(sys.argv[2])",
+    "with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as archive:",
+    "    for name, content, mode in entries:",
+    "        info = zipfile.ZipInfo(name)",
+    "        info.create_system = 3",
+    "        info.external_attr = mode << 16",
+    "        info.compress_type = zipfile.ZIP_DEFLATED",
+    "        archive.writestr(info, content)",
+  ].join("\n");
+  const result = spawnSync("python3", ["-c", program, path, JSON.stringify(entries)], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+}

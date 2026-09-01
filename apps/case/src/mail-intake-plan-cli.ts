@@ -20,7 +20,7 @@ import type { ArtifactInput, CapturedSubmissionSourceInput } from "./registry/ty
 
 const [command, planPath] = process.argv.slice(2);
 if (command !== "capture-mail-plan" || !planPath) {
-  throw new Error("Usage: case-mail-intake capture-mail-plan /absolute/path/plan.json");
+  throw new Error("Usage: casectl intake mail /absolute/path/plan.json");
 }
 
 const plan = parseMailCapturePlan(JSON.parse(await readFile(planPath, "utf8")));

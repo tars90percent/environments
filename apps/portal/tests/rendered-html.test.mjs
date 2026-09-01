@@ -634,7 +634,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.doesNotMatch(workerSource, /method:\s*["']PATCH|method:\s*["']DELETE/i);
 });
 
-test("adapts the current CASE catalog during the narrow migration rollout", async () => {
+test("passes through the current CASE submission catalog", async () => {
   const app = await worker();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -642,18 +642,17 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
     if (target !== "https://case.example/v1/catalog") throw new Error(`Unexpected fetch: ${target}`);
     return Response.json({
       generatedAt: "2026-08-21T00:00:00.000Z",
-      demands: [{ id: "obsolete-demand" }],
       vendors: [{
         id: "vendor-1",
         name: "Vendor One",
         short: "V1",
-        procurementSummary: { stage: "ordered" },
-        batches: [{
+        interactions: [],
+        submissions: [{
           id: "submission-1",
           date: "2026-08-20",
           label: "Sample",
           source: "Feishu attachment",
-          formats: ["Harbor task package"],
+          formats: ["harbor"],
           sourceEvents: [{
             id: "event-1",
             channel: "feishu",
@@ -661,34 +660,29 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
             sender: "Vendor One",
             receivedAt: "2026-08-20T00:00:00.000Z",
             rawArtifactId: "artifact:raw",
-            items: [{ id: "item-1", kind: "attachment", displayName: "sample.tar", locator: "feishu://sample", artifactId: "artifact:raw", contentSha256: "a".repeat(64) }],
+            rawArtifact: null,
+            items: [],
           }],
-          categories: [{
-            id: "legacy-category",
-            name: "Obsolete category",
-            tasks: [{
-              id: "task-1",
-              stableKey: "task-one",
-              title: "Task one",
-              summary: null,
-              sourcePath: "tasks/task-one",
-              format: "Harbor task package",
-              representation: { path: "already_harbor", normalizationOutcome: "already_harbor" },
-              runtimeVerification: { phases: {
-                build: { outcome: "pass", checkRunId: "check-build", completedAt: "2026-08-20T01:00:00.000Z" },
-                boot: { outcome: "fail", checkRunId: "check-boot", completedAt: "2026-08-20T01:30:00.000Z" },
-                positiveControl: { outcome: "fail", checkRunId: "check-oracle", completedAt: "2026-08-20T02:00:00.000Z" },
-                negativeControl: { outcome: "blocked", checkRunId: "check-nop", completedAt: "2026-08-20T03:00:00.000Z" },
-              } },
-              artifactId: "artifact:task",
-              contentSha256: "b".repeat(64),
-              sourceItemIds: ["item-1"],
-              findings: [{ id: "broad-finding", finding: "A legacy opinion" }],
-            }],
+          tasks: [{
+            id: "task-1",
+            stableKey: "task-one",
+            title: "Task one",
+            summary: null,
+            kind: "task",
+            format: "harbor",
+            benchmark: { id: "unspecified", displayName: "Unspecified" },
+            gpuRequired: false,
+            sourcePath: "tasks/task-one",
+            artifactId: "artifact:task",
+            contentSha256: "b".repeat(64),
+            sourceItemIds: [],
+            checks: {},
+            attempts: {},
+            findings: [],
           }],
         }],
       }],
-      totals: { vendors: 1, batches: 1, taskVersions: 1 },
+      totals: { vendors: 1, submissions: 1, tasks: 1, harborTasks: 1 },
     });
   };
 
@@ -701,17 +695,13 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
     assert.equal(response.status, 200);
     const catalog = await response.json();
     assert.deepEqual(catalog.totals, { vendors: 1, submissions: 1, tasks: 1, harborTasks: 1 });
-    assert.equal(catalog.demands, undefined);
-    assert.equal(catalog.vendors[0].procurementSummary, undefined);
     const submission = catalog.vendors[0].submissions[0];
     assert.deepEqual(submission.formats, ["harbor"]);
     assert.equal(submission.tasks[0].kind, "task");
     assert.equal(submission.tasks[0].format, "harbor");
     assert.deepEqual(submission.tasks[0].benchmark, { id: "unspecified", displayName: "Unspecified" });
     assert.equal(submission.tasks[0].gpuRequired, false);
-    assert.deepEqual(Object.keys(submission.tasks[0].checks), ["oracle", "environment"]);
-    assert.equal(submission.tasks[0].checks.environment.outcome, "fail");
-    assert.match(submission.tasks[0].checks.environment.summary, /inferred from failed Build or Boot evidence/i);
+    assert.deepEqual(submission.tasks[0].checks, {});
     assert.deepEqual(submission.tasks[0].findings, []);
   } finally {
     globalThis.fetch = originalFetch;
@@ -794,7 +784,7 @@ test("downloads every available task artifact", async () => {
   globalThis.fetch = async (input) => {
     const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(target);
-    if (url.href === "https://case.example/v1/batches/submission-1") return Response.json(submission);
+    if (url.href === "https://case.example/v1/submissions/submission-1") return Response.json(submission);
     const signed = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);
     if (url.origin === "https://case.example" && signed?.[1]) {
       return Response.json({ url: `https://objects.example/artifact?id=${encodeURIComponent(decodeURIComponent(signed[1]))}` });
@@ -946,7 +936,7 @@ test("bundles only inbound vendor files and leaves receipts and derived task pac
   globalThis.fetch = async (input) => {
     const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(target);
-    if (url.href === "https://case.example/v1/batches/submission-1") return Response.json(submission);
+    if (url.href === "https://case.example/v1/submissions/submission-1") return Response.json(submission);
     const signed = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);
     if (url.origin === "https://case.example" && signed?.[1]) {
       return Response.json({ url: `https://objects.example/artifact?id=${encodeURIComponent(decodeURIComponent(signed[1]))}` });
@@ -1035,7 +1025,7 @@ test("recovers legacy inbound task packages without bundling messages, screensho
   globalThis.fetch = async (input) => {
     const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(target);
-    if (url.href === "https://case.example/v1/batches/submission-legacy") return Response.json(submission);
+    if (url.href === "https://case.example/v1/submissions/submission-legacy") return Response.json(submission);
     const signed = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);
     if (url.origin === "https://case.example" && signed?.[1]) {
       assert.equal(decodeURIComponent(signed[1]), "artifact:vendor-zip");

@@ -171,7 +171,7 @@ const text = {
     attempted: "已尝试",
     notAttempted: "未尝试",
     loading: "正在载入 CASE 记录…",
-    unavailable: "CASE 记录暂不可用。小环境不保存另一份副本。",
+    unavailable: "CASE 记录暂不可用。portal 不保存另一份副本。",
     noMatch: "没有匹配的记录。",
     signOut: "退出登录",
   },
@@ -348,7 +348,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
         <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />
         <VendorInteractionTimeline interactions={selectedVendor.interactions} language={language} />
         {selectedVendor.submissions.length > 0 && <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
-        <div className="batch-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>}
+        <div className="submission-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>}
       </section>
     </div>}
     </div>
@@ -482,16 +482,16 @@ function SubmissionCard({ submission, open, latest, language, datasetHref }: { s
   const t = text[language];
   const harborTaskCount = submission.tasks.filter((task) => task.format === "harbor").length;
   const grouped = submission.tasks.length > TASK_GROUP_THRESHOLD;
-  return <details className="batch-card" open={open}>
-    <summary className="batch-summary">
-      <span className="batch-date"><strong>{formatDate(submission.date, language)}</strong>{latest && <small>{t.latest}</small>}</span>
-      <span className="batch-name"><strong>{submission.label}</strong><code>{friendlySubmissionSource(submission, language)}</code></span>
-      <span className="batch-count"><strong>{submission.tasks.length} {t.taskRecords}</strong><small>{harborTaskCount} {t.harbor}</small></span>
+  return <details className="submission-card" open={open}>
+    <summary className="submission-summary">
+      <span className="submission-date"><strong>{formatDate(submission.date, language)}</strong>{latest && <small>{t.latest}</small>}</span>
+      <span className="submission-name"><strong>{submission.label}</strong><code>{friendlySubmissionSource(submission, language)}</code></span>
+      <span className="submission-count"><strong>{submission.tasks.length} {t.taskRecords}</strong><small>{harborTaskCount} {t.harbor}</small></span>
       <span className="disclosure">▾</span>
     </summary>
-    <div className="batch-body">
+    <div className="submission-body">
       <section className="dataset-access"><div className="dataset-copy"><span>CASE DATASET</span><h4>{t.tasks}</h4><p>{submission.tasks.length ? t.datasetNote : t.noTasks}</p></div><div className="dataset-metrics"><span><strong>{submission.tasks.length}</strong><small>{t.taskRecords}</small></span><span><strong>{submission.tasks.filter((task) => task.format === "harbor").length}</strong><small>{t.harbor}</small></span></div>{submission.tasks.some((task) => task.artifactId) && <a href={datasetHref}>{t.dataset}</a>}</section>
-      <div className="batch-section-head"><div><h4>{grouped ? t.taskGroups : t.tasks}</h4>{grouped && <p>{t.groupedTaskNote}</p>}</div><span>{submission.tasks.length} {t.taskRecords}</span></div>
+      <div className="submission-section-head"><div><h4>{grouped ? t.taskGroups : t.tasks}</h4>{grouped && <p>{t.groupedTaskNote}</p>}</div><span>{submission.tasks.length} {t.taskRecords}</span></div>
       <SubmissionTaskList language={language} tasks={submission.tasks} />
       <OriginalSubmissionPanel language={language} submission={submission} />
     </div>
@@ -538,7 +538,7 @@ function OriginalSubmissionPanel({ submission, language }: { submission: Catalog
   const artifacts = originalSubmissionArtifacts(submission);
   const knownBytes = artifacts.map((artifact) => artifact.sizeBytes).filter((size): size is number => typeof size === "number" && Number.isFinite(size) && size >= 0);
   const size = knownBytes.length === artifacts.length && artifacts.length ? formatBytes(knownBytes.reduce((sum, value) => sum + value), language) : null;
-  return <section className="original-submission"><div className="batch-section-head"><h4>{t.sources}</h4><span>{artifacts.length}</span></div><div className="original-card">
+  return <section className="original-submission"><div className="submission-section-head"><h4>{t.sources}</h4><span>{artifacts.length}</span></div><div className="original-card">
     <div className="original-copy"><strong>{fileCount(artifacts.length, language)}{size ? ` · ${size}` : ""}</strong><p>{t.originalNote}</p><div className="original-provenance">{submission.sourceEvents.map((event) => <span key={event.id}>{friendlyChannel(event.channel, language)} · {formatTimestamp(event.receivedAt, language)}{event.sender ? ` · ${event.sender}` : ""}</span>)}</div></div>
     <div className={`original-actions${artifacts.length > 1 ? " multiple" : ""}`}>{artifacts.map((artifact) => <a
       aria-label={`${t.downloadOne}: ${artifact.displayName}`}

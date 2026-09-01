@@ -12,7 +12,7 @@ import {
 } from "../app/dataset-archive";
 import { originalSubmissionArchive } from "../app/original-submission-archive";
 import { originalSubmissionArchiveFilename, originalSubmissionArtifacts, type OriginalSubmissionArtifact } from "../app/original-submission";
-import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-compat";
+import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-catalog";
 
 interface Env {
   ASSETS: Fetcher;
@@ -125,7 +125,7 @@ const worker = {
       }
       try {
         const submissionId = decodeURIComponent(originalDownloadMatch[1]);
-        const upstream = await fetch(`${registryUrl}/v1/batches/${encodeURIComponent(submissionId)}`, {
+        const upstream = await fetch(`${registryUrl}/v1/submissions/${encodeURIComponent(submissionId)}`, {
           headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
         });
         if (!upstream.ok) return registryErrorResponse(upstream, "original_submission_unavailable");
@@ -157,7 +157,7 @@ const worker = {
       }
       try {
         const submissionId = decodeURIComponent(datasetDownloadMatch[1]);
-        const upstream = await fetch(`${registryUrl}/v1/batches/${encodeURIComponent(submissionId)}`, {
+        const upstream = await fetch(`${registryUrl}/v1/submissions/${encodeURIComponent(submissionId)}`, {
           headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
         });
         if (!upstream.ok) return registryErrorResponse(upstream, "dataset_unavailable");

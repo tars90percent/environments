@@ -79,11 +79,11 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
   const root = object(value, "submission manifest");
   const vendor = object(root.vendor, "vendor");
   const sourceEvent = object(root.sourceEvent, "sourceEvent");
-  const batch = object(root.batch, "batch");
-  const delta = object(batch.delta, "batch.delta");
-  const batchMetadata = optionalObject(batch.metadata, "batch.metadata");
-  if (batchMetadata?.intakePurpose !== "sample_evaluation") {
-    throw new ValidationError("batch.metadata.intakePurpose must be sample_evaluation; purchased deliveries belong in the downstream pipeline");
+  const submission = object(root.submission, "submission");
+  const delta = object(submission.delta, "submission.delta");
+  const submissionMetadata = optionalObject(submission.metadata, "submission.metadata");
+  if (submissionMetadata?.intakePurpose !== "sample_evaluation") {
+    throw new ValidationError("submission.metadata.intakePurpose must be sample_evaluation; purchased deliveries belong in the downstream pipeline");
   }
   const categories = array(root.categories, "categories").map((item, index) => {
     const category = object(item, `categories[${index}]`);
@@ -131,11 +131,11 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
     };
   });
   if (categories.length || (tasks?.length ?? 0) > 0) {
-    throw new ValidationError("submission capture cannot include tasks; use /v1/intake/tasks after preserving the submission");
+    throw new ValidationError("submission capture cannot include tasks; register tasks separately after preserving the submission");
   }
-  const formats = stringArray(batch.formats, "batch.formats");
+  const formats = stringArray(submission.formats, "submission.formats");
   if (formats.some((format) => !TASK_FORMATS.has(format as "harbor" | "non_harbor"))) {
-    throw new ValidationError("batch.formats may contain only harbor and non_harbor");
+    throw new ValidationError("submission.formats may contain only harbor and non_harbor");
   }
 
   return {
@@ -155,24 +155,24 @@ export function parseSubmissionManifest(value: unknown): SubmissionManifest {
       rawArtifactId: optionalString(sourceEvent.rawArtifactId, "sourceEvent.rawArtifactId"),
       metadata: optionalObject(sourceEvent.metadata, "sourceEvent.metadata"),
     },
-    batch: {
-      id: identifier(batch.id, "batch.id"),
-      date: date(batch.date, "batch.date"),
-      label: string(batch.label, "batch.label"),
-      sourceLabel: string(batch.sourceLabel, "batch.sourceLabel"),
-      taskCount: nonNegativeInteger(batch.taskCount, "batch.taskCount"),
+    submission: {
+      id: identifier(submission.id, "submission.id"),
+      date: date(submission.date, "submission.date"),
+      label: string(submission.label, "submission.label"),
+      sourceLabel: string(submission.sourceLabel, "submission.sourceLabel"),
+      taskCount: nonNegativeInteger(submission.taskCount, "submission.taskCount"),
       formats,
-      workflowStatus: enumValue(batch.workflowStatus, WORKFLOW_STATUSES, "batch.workflowStatus"),
-      catalogVisibility: enumValue(batch.catalogVisibility, VISIBILITIES, "batch.catalogVisibility"),
-      revisesBatchId: optionalString(batch.revisesBatchId, "batch.revisesBatchId"),
+      workflowStatus: enumValue(submission.workflowStatus, WORKFLOW_STATUSES, "submission.workflowStatus"),
+      catalogVisibility: enumValue(submission.catalogVisibility, VISIBILITIES, "submission.catalogVisibility"),
+      revisesSubmissionId: optionalString(submission.revisesSubmissionId, "submission.revisesSubmissionId"),
       delta: {
-        retained: optionalNonNegativeInteger(delta.retained, "batch.delta.retained"),
-        added: nonNegativeInteger(delta.added, "batch.delta.added"),
-        removed: nonNegativeInteger(delta.removed, "batch.delta.removed"),
-        changedFiles: optionalNonNegativeInteger(delta.changedFiles, "batch.delta.changedFiles"),
-        note: string(delta.note, "batch.delta.note"),
+        retained: optionalNonNegativeInteger(delta.retained, "submission.delta.retained"),
+        added: nonNegativeInteger(delta.added, "submission.delta.added"),
+        removed: nonNegativeInteger(delta.removed, "submission.delta.removed"),
+        changedFiles: optionalNonNegativeInteger(delta.changedFiles, "submission.delta.changedFiles"),
+        note: string(delta.note, "submission.delta.note"),
       },
-      metadata: batchMetadata,
+      metadata: submissionMetadata,
     },
     categories,
     tasks,
@@ -248,7 +248,7 @@ export function parseAppendNormalizedTasks(value: unknown): AppendNormalizedTask
   }
 
   return {
-    batchId: identifier(input.batchId, "batchId"),
+    submissionId: identifier(input.submissionId, "submissionId"),
     categories,
     tasks,
     reason: boundedString(input.reason, "reason", 5_000),
@@ -297,13 +297,18 @@ export function parseAppendTasks(value: unknown): AppendTasksInput {
     if (!explicitBenchmarkId && assignedBenchmarkIds.length > 1) {
       throw new ValidationError(`tasks[${index}] inherits conflicting benchmark assignments`);
     }
+    const kind = enumValue(task.kind, TASK_KINDS, `tasks[${index}].kind`);
+    const format = enumValue(task.format, TASK_FORMATS, `tasks[${index}].format`);
+    if (kind === "trace" && format === "harbor") {
+      throw new ValidationError(`tasks[${index}] cannot be a Harbor trace; Harbor format applies only to tasks with task.toml`);
+    }
     return {
       id: identifier(task.id, `tasks[${index}].id`),
       stableKey: boundedString(task.stableKey, `tasks[${index}].stableKey`, 1_000),
       title: boundedString(task.title, `tasks[${index}].title`, 500),
       summary: optionalString(task.summary, `tasks[${index}].summary`),
-      kind: enumValue(task.kind, TASK_KINDS, `tasks[${index}].kind`),
-      format: enumValue(task.format, TASK_FORMATS, `tasks[${index}].format`),
+      kind,
+      format,
       benchmarkId: explicitBenchmarkId ?? assignedBenchmarkIds[0]!,
       sourcePath: boundedString(task.sourcePath, `tasks[${index}].sourcePath`, 2_000),
       artifactId,
@@ -572,15 +577,15 @@ export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {
     };
   });
 
-  const batchLinks = root.batchLinks === undefined ? undefined : array(root.batchLinks, "batchLinks").map((value, index) => {
-    const link = object(value, `batchLinks[${index}]`);
-    const sourceItemIds = optionalStringArray(link.sourceItemIds, `batchLinks[${index}].sourceItemIds`);
+  const submissionLinks = root.submissionLinks === undefined ? undefined : array(root.submissionLinks, "submissionLinks").map((value, index) => {
+    const link = object(value, `submissionLinks[${index}]`);
+    const sourceItemIds = optionalStringArray(link.sourceItemIds, `submissionLinks[${index}].sourceItemIds`);
     for (const itemId of sourceItemIds ?? []) {
-      if (!itemIds.has(itemId)) throw new ValidationError(`batchLinks[${index}] references an item outside this envelope`);
+      if (!itemIds.has(itemId)) throw new ValidationError(`submissionLinks[${index}] references an item outside this envelope`);
     }
     return {
-      batchId: identifier(link.batchId, `batchLinks[${index}].batchId`),
-      role: enumValue(link.role, new Set(["primary", "supplement", "correction", "metadata", "other"]), `batchLinks[${index}].role`),
+      submissionId: identifier(link.submissionId, `submissionLinks[${index}].submissionId`),
+      role: enumValue(link.role, new Set(["primary", "supplement", "correction", "metadata", "other"]), `submissionLinks[${index}].role`),
       sourceItemIds,
     };
   });
@@ -615,7 +620,7 @@ export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {
     },
     items,
     relations,
-    batchLinks,
+    submissionLinks,
     taskLinks,
   } as SourceEnvelopeInput;
 }
@@ -655,7 +660,7 @@ export function parseVendorEvent(value: unknown): VendorEventInput {
     actor: boundedString(input.actor, "actor", 500),
     occurredAt: timestamp(input.occurredAt, "occurredAt"),
     sourceEventIds: uniqueIdentifiers(input.sourceEventIds, "sourceEventIds"),
-    batchIds: uniqueIdentifiers(input.batchIds, "batchIds"),
+    submissionIds: uniqueIdentifiers(input.submissionIds, "submissionIds"),
     metadata: optionalObject(input.metadata, "metadata"),
   } as VendorEventInput;
 }
@@ -664,7 +669,7 @@ export function parseVendorInteraction(value: unknown): VendorInteractionInput {
   const input = object(value, "vendor interaction");
   onlyKeys(input, new Set([
     "id", "vendorId", "kind", "eventType", "title", "summary", "channel", "evidence", "visibility",
-    "occurredAt", "sourceEventIds", "batchIds", "actor",
+    "occurredAt", "sourceEventIds", "submissionIds", "actor",
   ]), "vendor interaction");
   return {
     id: identifier(input.id, "id"),
@@ -678,7 +683,7 @@ export function parseVendorInteraction(value: unknown): VendorInteractionInput {
     visibility: enumValue(input.visibility, VENDOR_INTERACTION_VISIBILITIES, "visibility"),
     occurredAt: timestamp(input.occurredAt, "occurredAt"),
     sourceEventIds: uniqueIdentifiers(input.sourceEventIds, "sourceEventIds"),
-    batchIds: uniqueIdentifiers(input.batchIds, "batchIds"),
+    submissionIds: uniqueIdentifiers(input.submissionIds, "submissionIds"),
     actor: boundedString(input.actor, "actor", 500),
   } as VendorInteractionInput;
 }
@@ -707,9 +712,9 @@ export function parseArtifact(value: unknown): ArtifactInput {
 
 export function parseSubmissionRemoval(value: unknown): SubmissionRemovalInput {
   const input = object(value, "submission removal");
-  onlyKeys(input, new Set(["batchId", "disposition", "reason", "actor"]), "submission removal");
+  onlyKeys(input, new Set(["submissionId", "disposition", "reason", "actor"]), "submission removal");
   return {
-    batchId: identifier(input.batchId, "batchId"),
+    submissionId: identifier(input.submissionId, "submissionId"),
     disposition: enumValue(
       input.disposition,
       new Set<SubmissionRemovalInput["disposition"]>(["erroneous_registration", "purchased_delivery_handoff"]),
@@ -725,7 +730,7 @@ export function parseSubmissionIntakeClassification(value: unknown): SubmissionI
   const sourceEventIds = uniqueIdentifiers(input.sourceEventIds, "sourceEventIds");
   if (!sourceEventIds.length) throw new ValidationError("sourceEventIds must contain at least one governing source event");
   return {
-    batchId: identifier(input.batchId, "batchId"),
+    submissionId: identifier(input.submissionId, "submissionId"),
     purpose: enumValue(input.purpose, new Set(["sample_evaluation"]), "purpose"),
     sourceEventIds,
     reason: boundedString(input.reason, "reason", 5_000),
@@ -874,7 +879,7 @@ export function parseFollowUp(value: unknown): FollowUpInput {
   const input = object(value, "follow-up");
   return {
     id: identifier(input.id, "id"),
-    batchId: identifier(input.batchId, "batchId"),
+    submissionId: identifier(input.submissionId, "submissionId"),
     channel: enumValue(input.channel, new Set(["email", "feishu", "internal", "other"]), "channel"),
     recipient: string(input.recipient, "recipient"),
     status: enumValue(input.status, new Set(["drafted", "sent", "replied", "closed"]), "status"),
@@ -898,7 +903,7 @@ export function parseSubmissionReview(value: unknown): SubmissionReviewInput {
   if (signal !== "interested" && !comment) throw new ValidationError(`${signal} reviews require a comment`);
   return {
     id: identifier(input.id, "id"),
-    batchId: identifier(input.batchId, "batchId"),
+    submissionId: identifier(input.submissionId, "submissionId"),
     signal,
     scope,
     categoryIds,

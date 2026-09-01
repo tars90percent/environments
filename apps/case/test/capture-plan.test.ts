@@ -8,7 +8,7 @@ test("Feishu capture plans contain submissions and provenance, not categories or
     purpose: "sample_evaluation",
     submissions: [{
       vendor: { id: "vendor-one", name: "Vendor One", short: "V1", description: "Fixture" },
-      batch: {
+      submission: {
         id: "submission-one",
         date: "2026-08-21",
         label: "Sample",

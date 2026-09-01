@@ -1,8 +1,8 @@
-# env-portal-proto — 小环境 research catalog
+# env-portal-proto — research catalog
 
 A researcher catalog for vendor RL-task samples, hosted on
 Railway and available to authenticated members of TARS's Feishu organization.
-小环境 loads vendors, dated submissions, original-source records, parsed tasks
+The portal loads vendors, dated submissions, original-source records, parsed tasks
 or traces, their general benchmark directions, three Harbor tags,
 non-conclusive attempt state, findings, and downloads from CASE.
 
@@ -22,7 +22,7 @@ operating policy; CASE remains the canonical registry and check orchestrator.
 ## Safety boundary
 
 - Feishu OAuth is used only for organization membership and display identity.
-- Production uses the dedicated MiniMax custom app `小环境` (`cli_aaf7c9f277385cee`), with the Railway callback `https://env-portal-proto-production.up.railway.app/auth/callback` and organization-wide availability. It is separate from CASE's bot app.
+- Production uses a dedicated MiniMax custom app (`cli_aaf7c9f277385cee`), with the Railway callback `https://env-portal-proto-production.up.railway.app/auth/callback` and organization-wide availability. It is separate from CASE's bot app.
 - The Feishu app secret and CASE credentials stay in Railway runtime secrets.
 - The application compares the verified `tenant_key` with one configured organization; it does not infer membership from email domains.
 - No vendor snapshot data or source payloads are copied into the frontend.

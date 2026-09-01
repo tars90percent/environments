@@ -79,7 +79,7 @@ function parseCapturePlan<TAttachment>(
   const submissions = root.submissions.map((value, index) => {
     const item = record(value, `submissions[${index}]`);
     const vendor = record(item.vendor, `submissions[${index}].vendor`);
-    const rawSubmission = item.submission ?? item.batch;
+    const rawSubmission = item.submission;
     const submission = record(rawSubmission, `submissions[${index}].submission`);
     if (!Array.isArray(submission.attachments) || !submission.attachments.length) {
       throw new Error(`submissions[${index}].submission.attachments must not be empty`);

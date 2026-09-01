@@ -12,12 +12,22 @@ import { contentTypeFor } from "./capture-runtime.js";
 import type { ArtifactStore } from "./registry/artifacts.js";
 import { localArtifactStore, localHarborTaskStore, openLocalRepository } from "./registry/local.js";
 import type { RegistryRepository } from "./registry/repository.js";
-import type { ArtifactInput, SampleCatalogSourceItem, SampleCatalogSubmission, SampleCatalogTask, SampleCatalogVendor } from "./registry/types.js";
+import type {
+  ArtifactInput,
+  ReconcileTaskRegistrationInput,
+  SampleCatalogSourceItem,
+  SampleCatalogSubmission,
+  SampleCatalogTask,
+  SampleCatalogVendor,
+  TaskRegistrationInput,
+} from "./registry/types.js";
 
 const execute = promisify(execFile);
 const taskPackageScript = fileURLToPath(new URL("../scripts/case-task-package.py", import.meta.url));
+const harborFormatScript = fileURLToPath(new URL("../scripts/case-harbor-format.py", import.meta.url));
 const genericTaskNames = new Set(["task", "payload"]);
 const harborExportMaxArchiveEntries = 100_000;
+const missingHarborManifestReason = "exact task root contains no task.toml";
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
 
 export type HarborExportFile = {
@@ -56,6 +66,158 @@ export type HarborPruneResult = {
   deletedObjectCount: number;
   deletedPrefixes: Array<{ prefix: string; objectCount: number }>;
 };
+
+export type HarborStaticFormatResult = {
+  valid: boolean;
+  harborVersion: string;
+  reason?: string;
+};
+
+export type HarborFormatValidation = {
+  requestedHarborTaskCount: number;
+  validHarborTaskCount: number;
+  reclassifiedTaskCount: number;
+  reclassifiedTasks: Array<{ taskId: string; reason: string }>;
+};
+
+export type HarborTaskRegistrationClassification<T extends TaskRegistrationInput | ReconcileTaskRegistrationInput> = {
+  tasks: T[];
+  validation: HarborFormatValidation;
+};
+
+export async function classifyHarborTaskRegistrations<T extends TaskRegistrationInput | ReconcileTaskRegistrationInput>(input: {
+  repository: RegistryRepository;
+  sourceStore: ArtifactStore;
+  tasks: T[];
+  validateTaskRoot?: (taskRoot: string) => Promise<HarborStaticFormatResult>;
+}): Promise<HarborTaskRegistrationClassification<T>> {
+  const harborTasks = input.tasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ task }) => task.format === "harbor");
+  const classifiedTasks = input.tasks.map((task) => ({ ...task })) as T[];
+  const reclassifiedTasks: Array<{ taskId: string; reason: string }> = [];
+  if (!harborTasks.length) {
+    return {
+      tasks: classifiedTasks,
+      validation: {
+        requestedHarborTaskCount: 0,
+        validHarborTaskCount: 0,
+        reclassifiedTaskCount: 0,
+        reclassifiedTasks,
+      },
+    };
+  }
+
+  const temporary = await mkdtemp(join(tmpdir(), "case-harbor-registration-"));
+  const extractedByArtifact = new Map<string, string>();
+  const validationByTaskRoot = new Map<string, HarborStaticFormatResult>();
+  let validHarborTaskCount = 0;
+  try {
+    for (const [position, { task, index }] of harborTasks.entries()) {
+      if (task.kind !== "task") throw new Error(`Task ${task.id} cannot be registered as Harbor because it is a trace`);
+      if (!task.artifactId) throw new Error(`Task ${task.id} cannot be registered as Harbor without an exact task artifact`);
+      let extractedPath = extractedByArtifact.get(task.artifactId);
+      if (!extractedPath) {
+        const artifact = await input.repository.getArtifact(task.artifactId);
+        if (!artifact) throw new Error(`Task ${task.id} cannot be registered as Harbor because artifact ${task.artifactId} does not exist`);
+        if (artifact.sha256 !== task.contentSha256) {
+          throw new Error(`Task ${task.id} cannot be registered as Harbor because its artifact hash does not match`);
+        }
+        const candidateDirectory = join(temporary, `artifact-${position}`);
+        const archivePath = join(candidateDirectory, "artifact");
+        extractedPath = join(candidateDirectory, "extracted");
+        await mkdir(candidateDirectory, { recursive: true });
+        await input.sourceStore.downloadFile({
+          key: artifact.storageKey,
+          path: archivePath,
+          sha256: artifact.sha256,
+          sizeBytes: artifact.sizeBytes,
+        });
+        await extractArtifact(artifact, archivePath, extractedPath);
+        extractedByArtifact.set(task.artifactId, extractedPath);
+      }
+      let taskRoot: string;
+      try {
+        taskRoot = await findHarborTaskRoot(extractedPath, task.sourcePath);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (reason !== missingHarborManifestReason) throw error;
+        classifiedTasks[index] = { ...task, format: "non_harbor" } as T;
+        reclassifiedTasks.push({ taskId: task.id, reason });
+        continue;
+      }
+      let validation = validationByTaskRoot.get(taskRoot);
+      if (!validation) {
+        validation = await (input.validateTaskRoot ?? validateHarborTaskRoot)(taskRoot);
+        validationByTaskRoot.set(taskRoot, validation);
+      }
+      if (!validation.valid) {
+        const detail = validation.reason ?? "Harbor's static task validator rejected the task";
+        const reason = `Harbor ${validation.harborVersion}: ${detail}`;
+        classifiedTasks[index] = { ...task, format: "non_harbor" } as T;
+        reclassifiedTasks.push({ taskId: task.id, reason });
+        continue;
+      }
+      validHarborTaskCount += 1;
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+  return {
+    tasks: classifiedTasks,
+    validation: {
+      requestedHarborTaskCount: harborTasks.length,
+      validHarborTaskCount,
+      reclassifiedTaskCount: reclassifiedTasks.length,
+      reclassifiedTasks,
+    },
+  };
+}
+
+export async function validateHarborTaskRoot(taskRoot: string): Promise<HarborStaticFormatResult> {
+  const python = process.env.CASE_HARBOR_PYTHON ?? "python3";
+  let stdout: string;
+  try {
+    const result = await execute(python, [harborFormatScript, taskRoot], {
+      encoding: "utf8",
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+      env: {
+        PATH: process.env.PATH,
+        LANG: process.env.LANG ?? "C.UTF-8",
+        LC_ALL: process.env.LC_ALL ?? "C.UTF-8",
+        PYTHONNOUSERSITE: "1",
+      },
+    });
+    stdout = result.stdout;
+  } catch (error) {
+    const output = typeof error === "object" && error && "stdout" in error && typeof error.stdout === "string"
+      ? error.stdout
+      : "";
+    const parsed = parseHarborStaticFormatOutput(output);
+    throw new Error(parsed && "error" in parsed
+      ? `Harbor static validator is unavailable: ${parsed.error}`
+      : `Harbor static validator failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const parsed = parseHarborStaticFormatOutput(stdout);
+  if (!parsed || !("valid" in parsed)) throw new Error("Harbor static validator returned an invalid response");
+  return parsed;
+}
+
+function parseHarborStaticFormatOutput(value: string): HarborStaticFormatResult | { error: string } | null {
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (typeof parsed.error === "string") return { error: parsed.error };
+    if (typeof parsed.valid !== "boolean" || typeof parsed.harborVersion !== "string") return null;
+    return {
+      valid: parsed.valid,
+      harborVersion: parsed.harborVersion,
+      reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export async function exportSubmissions(input: {
   repository: RegistryRepository;
@@ -263,7 +425,7 @@ async function main(): Promise<void> {
   const all = command === "plan-all" || command === "publish-all";
   const publish = command === "publish" || command === "publish-all";
   if ((!all && command !== "plan" && command !== "publish") || (!all && submissionIds.length === 0) || (all && submissionIds.length > 0)) {
-    fail("Usage: case-harbor-export plan|publish <submission-id> [submission-id ...] | plan-all | publish-all");
+    fail("Usage: casectl harbor-tasks plan|publish <submission-id> [submission-id ...] | plan-all | publish-all");
   }
   const repository = await openLocalRepository();
   try {
@@ -329,16 +491,7 @@ async function extractArtifact(artifact: ArtifactInput, archivePath: string, ext
 export async function findHarborTaskRoot(extractedRoot: string, sourcePath: string): Promise<string> {
   const taskFiles = await findNamedFiles(extractedRoot, "task.toml");
   if (taskFiles.length === 0) {
-    const archiveSeparator = sourcePath.indexOf("!/");
-    if (archiveSeparator >= 0) {
-      const parts = portableParts(sourcePath.slice(archiveSeparator + 2));
-      if (!parts.length || parts.some((part) => part === "..")) throw new Error(`Invalid recorded task archive path: ${sourcePath}`);
-      const recordedRoot = join(extractedRoot, ...parts);
-      try {
-        if ((await lstat(recordedRoot)).isDirectory()) return recordedRoot;
-      } catch {}
-    }
-    throw new Error("Task artifact contains no task.toml and its recorded archive directory was not found");
+    throw new Error(missingHarborManifestReason);
   }
   if (taskFiles.length === 1) return dirname(taskFiles[0]!);
   const sourceParts = portableParts(sourcePath);
@@ -393,8 +546,8 @@ export async function harborTaskFiles(taskRoot: string, prefix: string): Promise
 }
 
 export async function publishTaskFiles(store: ArtifactStore, files: HarborExportFile[], prefix: string, artifactSha256: string): Promise<"published" | "unchanged"> {
-  const marker = files.find((file) => file.relativePath === "task.toml") ?? files.at(-1);
-  if (!marker) throw new Error(`Cannot publish an empty task: ${prefix}`);
+  const marker = files.find((file) => file.relativePath === "task.toml");
+  if (!marker) throw new Error(`Cannot publish Harbor task without task.toml: ${prefix}`);
   const expectedKeys = new Set(files.map((file) => file.key));
   const existingKeys = await store.listKeys(`${prefix}/`);
   const unexpected = existingKeys.filter((key) => !expectedKeys.has(key));

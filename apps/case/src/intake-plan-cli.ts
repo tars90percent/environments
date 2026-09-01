@@ -20,7 +20,7 @@ import type { ArtifactInput, CapturedSubmissionSourceInput, RegistryVendorInput 
 
 const [command, planPath] = process.argv.slice(2);
 if (command !== "capture-feishu-plan" || !planPath) {
-  throw new Error("Usage: case-intake capture-feishu-plan /absolute/path/plan.json");
+  throw new Error("Usage: casectl intake feishu /absolute/path/plan.json");
 }
 
 const plan = parseFeishuCapturePlan(JSON.parse(await readFile(planPath, "utf8")));

@@ -3,7 +3,7 @@
 TARS's always-on Feishu colleague for vendor task-sample operations, powered by
 Codex.
 
-CASE owns the canonical sample registry used by its own tools and 小环境.
+CASE owns the canonical sample registry used by its own tools and the portal.
 PostgreSQL holds vendors, original source graphs, dated submissions, parsed
 tasks or traces, their general benchmark directions, three Harbor check phases,
 non-conclusive check attempts, findings, and operational work.
@@ -82,33 +82,35 @@ also serves the portal-facing catalog on `PORT`. It runs built-in migrations at
 startup. Trusted local CASE commands use the registry library directly with
 `DATABASE_URL` and the CASE object-store credentials; there is no internal write
 API or admin token. CASE retains a dormant researcher-upload adapter for
-compatibility, but 小环境 does not expose it and it is not a current capture path.
+compatibility, but the portal does not expose it and it is not a current capture path.
 
-The installed `case-registry` command gives CASE and Codex the same operations:
+The installed `casectl` command groups CASE-owned operations by area:
 
 ```sh
-case-registry operations
-case-registry summary
-case-registry catalog
-case-registry benchmarks
-case-registry register-benchmark /absolute/path/benchmark.json
-case-registry remove-unused-benchmarks /absolute/path/benchmark-removal.json
-case-registry purge-erroneous-benchmarks /absolute/path/benchmark-purge.json
-case-registry assign-task-benchmarks /absolute/path/benchmark-assignments.json
-case-registry import /absolute/path/submission.json
-case-registry import-source /absolute/path/source-envelope.json
-case-registry append-tasks /absolute/path/tasks.json
-case-registry archive-vendor /absolute/path/vendor-archive.json
-case-registry restore-vendor /absolute/path/vendor-restore.json
-case-registry lease-work case-checker
-case-registry record-harbor-attempt /absolute/path/harbor-attempt.json
-case-registry record-harbor-check /absolute/path/harbor-check.json
-case-registry reconcile-harbor-work-items /absolute/path/work-reconciliation.json
-case-registry record-harbor-finding /absolute/path/harbor-finding.json
-case-registry remove-submission /absolute/path/submission-removal.json
-case-registry delete-artifact <unreferenced-artifact-id>
-case-intake capture-feishu-plan /absolute/path/plan.json
-case-mail-intake capture-mail-plan /absolute/path/plan.json
+casectl registry operations
+casectl registry summary
+casectl registry catalog
+casectl registry benchmarks
+casectl registry register-benchmark /absolute/path/benchmark.json
+casectl registry remove-unused-benchmarks /absolute/path/benchmark-removal.json
+casectl registry purge-erroneous-benchmarks /absolute/path/benchmark-purge.json
+casectl registry assign-task-benchmarks /absolute/path/benchmark-assignments.json
+casectl registry import /absolute/path/submission.json
+casectl registry import-source /absolute/path/source-envelope.json
+casectl registry append-tasks /absolute/path/tasks.json
+casectl registry archive-vendor /absolute/path/vendor-archive.json
+casectl registry restore-vendor /absolute/path/vendor-restore.json
+casectl registry lease-work case-checker
+casectl registry record-harbor-attempt /absolute/path/harbor-attempt.json
+casectl registry record-harbor-check /absolute/path/harbor-check.json
+casectl registry reconcile-harbor-work-items /absolute/path/work-reconciliation.json
+casectl registry record-harbor-finding /absolute/path/harbor-finding.json
+casectl registry remove-submission /absolute/path/submission-removal.json
+casectl registry delete-artifact <unreferenced-artifact-id>
+casectl intake feishu /absolute/path/plan.json
+casectl intake mail /absolute/path/plan.json
+casectl harbor-tasks plan <submission-id>
+casectl task-package <command> [arguments]
 ```
 
 Registration preserves an immutable submission checkpoint and queues parsing.
@@ -118,7 +120,14 @@ direction, and one of the two format labels. Source-item benchmark assignments
 provide a bulk default for every supplied task linked to that item; a task-level
 benchmark ID is available for a mixed package. Benchmark versions are not
 tracked. Historical task versions are assigned `unspecified` rather than being
-inferred from filenames. Non-Harbor tasks stop there.
+inferred from filenames. Before registration, each task submitted with the
+`harbor` label is checked with the static task-format validator from CASE's
+pinned Harbor installation. The validator reads package structure and
+configuration but does not build an image, start an environment, or execute
+vendor code. A task that fails this check remains in the registration with the
+same identity and provenance, but its format is changed to `non_harbor`.
+Missing artifacts, hash mismatches, unsafe archives, and other provenance or
+capture failures still stop the operation instead of changing the format.
 
 When `append-tasks` or `reconcile-submission-tasks` receives a desired set that
 contains a Harbor task, it publishes every active Harbor task in that submission
@@ -134,9 +143,8 @@ the task version, so its artifact, source links, Harbor checks, attempts, and
 findings remain attached and visible. Task reconciliation ignores benchmark-only
 changes and must never be used to manufacture a replacement version for them.
 
-`case-registry`, `case-intake`, and `case-mail-intake` do not call the registry
-HTTP API. The capture commands
-place exact payload bytes in CASE's content-addressed object store, then use one
+`casectl registry` and `casectl intake` do not call the registry HTTP API. The
+capture commands place exact payload bytes in CASE's content-addressed object store, then use one
 database transaction to register artifact records, source events and items, the
 dated submission, and every source link. A capture plan contains the vendor,
 submission ID/date/label, attachments, and an optional explicit `harbor` or
@@ -203,10 +211,10 @@ vendor files use the contextual `original_vendor_file` link role; messages,
 folders, URLs, receipts, and other arrival evidence use `provenance`. The role
 lives on the submission-to-source-item relationship because one immutable
 artifact can participate in different provenance contexts. Use the audited
-`case-registry reconcile-submission-source-items` operation to repair legacy
+`casectl registry reconcile-submission-source-items` operation to repair legacy
 links without changing source records or stored object bytes.
 
-小环境 is read-only and does not expose submission uploads. New sample
+The portal is read-only and does not expose submission uploads. New sample
 submissions currently enter CASE only through the reviewed Feishu message/file
 or Feishu Mail message/attachment capture paths.
 
@@ -246,9 +254,9 @@ flow. Authentication is ordinary agent work rather than a special harness
 command: ask the agent whether it can access a calendar, document, mailbox, or
 other Feishu resource, then follow its explanation.
 
-CASE's complete sample-processing policy lives in the source-controlled root
-[`AGENTS.md`](../../AGENTS.md). The registry CLI remains self-describing: run
-`case-registry operations` for current command schemas rather than relying on a
+CASE's operating policy lives in the source-controlled root
+[`AGENTS.md`](../../AGENTS.md). The registry namespace remains self-describing: run
+`casectl registry operations` for current command schemas rather than relying on a
 separate CASE-specific skill package.
 
 The resulting renewable user login is stored by `lark-cli` under its configured

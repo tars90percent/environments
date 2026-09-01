@@ -13,6 +13,7 @@ import {
   reconcileTaskSetWithHarborPublication,
   registerTaskSetWithHarborPublication,
 } from "./harbor-publication.js";
+import { classifyHarborTaskRegistrations } from "./harbor-export-cli.js";
 import type { ArtifactStore } from "./registry/artifacts.js";
 import { localArtifactStore, openLocalRepository } from "./registry/local.js";
 import type { RegistryRepository } from "./registry/repository.js";
@@ -55,7 +56,7 @@ if (command === "operations") {
         output(await repository.sampleCatalogSnapshot());
         break;
       case "vendors":
-        if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: case-registry vendors [--all]");
+        if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: casectl registry vendors [--all]");
         output(await repository.vendorDirectory(argument === "--all"));
         break;
       case "record-vendor-interaction":
@@ -68,10 +69,10 @@ if (command === "operations") {
         output(vendor);
         break;
       }
-      case "batch": {
-        const batchId = required(argument, "submission id");
-        const submission = await repository.getSampleSubmission(batchId);
-        if (!submission) fail(`Submission not found: ${batchId}`);
+      case "submission": {
+        const submissionId = required(argument, "submission id");
+        const submission = await repository.getSampleSubmission(submissionId);
+        if (!submission) fail(`Submission not found: ${submissionId}`);
         output(submission);
         break;
       }
@@ -120,7 +121,8 @@ if (command === "operations") {
         const registration = parseAppendTasks(await jsonFile(argument));
         output(await registerTaskSetWithHarborPublication({
           registration,
-          register: () => repository.appendTasks(registration),
+          classify: () => classifyHarborTaskRegistrations({ repository, sourceStore: localArtifactStore(), tasks: registration.tasks }),
+          register: (classifiedRegistration) => repository.appendTasks(classifiedRegistration),
           publish: (submissionId) => publishSubmissionHarborTasks(repository, submissionId),
         }));
         break;
@@ -129,7 +131,8 @@ if (command === "operations") {
         const registration = parseReconcileSubmissionTasks(await jsonFile(argument));
         output(await reconcileTaskSetWithHarborPublication({
           registration,
-          register: () => repository.reconcileSubmissionTasks(registration),
+          classify: () => classifyHarborTaskRegistrations({ repository, sourceStore: localArtifactStore(), tasks: registration.tasks }),
+          register: (classifiedRegistration) => repository.reconcileSubmissionTasks(classifiedRegistration),
           publish: (submissionId) => publishSubmissionHarborTasks(repository, submissionId),
           prune: (submissionId) => pruneSubmissionHarborTasks(repository, submissionId),
         }));
@@ -186,7 +189,7 @@ if (command === "operations") {
         output(await repository.reconcileHarborWorkItems(parseReconcileHarborWorkItems(await jsonFile(argument))));
         break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
+        fail("Usage: casectl registry operations|summary|catalog|vendors|vendor|submission|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
     }
   } finally {
     await repository.close();
@@ -295,13 +298,13 @@ function operationSchemas() {
     vendors: { arguments: ["[--all]"], result: "vendor directory" },
     "record-vendor-interaction": {
       arguments: ["<interaction.json>"],
-      fields: ["id", "vendorId", "kind", "eventType", "title", "summary", "channel", "evidence", "visibility", "occurredAt", "sourceEventIds", "batchIds", "actor"],
+      fields: ["id", "vendorId", "kind", "eventType", "title", "summary", "channel", "evidence", "visibility", "occurredAt", "sourceEventIds", "submissionIds", "actor"],
       channels: ["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"],
       evidence: ["direct", "relayed", "automated", "internal"],
       note: "Appends one immutable vendor interaction. Portal entries expose only the curated title, summary, date, channel, and evidence class; source locators and internal actor data remain private.",
     },
     vendor: { arguments: ["<vendor-id>"] },
-    batch: { arguments: ["<submission-id>"] },
+    submission: { arguments: ["<submission-id>"] },
     task: { arguments: ["<task-id>"] },
     "source-event": { arguments: ["<source-event-id>"] },
     benchmarks: { arguments: [], result: "registered general benchmark directions" },
@@ -326,7 +329,7 @@ function operationSchemas() {
       fields: ["submissionId", "assignments[{taskId,gpuRequired,evidence}]", "reason", "actor"],
       note: "Appends audited GPU-requirement assignments without replacing task versions or creating Harbor attempts.",
     },
-    import: { arguments: ["<submission-manifest.json>"], compatibility: "Prefer case-intake or case-mail-intake for Feishu capture." },
+    import: { arguments: ["<submission-manifest.json>"], compatibility: "Prefer casectl intake feishu or casectl intake mail for Feishu capture." },
     "import-source": { arguments: ["<source-envelope.json>"], compatibility: "Registers standalone provenance evidence." },
     "reconcile-submission-source-items": {
       arguments: ["<reconciliation.json>"],
@@ -337,14 +340,14 @@ function operationSchemas() {
     "append-tasks": {
       arguments: ["<tasks.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "actor"],
-      note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override. After the registry transaction commits, every active Harbor task in the submission is published as exact individual files to harbor-tasks; an export failure leaves the registration committed and makes this command fail so the same input can be retried safely.",
+      note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override. Before registration, each task requested as Harbor is checked with the pinned Harbor library's static task-format validation without executing task code. A format failure retains the task but changes its format to non_harbor; missing or mismatched provenance still fails the operation. After the registry transaction commits, every active Harbor task in the submission is published as exact individual files to harbor-tasks; an export failure leaves the registration committed and makes this command fail so the same input can be retried safely.",
     },
     "reconcile-submission-tasks": {
       arguments: ["<reconciliation.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "reason", "actor"],
-      note: "Atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version. After commit, active Harbor tasks are published before inactive task prefixes are removed from harbor-tasks; both steps are safely retryable. A null artifactId is accepted only to retain an exact unchanged legacy version that predates task-artifact links.",
+      note: "Checks each desired task requested as Harbor with the pinned Harbor library's static task-format validation without executing task code. A format failure retains the task but changes its format to non_harbor; missing or mismatched provenance still fails the operation. The reconciliation then atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version. After commit, active Harbor tasks are published before inactive task prefixes are removed from harbor-tasks; both steps are safely retryable. A null artifactId is accepted only for a non-Harbor unchanged legacy version that predates task-artifact links.",
     },
-    "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
+    "classify-submission": { arguments: ["<classification.json>"], fields: ["submissionId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },
     "restore-vendor": { arguments: ["<restore.json>"], fields: ["vendorId", "reason", "actor"] },
     "store-file": { arguments: ["<artifact-kind>", "<absolute-file-path>"] },
@@ -358,7 +361,7 @@ function operationSchemas() {
     },
     "record-harbor-finding": { arguments: ["<finding.json>"], fields: ["id", "taskId", "checkRunId", "finding"] },
     "register-artifact": { arguments: ["<artifact.json>"], note: "The object is verified before its record is registered." },
-    "remove-submission": { arguments: ["<removal.json>"], fields: ["batchId", "disposition", "reason", "actor"] },
+    "remove-submission": { arguments: ["<removal.json>"], fields: ["submissionId", "disposition", "reason", "actor"] },
     "delete-artifact": { arguments: ["<unreferenced-artifact-id>"] },
     "lease-work": { arguments: ["<worker-id>"], leaseSeconds: 900 },
     "complete-work": { arguments: ["<completion.json>"], fields: ["id", "workerId", "outcome", "error?"] },

@@ -93,10 +93,10 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
     return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "vendor_not_found" });
   }
 
-  const batchMatch = url.pathname.match(/^\/v1\/batches\/([^/]+)$/);
-  if (method === "GET" && batchMatch?.[1]) {
-    const value = await options.repository.getSampleSubmission(decodeURIComponent(batchMatch[1]));
-    return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "batch_not_found" });
+  const submissionMatch = url.pathname.match(/^\/v1\/submissions\/([^/]+)$/);
+  if (method === "GET" && submissionMatch?.[1]) {
+    const value = await options.repository.getSampleSubmission(decodeURIComponent(submissionMatch[1]));
+    return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "submission_not_found" });
   }
 
   const taskMatch = url.pathname.match(/^\/v1\/tasks\/([^/]+)$/);
@@ -140,7 +140,7 @@ async function recordResearcherUpload(upload: ResearcherUploadInput, options: Re
   const artifactId = `artifact:sha256:${upload.artifact.sha256}`;
   const sourceEventId = `portal-upload:${upload.id}`;
   const sourceItemId = `source-item:portal-upload:${upload.id}`;
-  const batchId = `researcher-upload:${upload.id}`;
+  const submissionId = `researcher-upload:${upload.id}`;
   const uploadDate = new Date(upload.uploadedAt).toISOString().slice(0, 10);
 
   await options.artifactStore.verifyObject({
@@ -151,10 +151,10 @@ async function recordResearcherUpload(upload: ResearcherUploadInput, options: Re
   await options.repository.captureSubmission({
     vendor,
     submission: {
-      id: batchId,
+      id: submissionId,
       date: uploadDate,
       label: upload.label,
-      sourceLabel: "Researcher upload through 小环境",
+      sourceLabel: "Researcher upload through the portal",
       formats: [],
       metadata: {
         countUnit: "sample_files",
@@ -214,7 +214,7 @@ async function recordResearcherUpload(upload: ResearcherUploadInput, options: Re
     actor: `portal:${upload.researcher.openId}`,
   });
 
-  return { uploadId: upload.id, submissionId: batchId, sourceEventId, artifactId };
+  return { uploadId: upload.id, submissionId, sourceEventId, artifactId };
 }
 
 function authenticate(request: IncomingMessage, options: RegistryServerOptions): "catalog" | "upload" | null {

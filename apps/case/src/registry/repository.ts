@@ -49,7 +49,7 @@ export interface RegistryRepository {
   close(): Promise<void>;
   captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
   reconcileSubmissionSourceItems(input: ReconcileSubmissionSourceItemsInput): Promise<ReconcileSubmissionSourceItemsResult>;
-  ingestSubmission(manifest: SubmissionManifest): Promise<{ batchId: string; created: boolean }>;
+  ingestSubmission(manifest: SubmissionManifest): Promise<{ submissionId: string; created: boolean }>;
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
   removeUnusedBenchmarks(input: RemoveUnusedBenchmarksInput): Promise<RemoveUnusedBenchmarksResult>;

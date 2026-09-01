@@ -156,7 +156,7 @@ export type VendorEventInput = {
   actor: string;
   occurredAt: string;
   sourceEventIds: string[];
-  batchIds: string[];
+  submissionIds: string[];
   metadata?: Record<string, unknown>;
 };
 
@@ -190,7 +190,7 @@ export type VendorInteractionInput = {
   visibility: VendorInteractionVisibility;
   occurredAt: string;
   sourceEventIds: string[];
-  batchIds: string[];
+  submissionIds: string[];
   actor: string;
 };
 
@@ -250,8 +250,8 @@ export type SourceEnvelopeInput = {
   sourceEvent: SourceEventInput;
   items: SourceItemInput[];
   relations?: SourceRelationInput[];
-  batchLinks?: Array<{
-    batchId: string;
+  submissionLinks?: Array<{
+    submissionId: string;
     role: "primary" | "supplement" | "correction" | "metadata" | "other";
     sourceItemIds?: string[];
   }>;
@@ -360,7 +360,7 @@ export type SubmissionTaskInput = {
 export type SubmissionManifest = {
   vendor: RegistryVendorInput;
   sourceEvent: SourceEventInput;
-  batch: {
+  submission: {
     id: string;
     date: string;
     label: string;
@@ -369,7 +369,7 @@ export type SubmissionManifest = {
     formats: string[];
     workflowStatus: WorkflowStatus;
     catalogVisibility: CatalogVisibility;
-    revisesBatchId?: string;
+    revisesSubmissionId?: string;
     delta: {
       retained?: number;
       added: number;
@@ -397,7 +397,7 @@ export type NormalizedTaskRegistrationInput = Omit<
 };
 
 export type AppendNormalizedTasksInput = {
-  batchId: string;
+  submissionId: string;
   categories: SubmissionCategoryInput[];
   tasks: NormalizedTaskRegistrationInput[];
   reason: string;
@@ -405,7 +405,7 @@ export type AppendNormalizedTasksInput = {
 };
 
 export type AppendNormalizedTasksResult = {
-  batchId: string;
+  submissionId: string;
   categoriesAdded: number;
   taskVersionsAdded: number;
   taskVersionsFinalized: number;
@@ -610,17 +610,17 @@ export type ArtifactRecord = ArtifactInput & {
 };
 
 export type SubmissionRemovalInput = {
-  batchId: string;
+  submissionId: string;
   disposition: "erroneous_registration" | "purchased_delivery_handoff";
   reason: string;
   actor: string;
 };
 
 export type SubmissionRemovalResult = {
-  batchId: string;
+  submissionId: string;
   vendorId: string;
   disposition: SubmissionRemovalInput["disposition"];
-  detachedRevisionBatchIds: string[];
+  detachedRevisionSubmissionIds: string[];
   removedTaskVersionIds: string[];
   removedTaskIds: string[];
   retainedTaskIds: string[];
@@ -630,7 +630,7 @@ export type SubmissionRemovalResult = {
 };
 
 export type SubmissionIntakeClassificationInput = {
-  batchId: string;
+  submissionId: string;
   purpose: "sample_evaluation";
   sourceEventIds: string[];
   reason: string;
@@ -638,7 +638,7 @@ export type SubmissionIntakeClassificationInput = {
 };
 
 export type SubmissionIntakeClassificationResult = {
-  batchId: string;
+  submissionId: string;
   purpose: "sample_evaluation";
   changed: boolean;
 };
@@ -714,7 +714,7 @@ export type TaskFindingUpdateInput = {
 
 export type FollowUpInput = {
   id: string;
-  batchId: string;
+  submissionId: string;
   channel: "email" | "feishu" | "internal" | "other";
   recipient: string;
   status: "drafted" | "sent" | "replied" | "closed";
@@ -729,7 +729,7 @@ export type SubmissionReviewScope = "submission" | "categories";
 
 export type SubmissionReviewInput = {
   id: string;
-  batchId: string;
+  submissionId: string;
   signal: SubmissionReviewSignal;
   scope: SubmissionReviewScope;
   categoryIds: string[];
@@ -846,7 +846,7 @@ export type CatalogCategory = {
   tasks: CatalogTask[];
 };
 
-export type CatalogBatch = {
+export type CatalogSubmission = {
   id: string;
   date: string;
   label: string;
@@ -858,8 +858,8 @@ export type CatalogBatch = {
   formats: string[];
   workflowStatus: WorkflowStatus;
   catalogVisibility: CatalogVisibility;
-  revisesBatchId: string | null;
-  delta: SubmissionManifest["batch"]["delta"];
+  revisesSubmissionId: string | null;
+  delta: SubmissionManifest["submission"]["delta"];
   sourceEvents: CatalogSourceEvent[];
   categories: CatalogCategory[];
 };
@@ -896,7 +896,7 @@ export type CatalogVendor = {
   short: string;
   description: string;
   procurementSummary: CatalogProcurementSummary | null;
-  batches: CatalogBatch[];
+  submissions: CatalogSubmission[];
 };
 
 export type LocalizedCatalogText = {
@@ -921,7 +921,7 @@ export type CatalogSnapshot = {
   vendors: CatalogVendor[];
   totals: {
     vendors: number;
-    batches: number;
+    submissions: number;
     taskVersions: number;
   };
 };
