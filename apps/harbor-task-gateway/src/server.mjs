@@ -6,8 +6,10 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { Upload } from "@aws-sdk/lib-storage";
 import { createGatewayHandler } from "./app.mjs";
 import { taskArchiveChunks } from "./task-archive.mjs";
+import { createVendorArchiveCache } from "./vendor-archive-cache.mjs";
 
 const configuration = loadConfiguration(process.env);
 const client = new S3Client({
@@ -17,6 +19,15 @@ const client = new S3Client({
   credentials: {
     accessKeyId: configuration.accessKeyId,
     secretAccessKey: configuration.secretAccessKey,
+  },
+});
+const archiveClient = new S3Client({
+  endpoint: configuration.archive.endpoint,
+  region: configuration.archive.region,
+  forcePathStyle: configuration.archive.urlStyle === "path",
+  credentials: {
+    accessKeyId: configuration.archive.accessKeyId,
+    secretAccessKey: configuration.archive.secretAccessKey,
   },
 });
 
@@ -56,6 +67,51 @@ const headObject = async (key) => {
   }
 };
 
+const headArchiveObject = async (key) => {
+  try {
+    const head = await archiveClient.send(new HeadObjectCommand({ Bucket: configuration.archive.bucket, Key: key }));
+    return { contentLength: head.ContentLength, etag: head.ETag, lastModified: head.LastModified };
+  } catch (error) {
+    if (error?.name === "NoSuchKey" || error?.name === "NotFound" || error?.$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
+};
+
+const prepareZipArchive = createVendorArchiveCache({
+  listSourceObjects: listObjects,
+  readSourceObject: async (key) => {
+    const object = await client.send(new GetObjectCommand({ Bucket: configuration.bucket, Key: key }));
+    return { body: object.Body, contentLength: object.ContentLength };
+  },
+  headCacheObject: headArchiveObject,
+  uploadCacheObject: async ({ key, body, contentType, metadata }) => {
+    const upload = new Upload({
+      client: archiveClient,
+      params: {
+        Bucket: configuration.archive.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        Metadata: metadata,
+      },
+      queueSize: 4,
+      partSize: 8 * 1024 * 1024,
+      leavePartsOnError: false,
+    });
+    await upload.done();
+  },
+  signCacheObject: async ({ key, filename, expiresInSeconds }) => getSignedUrl(
+    archiveClient,
+    new GetObjectCommand({
+      Bucket: configuration.archive.bucket,
+      Key: key,
+      ResponseContentDisposition: contentDisposition(filename),
+    }),
+    { expiresIn: expiresInSeconds },
+  ),
+  signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
+});
+
 const handler = createGatewayHandler({
   authToken: configuration.authToken,
   signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
@@ -69,6 +125,7 @@ const handler = createGatewayHandler({
       return { body: object.Body, contentLength: object.ContentLength };
     },
   }),
+  prepareZipArchive,
   signGetObject: async ({ key, expiresInSeconds, downloadName }) => getSignedUrl(
     client,
     new GetObjectCommand({
@@ -125,6 +182,14 @@ function loadConfiguration(environment) {
     bucket: required("BUCKET_NAME", ["AWS_S3_BUCKET_NAME"]),
     region: environment.BUCKET_REGION ?? environment.AWS_DEFAULT_REGION ?? "auto",
     urlStyle: environment.BUCKET_URL_STYLE ?? environment.AWS_S3_URL_STYLE ?? "virtual",
+    archive: {
+      endpoint: required("ARCHIVE_BUCKET_ENDPOINT"),
+      accessKeyId: required("ARCHIVE_BUCKET_ACCESS_KEY_ID"),
+      secretAccessKey: required("ARCHIVE_BUCKET_SECRET_ACCESS_KEY"),
+      bucket: required("ARCHIVE_BUCKET_NAME"),
+      region: environment.ARCHIVE_BUCKET_REGION ?? "auto",
+      urlStyle: environment.ARCHIVE_BUCKET_URL_STYLE ?? "virtual",
+    },
   };
 }
 

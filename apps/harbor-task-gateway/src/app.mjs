@@ -10,6 +10,7 @@ export function createGatewayHandler({
   listObjects,
   headObject,
   archiveRoots,
+  prepareZipArchive,
   signGetObject,
   signedUrlTtlSeconds,
 }) {
@@ -86,6 +87,45 @@ export function createGatewayHandler({
         }));
         response.destroy(error instanceof Error ? error : new Error(String(error)));
         return;
+      }
+    }
+
+    if (url.pathname === "/zip-archives") {
+      if (request.method !== "POST") return methodNotAllowed(response, ["POST"]);
+      let requestBody;
+      let roots;
+      try {
+        requestBody = await readJsonBody(request);
+        roots = archiveTaskRoots(requestBody.roots);
+        validateArchiveManifest(requestBody.manifest);
+        validateArchiveFilename(requestBody.filename);
+      } catch (error) {
+        response.statusCode = 400;
+        return json(response, { error: error instanceof Error ? error.message : "invalid ZIP archive request" });
+      }
+      try {
+        const markers = await mapLimit(roots, 16, (root) => headObject(`${root}/task.toml`));
+        const missing = roots.filter((_, index) => !markers[index]);
+        if (missing.length) {
+          response.statusCode = 409;
+          return json(response, { error: "one or more task roots are incomplete", missing });
+        }
+        const result = await prepareZipArchive({
+          roots,
+          manifest: requestBody.manifest,
+          filename: requestBody.filename,
+        });
+        response.statusCode = 200;
+        return json(response, result);
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "error",
+          message: "gateway ZIP archive failed",
+          taskRootCount: roots.length,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        response.statusCode = 502;
+        return json(response, { error: "ZIP archive preparation failed" });
       }
     }
 
@@ -194,6 +234,19 @@ function archiveTaskRoots(value) {
   if (new Set(roots).size !== roots.length) throw new Error("task roots must be unique");
   if (new Set(roots.map((root) => root.split("/")[0])).size !== 1) throw new Error("task roots must belong to one vendor");
   return roots;
+}
+
+function validateArchiveManifest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("manifest must be a JSON object");
+}
+
+function validateArchiveFilename(value) {
+  if (typeof value !== "string" || value.length < 5 || value.length > 200 || !value.toLowerCase().endsWith(".zip")) {
+    throw new Error("filename must be a ZIP filename of at most 200 characters");
+  }
+  if (value === ".zip" || value.includes("/") || /[\u0000-\u001f\u007f\\]/.test(value)) {
+    throw new Error("filename contains unsafe characters");
+  }
 }
 
 async function mapLimit(values, concurrency, iteratee) {

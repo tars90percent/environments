@@ -7,7 +7,7 @@ import { createGatewayHandler } from "../src/app.mjs";
 const token = "test-token-that-is-at-least-thirty-two-characters";
 
 async function fixture(overrides = {}) {
-  const calls = { list: [], head: [], archive: [], sign: [] };
+  const calls = { list: [], head: [], archive: [], zipArchive: [], sign: [] };
   const handler = createGatewayHandler({
     authToken: token,
     signedUrlTtlSeconds: 900,
@@ -38,6 +38,20 @@ async function fixture(overrides = {}) {
     archiveRoots: async function* (roots) {
       calls.archive.push(roots);
       yield new Uint8Array([1, 2, 3, 4]);
+    },
+    prepareZipArchive: async (input) => {
+      calls.zipArchive.push(input);
+      return overrides.zipResult ?? {
+        status: "ready",
+        cacheHit: false,
+        downloadUrl: "https://archive.example/signed",
+        filename: input.filename,
+        sizeBytes: 123,
+        sourceBytes: 456,
+        fileCount: 7,
+        taskCount: input.roots.length,
+        expiresInSeconds: 900,
+      };
     },
     signGetObject: async (input) => {
       calls.sign.push(input);
@@ -198,6 +212,44 @@ test("archive requests refuse task roots without their task.toml completion mark
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), { error: "one or more task roots are incomplete", missing: [root] });
     assert.deepEqual(app.calls.archive, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test("ZIP archive requests return a signed cached object without changing the TAR route", async () => {
+  const app = await fixture();
+  try {
+    const roots = ["vendor/submission/task-one", "vendor/submission/task-two"];
+    const manifest = { schemaVersion: "case.vendor-harbor-task-files.v1", tasks: [{ id: "one" }] };
+    const response = await fetch(`${app.baseUrl}/zip-archives`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ roots, manifest, filename: "Vendor-harbor-tasks.zip" }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      status: "ready",
+      cacheHit: false,
+      downloadUrl: "https://archive.example/signed",
+      filename: "Vendor-harbor-tasks.zip",
+      sizeBytes: 123,
+      sourceBytes: 456,
+      fileCount: 7,
+      taskCount: 2,
+      expiresInSeconds: 900,
+    });
+    assert.deepEqual(app.calls.head, roots.map((root) => `${root}/task.toml`));
+    assert.deepEqual(app.calls.zipArchive, [{ roots, manifest, filename: "Vendor-harbor-tasks.zip" }]);
+    assert.deepEqual(app.calls.archive, []);
+
+    const invalid = await fetch(`${app.baseUrl}/zip-archives`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ roots, manifest, filename: "../tasks.zip" }),
+    });
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(await invalid.json(), { error: "filename contains unsafe characters" });
   } finally {
     await app.close();
   }

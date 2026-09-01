@@ -11,7 +11,7 @@ export function documentationHtml() {
 <body>
   <main>
     <h1>Harbor Task Gateway</h1>
-    <p>Read-only access to the exact individual files in the Harbor task bucket.</p>
+    <p>Read-only access to the exact individual files in the Harbor task bucket, plus cached vendor ZIP downloads stored in a separate disposable cache.</p>
 
     <h2>Authentication</h2>
     <p>Documentation and health checks are public. Task listings, metadata, and downloads require this header:</p>
@@ -41,6 +41,13 @@ export function documentationHtml() {
   --data '{"roots":["vendor/submission/task"]}' \
   "${productionBaseUrl}/archives" &gt; harbor-tasks.tar</code></pre>
 
+    <h2>Prepare a cached vendor ZIP</h2>
+    <p>Submit exact active task roots, a portal manifest, and a safe ZIP filename. The response is JSON containing a short-lived signed download URL. The first request builds a content-addressed ZIP in the separate archive cache; identical later requests reuse it. The ZIP contains <code>manifest.json</code> and the exact task paths, with no generated README.</p>
+    <pre><code>curl -X POST -H "Authorization: Bearer $HARBOR_TASKS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"roots":["vendor/submission/task"],"manifest":{"schemaVersion":"example.v1"},"filename":"vendor-harbor-tasks.zip"}' \
+  "${productionBaseUrl}/zip-archives"</code></pre>
+
     <h2>Download a file</h2>
     <p>File requests return a temporary <code>302</code> redirect. Clients must follow redirects.</p>
     <pre><code>curl -L -H "Authorization: Bearer $HARBOR_TASKS_TOKEN" \
@@ -60,7 +67,7 @@ export function openApiDocument() {
     info: {
       title: "Harbor Task Gateway",
       version: "1.0.0",
-      description: "Read-only access to exact individual Harbor task files. Documentation and health endpoints are public; task data requires bearer authentication.",
+      description: "Read-only access to exact individual Harbor task files plus content-addressed vendor ZIPs in a separate disposable cache. Documentation and health endpoints are public; task data requires bearer authentication.",
     },
     servers: [{ url: productionBaseUrl }],
     security: [{ bearerAuth: [] }],
@@ -154,6 +161,43 @@ export function openApiDocument() {
           },
         },
       },
+      "/zip-archives": {
+        post: {
+          summary: "Prepare a cached ZIP for selected task roots",
+          description: "Validates each task.toml completion marker and returns a short-lived signed URL. A cache miss builds a content-addressed ZIP from exact harbor-tasks objects and the supplied manifest; a hit reads no task bytes.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["roots", "manifest", "filename"],
+                  properties: {
+                    roots: {
+                      type: "array",
+                      minItems: 1,
+                      maxItems: 1000,
+                      uniqueItems: true,
+                      items: { type: "string", pattern: "^[^/]+/[^/]+/[^/]+$" },
+                    },
+                    manifest: { type: "object" },
+                    filename: { type: "string", maxLength: 200, pattern: "\\.zip$" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Archive is ready",
+              content: { "application/json": { schema: { $ref: "#/components/schemas/PreparedArchive" } } },
+            },
+            "400": errorResponse("Invalid ZIP archive request"),
+            "409": errorResponse("One or more task roots are incomplete"),
+            "502": errorResponse("Archive preparation failed"),
+          },
+        },
+      },
       "/{objectPath}": {
         parameters: [{
           name: "objectPath",
@@ -205,6 +249,21 @@ export function openApiDocument() {
           type: "object",
           required: ["status"],
           properties: { status: { type: "string", const: "ok" } },
+        },
+        PreparedArchive: {
+          type: "object",
+          required: ["status", "cacheHit", "downloadUrl", "filename", "sizeBytes", "sourceBytes", "fileCount", "taskCount", "expiresInSeconds"],
+          properties: {
+            status: { const: "ready" },
+            cacheHit: { type: "boolean" },
+            downloadUrl: { type: "string", format: "uri" },
+            filename: { type: "string" },
+            sizeBytes: { type: "integer", minimum: 1 },
+            sourceBytes: { type: "integer", minimum: 0 },
+            fileCount: { type: "integer", minimum: 1 },
+            taskCount: { type: "integer", minimum: 1 },
+            expiresInSeconds: { type: "integer", minimum: 60 },
+          },
         },
         DirectoryListing: {
           type: "object",

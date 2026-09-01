@@ -151,6 +151,12 @@ After `reconcile-submission-tasks` commits and verifies or publishes every activ
 
 Distribution failure does not roll back or disguise a successful registry transaction. The registration command must fail visibly after commit, and the operator should rerun the exact same supported command; registry registration and exact-file publication are both idempotent. A persistent prefix collision requires correcting the registered mapping through the normal audited submission/task-version workflow, never editing bucket objects by hand. The separately deployed Harbor task gateway is the external read interface over this bucket; its API documentation describes discovery, recursive listing, and file download. Bucket credentials remain confined to CASE and the gateway.
 
+### Derived Harbor archive cache
+
+The separately deployed Harbor task gateway may build vendor ZIP downloads in the Railway `harbor-task-archives` bucket. This bucket is a disposable, derived cache: each archive is content-addressed from the selected exact `harbor-tasks` objects and the portal manifest, is not canonical task or registry data, is never check evidence or source material, and may be purged without affecting CASE or Harbor task distribution. Never use cached archives to restore, reconcile, or publish tasks.
+
+The gateway is the only writer to this cache. Archive creation may list, head, and read `harbor-tasks`, but it must not write, delete, rename, change ACLs, or change lifecycle policy in that distribution bucket. Cache credentials and writes remain separate from distribution-bucket credentials and writes. The portal receives a short-lived signed cache URL so archive bytes travel directly from object storage rather than through the portal.
+
 Trusted CASE capture commands call the same registry library directly with CASE's database and object-store credentials so that artifact, source, submission, and link records are committed through one canonical transaction. This is not permission for ad hoc SQL; humans and agents still use the supported commands.
 
 小环境 is a read-only researcher-facing view over CASE, not a second database or control plane. It exposes submissions, summarized arrival provenance, parsed material, general benchmark directions, GPU requirements, original-vendor-file and task-artifact downloads, the three Harbor tags, whether an unset check was attempted without a conclusive result, and findings. It does not expose source records or external source links. It has no submission upload, procurement, research-demand, status, scoring, recommendation, or review workflow.
@@ -184,7 +190,7 @@ Before claiming Harbor checking is available, verify the live Harbor and Modal v
 
 ## Repository and instruction boundary
 
-[`tars90percent/environments`](https://github.com/tars90percent/environments) is the source repository for the complete system. CASE lives in `apps/case`, and the portal lives in `apps/portal`. Their packages, tests, build commands, secrets, Railway services, and deployment checks remain independent even though they share one Git history. Never commit vendor sample folders or material to Git, and never publish them outside the controlled `harbor-tasks` distribution path described above.
+[`tars90percent/environments`](https://github.com/tars90percent/environments) is the source repository for the complete system. CASE lives in `apps/case`, and the portal lives in `apps/portal`. Their packages, tests, build commands, secrets, Railway services, and deployment checks remain independent even though they share one Git history. Never commit vendor sample folders or material to Git, and never publish them outside the controlled `harbor-tasks` distribution path and its disposable derived archive cache described above.
 
 This root `AGENTS.md` is the only source-controlled agent policy. Codex tasks opened anywhere in the monorepo inherit it from the Git root. Do not add a second application-level `AGENTS.md` that restates or modifies the operating philosophy. Production CASE packages this exact root file into its image and copies it into `AGENT_WORKSPACE/AGENTS.md` before starting or resuming a Codex thread. A source-controlled policy change is therefore a CASE production change and must trigger and pass the CASE deployment workflow.
 
