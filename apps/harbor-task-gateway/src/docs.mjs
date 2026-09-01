@@ -34,6 +34,13 @@ export function documentationHtml() {
   "${productionBaseUrl}/?recursive=1&amp;limit=1000"</code></pre>
     <p><code>limit</code> defaults to 200 and may be 1–1000. When <code>nextCursor</code> is not null, pass it back as the <code>cursor</code> query parameter.</p>
 
+    <h2>Download selected task roots as one TAR</h2>
+    <p>Submit the exact active task roots selected from CASE. The response streams their individual bucket files without creating a stored wrapper object.</p>
+    <pre><code>curl -X POST -H "Authorization: Bearer $HARBOR_TASKS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"roots":["vendor/submission/task"]}' \
+  "${productionBaseUrl}/archives" &gt; harbor-tasks.tar</code></pre>
+
     <h2>Download a file</h2>
     <p>File requests return a temporary <code>302</code> redirect. Clients must follow redirects.</p>
     <pre><code>curl -L -H "Authorization: Bearer $HARBOR_TASKS_TOKEN" \
@@ -114,6 +121,37 @@ export function openApiDocument() {
         head: {
           summary: "Check access to the bucket root",
           responses: standardHeadResponses(),
+        },
+      },
+      "/archives": {
+        post: {
+          summary: "Stream selected task roots as a TAR archive",
+          description: "Validates each task.toml completion marker, then streams the exact individual bucket files for 1–1000 task roots from one vendor. No archive object is stored.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["roots"],
+                  properties: {
+                    roots: {
+                      type: "array",
+                      minItems: 1,
+                      maxItems: 1000,
+                      uniqueItems: true,
+                      items: { type: "string", pattern: "^[^/]+/[^/]+/[^/]+$" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Streaming TAR archive", content: { "application/x-tar": { schema: { type: "string", format: "binary" } } } },
+            "400": errorResponse("Invalid archive request"),
+            "409": errorResponse("One or more task roots are incomplete"),
+          },
         },
       },
       "/{objectPath}": {

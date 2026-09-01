@@ -9,6 +9,7 @@ export function createGatewayHandler({
   authToken,
   listObjects,
   headObject,
+  archiveRoots,
   signGetObject,
   signedUrlTtlSeconds,
 }) {
@@ -53,6 +54,39 @@ export function createGatewayHandler({
       response.setHeader("WWW-Authenticate", 'Bearer realm="harbor-tasks"');
       response.setHeader("Link", '</docs>; rel="help"; type="text/html", </openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"');
       return json(response, { error: "unauthorized", documentation: "/docs", openapi: "/openapi.json" });
+    }
+
+    if (url.pathname === "/archives") {
+      if (request.method !== "POST") return methodNotAllowed(response, ["POST"]);
+      let roots;
+      try {
+        roots = archiveTaskRoots((await readJsonBody(request)).roots);
+      } catch (error) {
+        response.statusCode = 400;
+        return json(response, { error: error instanceof Error ? error.message : "invalid archive request" });
+      }
+      const markers = await mapLimit(roots, 16, (root) => headObject(`${root}/task.toml`));
+      const missing = roots.filter((_, index) => !markers[index]);
+      if (missing.length) {
+        response.statusCode = 409;
+        return json(response, { error: "one or more task roots are incomplete", missing });
+      }
+      response.statusCode = 200;
+      response.setHeader("Content-Type", "application/x-tar");
+      response.setHeader("X-Harbor-Task-Count", String(roots.length));
+      try {
+        for await (const chunk of archiveRoots(roots)) await writeChunk(response, chunk);
+        return response.end();
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "error",
+          message: "gateway archive failed",
+          taskRootCount: roots.length,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        response.destroy(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
     }
 
     if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed(response, ["GET", "HEAD"]);
@@ -128,6 +162,69 @@ function authorized(header, expectedToken) {
   const presented = Buffer.from(header.slice("Bearer ".length), "utf8");
   const expected = Buffer.from(expectedToken, "utf8");
   return presented.length === expected.length && timingSafeEqual(presented, expected);
+}
+
+async function readJsonBody(request) {
+  const declared = Number(request.headers["content-length"] ?? 0);
+  if (Number.isFinite(declared) && declared > 1_048_576) throw new Error("archive request exceeds 1 MiB");
+  const chunks = [];
+  let received = 0;
+  for await (const chunk of request) {
+    received += chunk.length;
+    if (received > 1_048_576) throw new Error("archive request exceeds 1 MiB");
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new Error("archive request must contain valid JSON");
+  }
+}
+
+function archiveTaskRoots(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 1_000) throw new Error("roots must contain between 1 and 1000 task roots");
+  const roots = value.map((root) => {
+    if (typeof root !== "string") throw new Error("each task root must be a string");
+    const parts = root.split("/");
+    if (parts.length !== 3 || parts.some((part) => !part || part === "." || part === ".." || /[\u0000-\u001f\u007f\\]/.test(part))) {
+      throw new Error("each task root must use vendor/submission/task format");
+    }
+    return root;
+  });
+  if (new Set(roots).size !== roots.length) throw new Error("task roots must be unique");
+  if (new Set(roots.map((root) => root.split("/")[0])).size !== 1) throw new Error("task roots must belong to one vendor");
+  return roots;
+}
+
+async function mapLimit(values, concurrency, iteratee) {
+  const results = new Array(values.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (next < values.length) {
+      const index = next;
+      next += 1;
+      results[index] = await iteratee(values[index], index);
+    }
+  }));
+  return results;
+}
+
+function writeChunk(response, chunk) {
+  if (response.destroyed) return Promise.reject(new Error("archive response closed"));
+  if (response.write(chunk)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      response.off("drain", onDrain);
+      response.off("error", onError);
+      response.off("close", onClose);
+    };
+    const onDrain = () => { cleanup(); resolve(); };
+    const onError = (error) => { cleanup(); reject(error); };
+    const onClose = () => { cleanup(); reject(new Error("archive response closed")); };
+    response.once("drain", onDrain);
+    response.once("error", onError);
+    response.once("close", onClose);
+  });
 }
 
 function decodeObjectPath(pathname) {

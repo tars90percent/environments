@@ -2,7 +2,15 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { taskDatasetArchive, taskDatasetFilename, taskDatasetManifest, type DatasetPackage } from "../app/dataset-archive";
+import {
+  taskDatasetArchive,
+  taskDatasetFilename,
+  taskDatasetManifest,
+  vendorHarborDatasetArchive,
+  vendorHarborDatasetFilename,
+  vendorHarborDatasetManifest,
+  type DatasetPackage,
+} from "../app/dataset-archive";
 import { originalSubmissionArchive } from "../app/original-submission-archive";
 import { originalSubmissionArchiveFilename, originalSubmissionArtifacts, type OriginalSubmissionArtifact } from "../app/original-submission";
 import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-compat";
@@ -13,6 +21,9 @@ interface Env {
   CASE_REGISTRY_HOST?: string;
   CASE_REGISTRY_PORT?: string;
   CASE_REGISTRY_CATALOG_TOKEN?: string;
+  HARBOR_TASK_GATEWAY_URL?: string;
+  HARBOR_TASK_GATEWAY_TOKEN?: string;
+  RAILWAY_SERVICE_HARBOR_TASK_GATEWAY_URL?: string;
   FEISHU_APP_ID?: string;
   FEISHU_APP_SECRET?: string;
   FEISHU_ALLOWED_TENANT_KEY?: string;
@@ -44,10 +55,57 @@ const worker = {
     const url = new URL(request.url);
     const runtimeEnv = env ?? (process.env as unknown as Env);
 
-    for (const key of ["CASE_REGISTRY_URL", "CASE_REGISTRY_HOST", "CASE_REGISTRY_PORT", "CASE_REGISTRY_CATALOG_TOKEN", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_ALLOWED_TENANT_KEY", "PORTAL_BASE_URL", "PORTAL_SESSION_SECRET"] as const) {
+    for (const key of ["CASE_REGISTRY_URL", "CASE_REGISTRY_HOST", "CASE_REGISTRY_PORT", "CASE_REGISTRY_CATALOG_TOKEN", "HARBOR_TASK_GATEWAY_URL", "HARBOR_TASK_GATEWAY_TOKEN", "RAILWAY_SERVICE_HARBOR_TASK_GATEWAY_URL", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_ALLOWED_TENANT_KEY", "PORTAL_BASE_URL", "PORTAL_SESSION_SECRET"] as const) {
       if (runtimeEnv[key]) process.env[key] = runtimeEnv[key];
     }
     const registryUrl = caseRegistryUrl(runtimeEnv);
+
+    const vendorHarborDownloadMatch = url.pathname.match(/^\/api\/vendors\/([^/]+)\/harbor-download$/);
+    if (vendorHarborDownloadMatch?.[1]) {
+      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
+      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
+        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
+      }
+      const gatewayUrl = harborTaskGatewayUrl(runtimeEnv);
+      if (!gatewayUrl || !runtimeEnv.HARBOR_TASK_GATEWAY_TOKEN) {
+        return Response.json({ error: "harbor_task_gateway_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
+      }
+      try {
+        const vendorId = decodeURIComponent(vendorHarborDownloadMatch[1]);
+        const upstream = await fetch(`${registryUrl}/v1/catalog`, {
+          headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
+        });
+        if (!upstream.ok) return registryErrorResponse(upstream, "vendor_harbor_dataset_unavailable");
+        const vendor = normalizeCaseCatalog(await upstream.json()).vendors.find((candidate) => candidate.id === vendorId);
+        if (!vendor) return Response.json({ error: "vendor_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
+        const manifest = vendorHarborDatasetManifest(vendor);
+        if (!manifest.tasks.length) return Response.json({ error: "vendor_harbor_dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
+        const gateway = await fetch(`${gatewayUrl}/archives`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${runtimeEnv.HARBOR_TASK_GATEWAY_TOKEN}`,
+            "content-type": "application/json",
+            accept: "application/x-tar, application/json",
+          },
+          body: JSON.stringify({ roots: manifest.tasks.map((task) => task.bucketPrefix) }),
+        });
+        if (!gateway.ok) return registryErrorResponse(gateway, "vendor_harbor_dataset_unavailable");
+        const archive = vendorHarborDatasetArchive(vendor, gateway);
+        return new Response(archive, {
+          status: 200,
+          headers: {
+            "content-type": "application/x-tar",
+            "content-disposition": `attachment; filename="${vendorHarborDatasetFilename(vendor)}"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "x-case-task-count": String(manifest.tasks.length),
+          },
+        });
+      } catch {
+        return Response.json({ error: "vendor_harbor_dataset_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+      }
+    }
 
     const originalDownloadMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/original-download$/);
     if (originalDownloadMatch?.[1]) {
@@ -267,4 +325,12 @@ function caseRegistryUrl(env: Env): string | null {
   if (env.CASE_REGISTRY_URL) return env.CASE_REGISTRY_URL.replace(/\/$/, "");
   if (env.CASE_REGISTRY_HOST && env.CASE_REGISTRY_PORT) return `http://${env.CASE_REGISTRY_HOST}:${env.CASE_REGISTRY_PORT}`;
   return null;
+}
+
+function harborTaskGatewayUrl(env: Env): string | null {
+  const raw = env.HARBOR_TASK_GATEWAY_URL ?? env.RAILWAY_SERVICE_HARBOR_TASK_GATEWAY_URL;
+  if (!raw) return null;
+  const url = new URL(raw);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Harbor task gateway URL must use HTTP or HTTPS");
+  return url.href.replace(/\/$/, "");
 }

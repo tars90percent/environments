@@ -81,6 +81,7 @@ const text = {
     noOriginalFile: "No inbound vendor file can be identified conclusively from the retained provenance.",
     directCaseImport: "Direct CASE import",
     dataset: "Download tasks",
+    downloadAllHarbor: "Download all Harbor tasks",
     datasetNote: "Download the exact task or trace artifacts retained for this submission.",
     taskDownload: "Download",
     task: "Task",
@@ -144,6 +145,7 @@ const text = {
     noOriginalFile: "现有溯源信息不足以明确识别原始传入的供应商文件。",
     directCaseImport: "直接导入 CASE",
     dataset: "下载任务",
+    downloadAllHarbor: "下载全部 Harbor 任务",
     datasetNote: "下载这次提交中保留的精确任务或轨迹文件。",
     taskDownload: "下载",
     task: "任务",
@@ -306,9 +308,8 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       {view !== "model-benchmarks" && <div className="registry-stats">
         {view === "benchmarks" ? <>
           <Stat label={t.harbor} value={selectedBenchmark?.taskCount ?? landscape?.taskCount} />
-          <Stat label={t.benchmarkDirections} value={selectedBenchmark ? 1 : landscape?.benchmarkCount} />
+          {!selectedBenchmark && <Stat label={t.benchmarkDirections} value={landscape?.benchmarkCount} />}
           <Stat label={t.vendors} value={selectedBenchmark?.vendorCount ?? landscape?.vendorCount} />
-          {selectedBenchmark && <Stat label={t.submissions} value={selectedBenchmark.submissionCount} />}
         </> : <>
           <Stat label={t.vendors} value={landscape?.vendorCount} />
           <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
@@ -331,7 +332,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       </aside>
       <section className="vendor-main">
         <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h2>{selectedVendor.name}</h2><div className="vendor-meta"><span>{selectedVendor.submissions.length} {t.submissions.toLowerCase()}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></div></header>
-        <VendorHarborTasks categories={landscape?.categories ?? []} language={language} vendor={selectedVendor} />
+        <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />
         <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="batch-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>
       </section>
@@ -405,7 +406,7 @@ function StateCard({ children }: { children: string }) {
   return <div className="state-card">{children}</div>;
 }
 
-function VendorHarborTasks({ vendor, categories, language }: { vendor: CatalogVendor; categories: BenchmarkCategoryGroup[]; language: Language }) {
+function VendorHarborTasks({ vendor, categories, downloadHref, language }: { vendor: CatalogVendor; categories: BenchmarkCategoryGroup[]; downloadHref: string; language: Language }) {
   const t = text[language];
   const groups = categories.map((category) => ({
     category,
@@ -414,7 +415,7 @@ function VendorHarborTasks({ vendor, categories, language }: { vendor: CatalogVe
   const taskCount = groups.reduce((sum, group) => sum + group.records.length, 0);
   if (taskCount === 0) return null;
   return <section className="vendor-harbor-tasks">
-    <div className="vendor-harbor-count">{taskCount} {t.harbor}</div>
+    <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><a href={downloadHref}>{t.downloadAllHarbor}</a></div>
     <div className="vendor-harbor-category-list">{groups.map((group) => <section className="vendor-harbor-category" key={group.category.id}>
       <header className="vendor-harbor-category-header"><h3>{group.category.label[language]}</h3></header>
       <div className="task-list">{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>

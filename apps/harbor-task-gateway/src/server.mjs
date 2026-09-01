@@ -7,6 +7,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createGatewayHandler } from "./app.mjs";
+import { taskArchiveChunks } from "./task-archive.mjs";
 
 const configuration = loadConfiguration(process.env);
 const client = new S3Client({
@@ -19,43 +20,55 @@ const client = new S3Client({
   },
 });
 
+const listObjects = async ({ prefix, cursor, limit, recursive }) => {
+  const page = await client.send(new ListObjectsV2Command({
+    Bucket: configuration.bucket,
+    Prefix: prefix,
+    Delimiter: recursive ? undefined : "/",
+    ContinuationToken: cursor,
+    MaxKeys: limit,
+  }));
+  return {
+    directories: (page.CommonPrefixes ?? []).flatMap((entry) => entry.Prefix ? [entry.Prefix] : []),
+    objects: (page.Contents ?? []).flatMap((object) => object.Key && object.Key !== prefix ? [{
+      key: object.Key,
+      sizeBytes: object.Size ?? null,
+      lastModified: object.LastModified,
+      etag: object.ETag,
+    }] : []),
+    nextCursor: page.IsTruncated ? page.NextContinuationToken : undefined,
+  };
+};
+
+const headObject = async (key) => {
+  try {
+    const head = await client.send(new HeadObjectCommand({ Bucket: configuration.bucket, Key: key }));
+    return {
+      contentLength: head.ContentLength,
+      contentType: head.ContentType,
+      etag: head.ETag,
+      lastModified: head.LastModified,
+      sha256: head.Metadata?.sha256,
+    };
+  } catch (error) {
+    if (error?.name === "NoSuchKey" || error?.name === "NotFound" || error?.$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
+};
+
 const handler = createGatewayHandler({
   authToken: configuration.authToken,
   signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
-  listObjects: async ({ prefix, cursor, limit, recursive }) => {
-    const page = await client.send(new ListObjectsV2Command({
-      Bucket: configuration.bucket,
-      Prefix: prefix,
-      Delimiter: recursive ? undefined : "/",
-      ContinuationToken: cursor,
-      MaxKeys: limit,
-    }));
-    return {
-      directories: (page.CommonPrefixes ?? []).flatMap((entry) => entry.Prefix ? [entry.Prefix] : []),
-      objects: (page.Contents ?? []).flatMap((object) => object.Key && object.Key !== prefix ? [{
-        key: object.Key,
-        sizeBytes: object.Size ?? null,
-        lastModified: object.LastModified,
-        etag: object.ETag,
-      }] : []),
-      nextCursor: page.IsTruncated ? page.NextContinuationToken : undefined,
-    };
-  },
-  headObject: async (key) => {
-    try {
-      const head = await client.send(new HeadObjectCommand({ Bucket: configuration.bucket, Key: key }));
-      return {
-        contentLength: head.ContentLength,
-        contentType: head.ContentType,
-        etag: head.ETag,
-        lastModified: head.LastModified,
-        sha256: head.Metadata?.sha256,
-      };
-    } catch (error) {
-      if (error?.name === "NoSuchKey" || error?.name === "NotFound" || error?.$metadata?.httpStatusCode === 404) return null;
-      throw error;
-    }
-  },
+  listObjects,
+  headObject,
+  archiveRoots: (roots) => taskArchiveChunks({
+    roots,
+    listObjects,
+    readObject: async (key) => {
+      const object = await client.send(new GetObjectCommand({ Bucket: configuration.bucket, Key: key }));
+      return { body: object.Body, contentLength: object.ContentLength };
+    },
+  }),
   signGetObject: async ({ key, expiresInSeconds, downloadName }) => getSignedUrl(
     client,
     new GetObjectCommand({

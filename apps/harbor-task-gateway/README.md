@@ -4,6 +4,8 @@ Authenticated, read-only HTTP access to the exact individual files in the Railwa
 
 Directory paths end in `/` and return a paginated JSON listing. File paths return a short-lived redirect to the corresponding object. `HEAD` returns object metadata, including the recorded SHA-256 when available.
 
+`POST /archives` accepts 1–1000 exact task roots from one vendor, validates each `task.toml` completion marker, and streams their individual files as one TAR. The archive is generated on demand and is never stored in the bucket.
+
 ```text
 GET  /healthz
 GET  /docs
@@ -12,6 +14,7 @@ GET  /?limit=200&cursor=...
 GET  /vendor/submission/task/
 GET  /vendor/submission/task/instruction.md
 HEAD /vendor/submission/task/task.toml
+POST /archives
 ```
 
 `/healthz`, `/docs`, and `/openapi.json` are public. Bucket listings, file metadata, and downloads require `Authorization: Bearer <token>`. Unauthorized responses link to both documentation endpoints so a new consumer can discover the protocol from the base URL.

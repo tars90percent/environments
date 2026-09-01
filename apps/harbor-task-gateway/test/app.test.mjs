@@ -7,7 +7,7 @@ import { createGatewayHandler } from "../src/app.mjs";
 const token = "test-token-that-is-at-least-thirty-two-characters";
 
 async function fixture(overrides = {}) {
-  const calls = { list: [], head: [], sign: [] };
+  const calls = { list: [], head: [], archive: [], sign: [] };
   const handler = createGatewayHandler({
     authToken: token,
     signedUrlTtlSeconds: 900,
@@ -26,7 +26,7 @@ async function fixture(overrides = {}) {
     },
     headObject: async (key) => {
       calls.head.push(key);
-      if (key === "missing") return null;
+      if (key === "missing" || overrides.missingKeys?.has(key)) return null;
       return {
         contentLength: 7,
         contentType: "text/plain",
@@ -34,6 +34,10 @@ async function fixture(overrides = {}) {
         lastModified: new Date("2026-09-01T00:00:00Z"),
         sha256: "abc123",
       };
+    },
+    archiveRoots: async function* (roots) {
+      calls.archive.push(roots);
+      yield new Uint8Array([1, 2, 3, 4]);
     },
     signGetObject: async (input) => {
       calls.sign.push(input);
@@ -149,6 +153,51 @@ test("file URLs verify existence and redirect to a short-lived signed URL", asyn
       expiresInSeconds: 900,
       downloadName: "instruction.md",
     }]);
+  } finally {
+    await app.close();
+  }
+});
+
+test("archive requests validate completion markers and stream selected task roots", async () => {
+  const app = await fixture();
+  try {
+    const roots = ["vendor/submission/task-one", "vendor/submission/task-two"];
+    const response = await fetch(`${app.baseUrl}/archives`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ roots }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/x-tar");
+    assert.equal(response.headers.get("x-harbor-task-count"), "2");
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), new Uint8Array([1, 2, 3, 4]));
+    assert.deepEqual(app.calls.head, roots.map((root) => `${root}/task.toml`));
+    assert.deepEqual(app.calls.archive, [roots]);
+
+    const mixedVendors = await fetch(`${app.baseUrl}/archives`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ roots: ["vendor/submission/task", "other/submission/task"] }),
+    });
+    assert.equal(mixedVendors.status, 400);
+    assert.deepEqual(await mixedVendors.json(), { error: "task roots must belong to one vendor" });
+  } finally {
+    await app.close();
+  }
+});
+
+test("archive requests refuse task roots without their task.toml completion marker", async () => {
+  const root = "vendor/submission/incomplete";
+  const app = await fixture({ missingKeys: new Set([`${root}/task.toml`]) });
+  try {
+    const response = await fetch(`${app.baseUrl}/archives`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ roots: [root] }),
+    });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: "one or more task roots are incomplete", missing: [root] });
+    assert.deepEqual(app.calls.archive, []);
   } finally {
     await app.close();
   }
