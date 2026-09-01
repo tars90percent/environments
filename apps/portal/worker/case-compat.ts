@@ -6,6 +6,7 @@ import type {
   CatalogSubmission,
   CatalogTask,
   CatalogVendor,
+  CatalogVendorInteraction,
   HarborCheckOutcome,
   HarborCheckPhase,
   TaskFormat,
@@ -34,7 +35,19 @@ export function normalizeCaseCatalog(value: unknown): CatalogSnapshot {
   const root = record(value);
   const rawVendors = records(root.vendors);
   if (!rawVendors.some((vendor) => Array.isArray(vendor.batches))) {
-    return value as CatalogSnapshot;
+    const vendors = rawVendors.map(normalizeCurrentVendor);
+    const submissions = vendors.flatMap((vendor) => vendor.submissions);
+    const tasks = submissions.flatMap((submission) => submission.tasks);
+    return {
+      generatedAt: text(root.generatedAt, new Date(0).toISOString()),
+      vendors,
+      totals: {
+        vendors: vendors.length,
+        submissions: submissions.length,
+        tasks: tasks.length,
+        harborTasks: tasks.filter((task) => task.format === "harbor").length,
+      },
+    };
   }
 
   const vendors = rawVendors.map(normalizeLegacyVendor);
@@ -52,6 +65,29 @@ export function normalizeCaseCatalog(value: unknown): CatalogSnapshot {
   };
 }
 
+function normalizeCurrentVendor(value: JsonRecord): CatalogVendor {
+  return {
+    id: text(value.id),
+    name: text(value.name),
+    short: text(value.short, text(value.name)),
+    interactions: records(value.interactions).map(normalizeInteraction),
+    submissions: Array.isArray(value.submissions) ? value.submissions as CatalogSubmission[] : [],
+  };
+}
+
+function normalizeInteraction(value: JsonRecord): CatalogVendorInteraction {
+  return {
+    id: text(value.id),
+    kind: interactionKind(value.kind),
+    eventType: text(value.eventType),
+    title: text(value.title),
+    summary: text(value.summary),
+    channel: interactionChannel(value.channel),
+    evidence: interactionEvidence(value.evidence),
+    occurredAt: text(value.occurredAt),
+  };
+}
+
 export function normalizeCaseSubmission(value: unknown): DatasetSubmission {
   const submission = record(value);
   if (Array.isArray(submission.tasks)) return value as DatasetSubmission;
@@ -63,8 +99,27 @@ function normalizeLegacyVendor(value: JsonRecord): CatalogVendor {
     id: text(value.id),
     name: text(value.name),
     short: text(value.short, text(value.name)),
+    interactions: [],
     submissions: records(value.batches).map(normalizeLegacySubmission),
   };
+}
+
+function interactionKind(value: unknown): CatalogVendorInteraction["kind"] {
+  return new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]).has(value as string)
+    ? value as CatalogVendorInteraction["kind"]
+    : "note";
+}
+
+function interactionChannel(value: unknown): CatalogVendorInteraction["channel"] {
+  return new Set(["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"]).has(value as string)
+    ? value as CatalogVendorInteraction["channel"]
+    : "other";
+}
+
+function interactionEvidence(value: unknown): CatalogVendorInteraction["evidence"] {
+  return new Set(["direct", "relayed", "automated", "internal"]).has(value as string)
+    ? value as CatalogVendorInteraction["evidence"]
+    : "internal";
 }
 
 function normalizeLegacySubmission(value: JsonRecord): CatalogSubmission {

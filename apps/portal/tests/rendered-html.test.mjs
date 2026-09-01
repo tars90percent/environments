@@ -472,7 +472,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /href="\/model-benchmarks"/);
   assert.match(source, /BenchmarkOverview/);
   assert.match(source, /BenchmarkDetail/);
-  assert.match(source, /<VendorHarborTasks categories=\{landscape\?\.categories \?\? \[\]\} downloadHref=[\s\S]*vendor=\{selectedVendor\} \/>[\s\S]*className="submission-history"/);
+  assert.match(source, /<VendorHarborTasks categories=\{landscape\?\.categories \?\? \[\]\} downloadHref=[\s\S]*vendor=\{selectedVendor\} \/>[\s\S]*<VendorInteractionTimeline interactions=\{selectedVendor\.interactions\}[\s\S]*className="submission-history"/);
   assert.match(source, /category\.groups\.flatMap\(\(group\) => group\.records\)/);
   assert.match(source, /className="vendor-harbor-toolbar">[\s\S]*\{taskCount\} \{t\.harbor\}[\s\S]*<button disabled=\{downloadState === "preparing"\}[\s\S]*t\.downloadAllHarbor/);
   assert.match(source, /fetch\(downloadHref, \{ method: "POST"/);
@@ -514,7 +514,10 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /groupSubmissionTasks\(tasks\)/);
   assert.match(source, /Show \$\{count\} more/);
   assert.match(source, /fetch\("\/api\/catalog"/);
-  assert.match(source, /filter\(\(vendor\) => vendor\.submissions\.length > 0\)/);
+  assert.match(source, /filter\(hasVendorRecord\)/);
+  assert.match(source, /vendor\.submissions\.length > 0 \|\| vendor\.interactions\.length > 0/);
+  assert.match(source, /Interaction timeline/);
+  assert.doesNotMatch(source, /interaction\.externalRef|interaction\.sourceEventIds|interaction\.actor/);
   assert.doesNotMatch(source, /value=\{catalog \? vendors\.length : undefined\}/);
   assert.match(source, /<Stat label=\{t\.vendors\} value=\{landscape\?\.vendorCount\} \/>/);
   assert.doesNotMatch(source, /<Stat label=\{t\.benchmarkCategories\}/);
@@ -613,6 +616,60 @@ test("adapts the current CASE catalog during the narrow migration rollout", asyn
     assert.equal(submission.tasks[0].checks.environment.outcome, "fail");
     assert.match(submission.tasks[0].checks.environment.summary, /inferred from failed Build or Boot evidence/i);
     assert.deepEqual(submission.tasks[0].findings, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("projects vendor interactions without private source locators", async () => {
+  const app = await worker();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const target = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (target !== "https://case.example/v1/catalog") throw new Error(`Unexpected fetch: ${target}`);
+    return Response.json({
+      generatedAt: "2026-08-25T03:28:00.000Z",
+      vendors: [{
+        id: "abundant",
+        name: "Abundant",
+        short: "AB",
+        interactions: [{
+          id: "interaction:abundant:follow-up:2026-08-25",
+          kind: "relationship",
+          eventType: "post_delivery_follow_up",
+          title: "Post-delivery follow-up",
+          summary: "The vendor asked whether additional samples were needed.",
+          channel: "other",
+          evidence: "relayed",
+          occurredAt: "2026-08-25T03:28:00.000Z",
+          sourceEventIds: ["private-source-event"],
+          actor: "Internal operator",
+          externalRef: "https://private.example/message",
+        }],
+        submissions: [],
+      }],
+      totals: { vendors: 1, submissions: 0, tasks: 0, harborTasks: 0 },
+    });
+  };
+
+  try {
+    const response = await app.fetch(
+      new Request("http://localhost/api/catalog", { headers: { cookie: sessionCookie() } }),
+      { ...authEnv, CASE_REGISTRY_URL: "https://case.example", CASE_REGISTRY_CATALOG_TOKEN: "catalog-test", ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+      { waitUntil() {}, passThroughOnException() {} },
+    );
+    assert.equal(response.status, 200);
+    const catalog = await response.json();
+    assert.deepEqual(catalog.vendors[0].interactions, [{
+      id: "interaction:abundant:follow-up:2026-08-25",
+      kind: "relationship",
+      eventType: "post_delivery_follow_up",
+      title: "Post-delivery follow-up",
+      summary: "The vendor asked whether additional samples were needed.",
+      channel: "other",
+      evidence: "relayed",
+      occurredAt: "2026-08-25T03:28:00.000Z",
+    }]);
   } finally {
     globalThis.fetch = originalFetch;
   }

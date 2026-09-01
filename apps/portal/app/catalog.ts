@@ -92,10 +92,22 @@ export type CatalogSubmission = {
   tasks: CatalogTask[];
 };
 
+export type CatalogVendorInteraction = {
+  id: string;
+  kind: "contact" | "sample" | "evaluation" | "commercial" | "delivery" | "acceptance" | "payment" | "relationship" | "note";
+  eventType: string;
+  title: string;
+  summary: string;
+  channel: "meeting" | "email" | "feishu" | "slack" | "wechat" | "file_delivery" | "internal" | "other";
+  evidence: "direct" | "relayed" | "automated" | "internal";
+  occurredAt: string;
+};
+
 export type CatalogVendor = {
   id: string;
   name: string;
   short: string;
+  interactions: CatalogVendorInteraction[];
   submissions: CatalogSubmission[];
 };
 

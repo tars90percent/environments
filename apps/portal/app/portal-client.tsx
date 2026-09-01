@@ -7,6 +7,7 @@ import type {
   CatalogSubmission,
   CatalogTask,
   CatalogVendor,
+  CatalogVendorInteraction,
   HarborCheckPhase,
 } from "./catalog";
 import { originalSubmissionArtifacts } from "./original-submission";
@@ -65,6 +66,9 @@ const text = {
     tasks: "Tasks",
     harbor: "Harbor tasks",
     vendor: "Vendor",
+    vendorRecords: "Vendor records",
+    interactions: "interactions",
+    interactionTimeline: "Interaction timeline",
     history: "Submission history",
     historyNote: "Each dated delivery is retained with its original source and any clearly parsed tasks or traces.",
     newest: "Newest first",
@@ -132,6 +136,9 @@ const text = {
     tasks: "任务",
     harbor: "Harbor 任务",
     vendor: "供应商",
+    vendorRecords: "供应商记录",
+    interactions: "条往来记录",
+    interactionTimeline: "往来时间线",
     history: "提交记录",
     historyNote: "每次带日期的交付都与原始来源及明确解析出的任务或轨迹一起保留。",
     newest: "最新在前",
@@ -192,7 +199,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [view, setView] = useState<PortalView>(initialView);
   const [query, setQuery] = useState("");
   const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(null);
-  const [selectedVendorId, setSelectedVendorId] = useState(initialCatalog?.vendors.find((vendor) => vendor.submissions.length > 0)?.id ?? "");
+  const [selectedVendorId, setSelectedVendorId] = useState(initialCatalog?.vendors.find(hasVendorRecord)?.id ?? "");
   const t = text[language];
 
   useEffect(() => {
@@ -210,7 +217,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       .then((snapshot) => {
         if (!active) return;
         setCatalog(snapshot);
-        const visibleVendors = snapshot.vendors.filter((vendor) => vendor.submissions.length > 0);
+        const visibleVendors = snapshot.vendors.filter(hasVendorRecord);
         setSelectedVendorId((current) => visibleVendors.some((vendor) => vendor.id === current)
           ? current
           : visibleVendors[0]?.id ?? "");
@@ -220,7 +227,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     return () => { active = false; };
   }, [catalog, initialCatalog, view]);
 
-  const vendors = useMemo(() => (catalog?.vendors ?? []).filter((vendor) => vendor.submissions.length > 0), [catalog]);
+  const vendors = useMemo(() => (catalog?.vendors ?? []).filter(hasVendorRecord), [catalog]);
   const landscape = useMemo(() => catalog ? buildBenchmarkLandscape(catalog) : null, [catalog]);
   const matchingBenchmarkGroups = useMemo(() => {
     if (!landscape) return [];
@@ -333,14 +340,15 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     {state === "ready" && view === "vendors" && !selectedVendor && <StateCard>{t.noMatch}</StateCard>}
     {state === "ready" && view === "vendors" && selectedVendor && <div className="portal-grid">
       <aside className="vendor-sidebar" aria-label={t.vendors}>
-        <div className="sidebar-head"><strong>{t.vendors}</strong><span>{matchingVendors.length}</span></div>
-        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => setSelectedVendorId(vendor.id)} type="button"><span><strong>{vendor.name}</strong><small>{vendor.submissions.length} {t.submissions.toLowerCase()} · {vendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</small></span></button>)}</div>
+        <div className="sidebar-head"><strong>{t.vendorRecords}</strong></div>
+        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => setSelectedVendorId(vendor.id)} type="button"><span><strong>{vendor.name}</strong><small>{vendorRecordSummary(vendor, language)}</small></span></button>)}</div>
       </aside>
       <section className="vendor-main">
-        <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h2>{selectedVendor.name}</h2><div className="vendor-meta"><span>{selectedVendor.submissions.length} {t.submissions.toLowerCase()}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></div></header>
+        <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h2>{selectedVendor.name}</h2><div className="vendor-meta">{selectedVendor.submissions.length > 0 && <><span>{selectedVendor.submissions.length} {t.submissions.toLowerCase()}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></>}{selectedVendor.interactions.length > 0 && <span>{selectedVendor.interactions.length} {t.interactions}</span>}</div></header>
         <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />
-        <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
-        <div className="batch-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>
+        <VendorInteractionTimeline interactions={selectedVendor.interactions} language={language} />
+        {selectedVendor.submissions.length > 0 && <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
+        <div className="batch-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>}
       </section>
     </div>}
     </div>
@@ -450,6 +458,23 @@ function VendorHarborTasks({ vendor, categories, downloadHref, language }: { ven
       <header className="vendor-harbor-category-header"><h3>{group.category.label[language]}</h3></header>
       <div className="task-list">{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>
     </section>)}</div>
+  </section>;
+}
+
+function VendorInteractionTimeline({ interactions, language }: { interactions: CatalogVendorInteraction[]; language: Language }) {
+  const t = text[language];
+  if (interactions.length === 0) return null;
+  return <section className="vendor-interactions">
+    <header className="interaction-heading"><div><span>{language === "zh" ? "供应商记录" : "Vendor record"}</span><h3>{t.interactionTimeline}</h3></div><small>{interactions.length} {t.interactions}</small></header>
+    <ol className="interaction-list">{interactions.map((interaction) => <li key={interaction.id}>
+      <time dateTime={interaction.occurredAt}>{formatInteractionDate(interaction.occurredAt, language)}</time>
+      <span className="interaction-marker" aria-hidden />
+      <article>
+        <div className="interaction-classification"><span>{interactionKindLabel(interaction.kind, language)}</span>{interaction.channel !== "other" && <span>{interactionChannelLabel(interaction.channel, language)}</span>}<span>{interactionEvidenceLabel(interaction.evidence, language)}</span></div>
+        <h4>{interaction.title}</h4>
+        <p>{interaction.summary}</p>
+      </article>
+    </li>)}</ol>
   </section>;
 }
 
@@ -566,8 +591,20 @@ function HarborChecks({ task, language }: { task: CatalogTask; language: Languag
   })}</div>;
 }
 
+function hasVendorRecord(vendor: CatalogVendor): boolean {
+  return vendor.submissions.length > 0 || vendor.interactions.length > 0;
+}
+
+function vendorRecordSummary(vendor: CatalogVendor, language: Language): string {
+  const submissionSummary = vendor.submissions.length > 0
+    ? `${vendor.submissions.length} ${text[language].submissions.toLowerCase()} · ${vendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} ${text[language].taskRecords}`
+    : "";
+  const interactionSummary = vendor.interactions.length > 0 ? `${vendor.interactions.length} ${text[language].interactions}` : "";
+  return [submissionSummary, interactionSummary].filter(Boolean).join(" · ");
+}
+
 function vendorSearchText(vendor: CatalogVendor): string {
-  return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.benchmark.displayName, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
+  return [vendor.name, vendor.short, ...vendor.interactions.flatMap((interaction) => [interaction.title, interaction.summary, interaction.eventType]), ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.benchmark.displayName, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
 }
 
 function benchmarkGroupSearchText(group: BenchmarkGroup, language: Language): string {
@@ -639,6 +676,54 @@ function formatDate(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
 
+function formatInteractionDate(value: string, language: Language): string {
+  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    timeZone: "Asia/Shanghai",
+  }).format(new Date(value));
+}
+
+function interactionKindLabel(kind: CatalogVendorInteraction["kind"], language: Language): string {
+  const labels: Record<CatalogVendorInteraction["kind"], [string, string]> = {
+    contact: ["Contact", "接洽"],
+    sample: ["Sample", "样本"],
+    evaluation: ["Review", "评估"],
+    commercial: ["Commercial", "商务"],
+    delivery: ["Delivery", "交付"],
+    acceptance: ["Acceptance", "验收"],
+    payment: ["Payment", "付款"],
+    relationship: ["Follow-up", "跟进"],
+    note: ["Record", "记录"],
+  };
+  return labels[kind][language === "zh" ? 1 : 0];
+}
+
+function interactionChannelLabel(channel: CatalogVendorInteraction["channel"], language: Language): string {
+  const labels: Record<CatalogVendorInteraction["channel"], [string, string]> = {
+    meeting: ["Meeting", "会议"],
+    email: ["Email", "邮件"],
+    feishu: ["Feishu", "Feishu"],
+    slack: ["Slack", "Slack"],
+    wechat: ["WeChat", "微信"],
+    file_delivery: ["File delivery", "文件交付"],
+    internal: ["Internal record", "内部记录"],
+    other: ["Channel not recorded", "渠道未记录"],
+  };
+  return labels[channel][language === "zh" ? 1 : 0];
+}
+
+function interactionEvidenceLabel(evidence: CatalogVendorInteraction["evidence"], language: Language): string {
+  const labels: Record<CatalogVendorInteraction["evidence"], [string, string]> = {
+    direct: ["Direct record", "直接记录"],
+    relayed: ["Internally relayed", "内部转述"],
+    automated: ["Automated notice", "自动通知"],
+    internal: ["Internal decision", "内部决策"],
+  };
+  return labels[evidence][language === "zh" ? 1 : 0];
+}
+
 function formatTimestamp(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", {
     dateStyle: "medium",
@@ -646,6 +731,59 @@ function formatTimestamp(value: string, language: Language): string {
     timeZone: "Asia/Shanghai",
   }).format(new Date(value));
 }
+
+const previewAbundantInteractions: CatalogVendorInteraction[] = [
+  {
+    id: "interaction:abundant:meeting-scheduled:2026-06-18",
+    kind: "contact",
+    eventType: "meeting_scheduled",
+    title: "Initial meeting scheduled",
+    summary: "A Google Meet with Rishi Desai of Abundant was scheduled and subsequently moved to June 25. The available record does not confirm whether the meeting occurred.",
+    channel: "meeting",
+    evidence: "automated",
+    occurredAt: "2026-06-17T17:43:37.000Z",
+  },
+  {
+    id: "interaction:abundant:starter-purchase:2026-07-29",
+    kind: "commercial",
+    eventType: "starter_purchase_agreed",
+    title: "Starter purchase agreed",
+    summary: "Abundant agreed to provide 10 long-horizon coding tasks at USD 2,000 per task. The requested set covered Library/reproduction and Product work, with a mean turn-count target above 150. A signed contract was not required for the starter delivery.",
+    channel: "other",
+    evidence: "relayed",
+    occurredAt: "2026-07-29T09:32:00.000Z",
+  },
+  {
+    id: "interaction:abundant:starter-delivery:2026-07-31",
+    kind: "delivery",
+    eventType: "starter_delivery_received",
+    title: "Ten-task starter set delivered",
+    summary: "Abundant delivered its first 10 tasks. The accompanying note reported a step count of 343.1, runtime of 1.5 hours, and 76.8 million input tokens; it did not specify whether these figures were totals or averages.",
+    channel: "file_delivery",
+    evidence: "direct",
+    occurredAt: "2026-07-31T05:27:00.000Z",
+  },
+  {
+    id: "interaction:abundant:invoice:2026-07-31",
+    kind: "payment",
+    eventType: "invoice_received_payment_unconfirmed",
+    title: "USD 20,000 invoice issued",
+    summary: "Abundant issued a USD 20,000 invoice due August 14. The registry contains no confirmation that payment was completed.",
+    channel: "email",
+    evidence: "automated",
+    occurredAt: "2026-07-31T06:43:00.000Z",
+  },
+  {
+    id: "interaction:abundant:follow-up:2026-08-25",
+    kind: "relationship",
+    eventType: "post_delivery_follow_up",
+    title: "Post-delivery follow-up",
+    summary: "Abundant asked whether the 10 delivered samples were satisfactory and whether more were needed. No additional purchase was planned because of the quoted price.",
+    channel: "other",
+    evidence: "relayed",
+    occurredAt: "2026-08-25T03:28:00.000Z",
+  },
+];
 
 const previewSubmission: CatalogSubmission = {
   id: "preview-submission",
@@ -712,10 +850,11 @@ export function LocalDownloadPreview() {
   const previewCatalog: CatalogSnapshot = {
     generatedAt: "2026-08-20T10:00:00.000Z",
     vendors: [
-      { id: "preview-vendor", name: "Example Vendor", short: "EV", submissions: [previewSubmission] },
-      { id: "preview-vendor-two", name: "Second Vendor", short: "SV", submissions: [previewSecondSubmission] },
+      { id: "abundant", name: "Abundant", short: "AB", interactions: previewAbundantInteractions, submissions: [] },
+      { id: "preview-vendor", name: "Example Vendor", short: "EV", interactions: [], submissions: [previewSubmission] },
+      { id: "preview-vendor-two", name: "Second Vendor", short: "SV", interactions: [], submissions: [previewSecondSubmission] },
     ],
-    totals: { vendors: 2, submissions: 2, tasks: 10, harborTasks: 9 },
+    totals: { vendors: 3, submissions: 2, tasks: 10, harborTasks: 9 },
   };
   return <PortalClient initialCatalog={previewCatalog} localPreview user={{ name: "Researcher" }} />;
 }
