@@ -17,16 +17,12 @@ import {
 
 const copy = {
   en: {
-    catalog: "Standalone benchmark catalog",
-    catalogNote: "Each task set is cataloged as its own benchmark family. Evaluation variants and aggregate indexes do not create duplicate benchmark families.",
-    benchmarks: "benchmarks",
+    benchmarks: "Benchmarks",
     aggregateSection: "Aggregate benchmarks",
     aggregateNote: "Composite scores are listed separately, with their constituent evaluations and weights linked back to the standalone benchmark families above.",
     constituents: "constituents",
     weight: "weight",
-    creators: "Task-set creators",
-    maintainer: "Canonical maintainer",
-    aliases: "Also known as",
+    creators: "Created by",
     items: "Items",
     runs: "Runs",
     tools: "Tools",
@@ -35,7 +31,6 @@ const copy = {
     toolUse: "Tool use",
     noToolUse: "No external tools",
     currentVersion: "Version / release",
-    sourceNote: "Curated metadata, paraphrased sample profiles, time-stamped official leaderboard captures, and official pointers. Benchmark task payloads are not copied into CASE storage.",
     noMatch: "No benchmark metadata matches this search.",
     sampleProfiles: "Sample task profiles",
     exploreSamples: "Explore task profiles",
@@ -66,16 +61,12 @@ const copy = {
     },
   },
   zh: {
-    catalog: "独立基准目录",
-    catalogNote: "每个任务集都作为独立基准家族记录；评测变体与综合指数不会重复创建基准家族。",
-    benchmarks: "项基准",
+    benchmarks: "Benchmarks",
     aggregateSection: "综合基准",
     aggregateNote: "综合分数单独列出，并展示其组成评测及权重，同时链接回上方独立基准家族。",
     constituents: "项组成评测",
     weight: "权重",
-    creators: "任务集创建者",
-    maintainer: "当前维护方",
-    aliases: "又称",
+    creators: "创建机构",
     items: "题目 / 任务",
     runs: "运行",
     tools: "工具",
@@ -84,7 +75,6 @@ const copy = {
     toolUse: "使用工具",
     noToolUse: "不使用外部工具",
     currentVersion: "版本 / 发布",
-    sourceNote: "仅保留整理后的元数据、转述性样例画像、带时间戳的官方排行榜截图与官方指针，不将基准任务内容复制到 CASE 存储。",
     noMatch: "没有匹配搜索条件的基准元数据。",
     sampleProfiles: "样例任务画像",
     exploreSamples: "查看任务画像",
@@ -135,17 +125,7 @@ export function ModelBenchmarkReferencePage({ language, localPreview, query }: {
 
   return <div className="model-reference">
     <section className="benchmark-catalog-intro" aria-labelledby="benchmark-catalog-title">
-      <div className="index-composition-copy">
-        <div><span>{t.catalog}</span><h2 id="benchmark-catalog-title">{modelBenchmarks.length} {t.benchmarks}</h2></div>
-        <p>{t.catalogNote}</p>
-      </div>
-      <div className="catalog-category-strip">
-        {benchmarkReferenceCategories.map((category) => <span key={category.id}>
-          <strong>{modelBenchmarks.filter((benchmark) => benchmark.categoryId === category.id).length}</strong>
-          <small>{category.label[language]}</small>
-        </span>)}
-      </div>
-      <div className="reference-source-note"><span aria-hidden>↗</span><p>{t.sourceNote}</p></div>
+      <h2 id="benchmark-catalog-title">{modelBenchmarks.length} {t.benchmarks}</h2>
     </section>
 
     {visible.length === 0 && visibleAggregates.length === 0 ? <div className="state-card">{t.noMatch}</div> : null}
@@ -156,8 +136,10 @@ export function ModelBenchmarkReferencePage({ language, localPreview, query }: {
         return <section className="model-reference-group" key={category.id}>
           <header>
             <div className="category-index">{String(index + 1).padStart(2, "0")}</div>
-            <div><h2>{category.label[language]}</h2><p>{category.description[language]}</p></div>
-            <div className="model-reference-group-total"><strong>{benchmarks.length}</strong><span>{t.benchmarks}</span></div>
+            <div className="model-reference-group-heading">
+              <div><h2>{category.label[language]}</h2><span>{benchmarks.length} {t.benchmarks}</span></div>
+              <p>{category.description[language]}</p>
+            </div>
           </header>
           <div className="model-benchmark-grid">{benchmarks.map((benchmark) => <ModelBenchmarkCard
             benchmark={benchmark}
@@ -190,15 +172,13 @@ function ModelBenchmarkCard({ benchmark, language, localPreview }: {
   const samples = modelBenchmarkSamples[benchmark.id] ?? [];
   return <article className="model-benchmark-card" id={`benchmark-${benchmark.id}`}>
     <div className="model-benchmark-card-head">
-      <span className="benchmark-family-label">{t.catalog}</span>
       {benchmark.access ? <AccessBadge access={benchmark.access} language={language} /> : null}
     </div>
-    <div className="model-benchmark-identity"><span>{benchmark.publisher}</span><h3>{benchmark.name}</h3>{benchmark.aliases?.length ? <div className="benchmark-aliases"><small>{t.aliases}</small>{benchmark.aliases.map((alias) => <i key={alias}>{alias}</i>)}</div> : null}<p>{benchmark.summary[language]}</p></div>
-    <div className="model-benchmark-creators"><span>{t.creators}</span><p>{benchmark.creators[language]}</p></div>
+    <div className="model-benchmark-identity"><span>{benchmark.publisher}</span><h3>{benchmark.name}</h3><p>{benchmark.summary[language]}</p></div>
+    <div className="model-benchmark-creators"><span>{t.creators}</span><p>{benchmark.publisher}</p></div>
     {benchmark.version ? <div className="model-benchmark-version"><span>{t.currentVersion}</span><strong>{benchmark.version}</strong>{benchmark.versionNote ? <p>{benchmark.versionNote[language]}</p> : null}</div> : null}
     <dl className="model-benchmark-facts">
       <div><dt>{t.items}</dt><dd><strong>{benchmark.questionCount[language]}</strong>{benchmark.responseType ? <span>{benchmark.responseType[language]}</span> : null}</dd></div>
-      <div><dt>{t.maintainer}</dt><dd><strong>{benchmark.publisher}</strong></dd></div>
       {benchmark.repeats !== undefined ? <div><dt>{t.runs}</dt><dd><strong>{benchmark.repeats} {benchmark.repeats === 1 ? t.oneRepeat : t.repeats}</strong>{benchmark.scoring ? <span>{benchmark.scoring[language]}</span> : null}</dd></div> : null}
     </dl>
     {samples.length > 0 ? <a

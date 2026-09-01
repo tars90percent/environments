@@ -149,10 +149,10 @@ export const modelBenchmarks = [
       creators: { en: "Tejal Patwardhan, Rachel Dias, Elizabeth Proehl et al. at OpenAI, with experienced industry professionals", zh: "OpenAI 的 Tejal Patwardhan、Rachel Dias、Elizabeth Proehl 等人与资深行业专家" },
       publisher: "OpenAI",
       categoryId: "professional-work",
-      version: "Public release v2 · 1,320 tasks",
+      version: "Public release v2",
       versionNote: {
-        en: "OpenAI maintains the 1,320-task set and a 220-task public gold set. GDPval-AA and GDPval-Rubrics are evaluation variants of this task family.",
-        zh: "OpenAI 维护 1,320 项任务及 220 项公开黄金任务；GDPval-AA 与 GDPval-Rubrics 是该任务家族的评测变体。",
+        en: "GDPval-AA and GDPval-Rubrics are evaluation variants of this task family.",
+        zh: "GDPval-AA 与 GDPval-Rubrics 是该任务家族的评测变体。",
       },
       summary: {
         en: "Economically valuable, multi-file knowledge work across 44 occupations and nine industries.",
@@ -204,10 +204,10 @@ export const modelBenchmarks = [
       creators: { en: "Mike A. Merrill, Alexander G. Shaw, Nicholas Carlini et al., with community contributors", zh: "Mike A. Merrill、Alexander G. Shaw、Nicholas Carlini 等人与社区贡献者" },
       publisher: "Harbor Framework · Laude Institute",
       categoryId: "software-engineering",
-      version: "2.0 / 2.1 · 89 tasks",
+      version: "2.0 / 2.1",
       versionNote: {
-        en: "The current 89-task verified refresh of Terminal-Bench 2.0; it corrected environment, resource, and task-specification issues.",
-        zh: "当前包含 89 项任务的验证版更新，修复了 Terminal-Bench 2.0 的环境、资源及任务规范问题。",
+        en: "The verified refresh of Terminal-Bench 2.0 corrected environment, resource, and task-specification issues.",
+        zh: "Terminal-Bench 2.0 的验证版更新修复了环境、资源及任务规范问题。",
       },
       summary: {
         en: "Agents complete realistic software, systems, data, training, and security work in terminal environments.",
@@ -240,8 +240,8 @@ export const modelBenchmarks = [
       categoryId: "science-knowledge",
       version: "Current public test set · unversioned",
       versionNote: {
-        en: "No semantic dataset release is published. The public test set contains 288 subproblems with scientist-authored background.",
-        zh: "发布方未提供语义化版本号；公开测试集包含 288 个子问题及科学家编写的背景材料。",
+        en: "No semantic dataset release is published; the test set includes scientist-authored background.",
+        zh: "发布方未提供语义化版本号；测试集包含科学家编写的背景材料。",
       },
       summary: {
         en: "Python program synthesis for realistic scientific problems across 16 disciplines.",
@@ -267,8 +267,8 @@ export const modelBenchmarks = [
       categoryId: "documents-vision",
       version: "Current public dataset · unversioned",
       versionNote: {
-        en: "The source publishes a maintained 100-question dataset without a semantic version; index v4.1.1 uses GPT-5.6 Luna (medium) as its equality checker.",
-        zh: "发布方维护一套未设语义版本号的 100 题数据集；指数 v4.1.1 使用 GPT-5.6 Luna（medium）作等价性评分器。",
+        en: "The dataset has no semantic version; index v4.1.1 uses GPT-5.6 Luna (medium) as its equality checker.",
+        zh: "该数据集未设语义版本号；指数 v4.1.1 使用 GPT-5.6 Luna（medium）作等价性评分器。",
       },
       summary: {
         en: "Reasoning across sets of long documents totaling roughly 100k tokens per question.",
@@ -293,8 +293,8 @@ export const modelBenchmarks = [
       categoryId: "science-knowledge",
       version: "Current production set · unversioned",
       versionNote: {
-        en: "The index uses 6,000 production questions. A representative 600-question public subset is available; the full evaluation set is not released.",
-        zh: "指数使用 6,000 道生产题目；公开提供具有代表性的 600 题子集，完整评测集未发布。",
+        en: "A representative public subset is available; the full evaluation set is not released.",
+        zh: "发布方提供具有代表性的公开子集；完整评测集未发布。",
       },
       summary: {
         en: "Cross-domain factual reliability that rewards correct knowledge and penalizes hallucinated guesses.",
@@ -317,10 +317,10 @@ export const modelBenchmarks = [
       creators: { en: "Center for AI Safety, Scale AI, and global subject experts", zh: "Center for AI Safety、Scale AI 与全球学科专家" },
       publisher: "Center for AI Safety",
       categoryId: "science-knowledge",
-      version: "May 2025 revision · 2,500 questions",
+      version: "May 2025 revision",
       versionNote: {
-        en: "The May 2025 revision contains 2,500 questions across text and multimodal formats; upstream also maintains HLE-Rolling.",
-        zh: "2025 年 5 月修订版包含 2,500 道纯文本及多模态问题；上游另维护 HLE-Rolling。",
+        en: "The revision spans text and multimodal formats; upstream also maintains HLE-Rolling.",
+        zh: "该修订版涵盖纯文本及多模态问题；上游另维护 HLE-Rolling。",
       },
       summary: {
         en: "Expert-vetted frontier academic questions across mathematics, sciences, and humanities.",
@@ -352,10 +352,10 @@ export const modelBenchmarks = [
       creators: { en: "David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty et al.", zh: "David Rein、Betty Li Hou、Asa Cooper Stickland、Jackson Petty 等人" },
       publisher: "David Rein · GPQA authors",
       categoryId: "science-knowledge",
-      version: "Main and Diamond splits · 448 questions",
+      version: "Main and Diamond splits",
       versionNote: {
-        en: "The original authors' highest-quality 198-question subset. It has no separate semantic release version and remains access-gated to reduce contamination.",
-        zh: "原作者定义的最高质量 198 题子集，无独立语义版本号，并保持受控访问以降低污染。",
+        en: "The Diamond split is the original authors' highest-quality subset. It has no separate semantic version and remains access-gated.",
+        zh: "Diamond 是原作者定义的最高质量子集，无独立语义版本号，并保持受控访问。",
       },
       summary: {
         en: "Graduate-level biology, physics, and chemistry questions designed to resist web search by non-experts.",
@@ -380,10 +380,10 @@ export const modelBenchmarks = [
       creators: { en: "CritPt research team", zh: "CritPt 研究团队" },
       publisher: "CritPt research team",
       categoryId: "science-knowledge",
-      version: "2025 public release · 70-test subset",
+      version: "2025 public release",
       versionNote: {
-        en: "The project is unversioned. The held-out test set contains 70 challenges, and the official grading API is access-controlled.",
-        zh: "项目未设置版本号；保留测试集包含 70 项挑战，官方评分 API 需申请访问。",
+        en: "The project is unversioned, and the official grading API is access-controlled.",
+        zh: "项目未设置版本号；官方评分 API 需申请访问。",
       },
       summary: {
         en: "Research-level physics challenges spanning symbolic, numerical, and executable answers.",
@@ -507,7 +507,7 @@ export const modelBenchmarks = [
       id: "apex-agents",
       name: "APEX-Agents",
       creators: { en: "Bertie Vidgen, Austin Mann, Abby Fennelly et al. at Mercor, with professional task authors", zh: "Mercor 的 Bertie Vidgen、Austin Mann、Abby Fennelly 等人与专业任务作者" },
-      publisher: "Mercor Intelligence",
+      publisher: "Mercor",
       categoryId: "professional-work",
       summary: { en: "Professional-services tasks authored by bankers, consultants, and lawyers in application environments.", zh: "由银行家、咨询顾问和律师编写、在应用环境中完成的专业服务任务。" },
       questionCount: { en: "480 tasks", zh: "480 项任务" },

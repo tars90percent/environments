@@ -454,13 +454,30 @@ test("keeps task views minimal and source-backed", async () => {
 test("opens benchmark task profiles directly instead of expanding an inline analysis", async () => {
   const source = await readFile(new URL("../app/model-benchmark-reference.tsx", import.meta.url), "utf8");
   const detailSource = await readFile(new URL("../app/model-benchmark-task-detail.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.match(source, /href=\{`\$\{localPreview \? "\/local-preview" : ""\}\/model-benchmarks\/\$\{benchmark\.id\}\/tasks\/\$\{samples\[0\]\.id\}`\}/);
   assert.doesNotMatch(source, /expandedBenchmarkId|scrollIntoView|BenchmarkTaskAnalysis/);
+  assert.match(styles, /\.benchmark-sample-trigger \{[^}]*text-decoration: none;/);
   assert.match(detailSource, /const siblingSamples = modelBenchmarkSamples\[benchmark\.id\] \?\? \[sample\]/);
   assert.match(detailSource, /siblingSamples\.length > 1/);
   assert.match(detailSource, /siblingSamples\.map\(\(entry, index\)/);
   assert.match(detailSource, /aria-current=\{entry\.id === sample\.id \? "page" : undefined\}/);
+});
+
+test("keeps the benchmark catalog heading and cards minimal", async () => {
+  const source = await readFile(new URL("../app/model-benchmark-reference.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const { modelBenchmarks } = await modelBenchmarkDataModule();
+
+  assert.match(source, /<h2 id="benchmark-catalog-title">\{modelBenchmarks\.length\} \{t\.benchmarks\}<\/h2>/);
+  assert.match(source, /benchmarks: "Benchmarks"/);
+  assert.doesNotMatch(source, /Standalone benchmark catalog|独立基准目录|catalog-category-strip|reference-source-note|benchmark-family-label|benchmark-aliases/);
+  assert.match(source, /<p>\{benchmark\.publisher\}<\/p>/);
+  assert.doesNotMatch(source, /\{benchmark\.creators\[language\]\}|t\.maintainer/);
+  assert.doesNotMatch(styles, /model-reference-group-total|benchmark-aliases/);
+  assert.equal(modelBenchmarks.find((benchmark) => benchmark.id === "gdpval-aa-v2")?.version, "Public release v2");
+  assert.equal(modelBenchmarks.find((benchmark) => benchmark.id === "apex-agents")?.publisher, "Mercor");
 });
 
 test("groups only Harbor tasks into benchmark directions and portal groups", async () => {
