@@ -3,7 +3,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import ZipStream from "zip-stream";
 
@@ -169,9 +169,11 @@ async function buildArchive({
     });
 
     const zip = new ZipStream({ zlib: { level: 6 } });
-    const uploadPromise = uploadCacheObject({
+    const uploadBody = new PassThrough();
+    zip.pipe(uploadBody);
+    const uploadPromise = Promise.resolve(uploadCacheObject({
       key: cacheKey,
-      body: zip,
+      body: uploadBody,
       contentType: "application/zip",
       metadata: {
         schema: cacheSchema,
@@ -179,7 +181,14 @@ async function buildArchive({
         "file-count": String(objects.length),
         "source-bytes": String(sourceBytes),
       },
-    });
+    })).then(
+      () => ({ error: null }),
+      (error) => {
+        zip.destroy();
+        uploadBody.destroy();
+        return { error: error instanceof Error ? error : new Error(String(error)) };
+      },
+    );
     try {
       await addZipEntry(zip, manifestBytes, { name: "manifest.json", date: archiveDate, mode: 0o644 });
       for (let index = 0; index < objects.length; index += 1) {
@@ -190,10 +199,12 @@ async function buildArchive({
         });
       }
       zip.finalize();
-      await uploadPromise;
+      const uploadResult = await uploadPromise;
+      if (uploadResult.error) throw uploadResult.error;
     } catch (error) {
-      zip.destroy(error instanceof Error ? error : new Error(String(error)));
-      await uploadPromise.catch(() => undefined);
+      zip.destroy();
+      uploadBody.destroy();
+      await uploadPromise;
       throw error;
     }
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import test from "node:test";
 import { createVendorArchiveCache } from "../src/vendor-archive-cache.mjs";
 
@@ -28,6 +29,7 @@ test("builds one deterministic ZIP, then serves a cache hit without rereading ta
     },
     headCacheObject: async (key) => cache.has(key) ? { contentLength: cache.get(key).length } : null,
     uploadCacheObject: async ({ key, body, contentType, metadata }) => {
+      assert.ok(body instanceof Readable, "multipart upload body must be a Node Readable stream");
       const chunks = [];
       for await (const chunk of body) chunks.push(Buffer.from(chunk));
       const bytes = Buffer.concat(chunks);
