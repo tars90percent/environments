@@ -309,10 +309,8 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
           <Stat label={t.benchmarkDirections} value={selectedBenchmark ? 1 : landscape?.benchmarkCount} />
           <Stat label={t.vendors} value={selectedBenchmark?.vendorCount ?? landscape?.vendorCount} />
           {selectedBenchmark && <Stat label={t.submissions} value={selectedBenchmark.submissionCount} />}
-          {!selectedBenchmark && <Stat label={t.benchmarkCategories} value={landscape?.categories.length} />}
         </> : <>
-          <Stat label={t.vendors} value={catalog ? vendors.length : undefined} />
-          <Stat label={t.submissions} value={catalog?.totals.submissions} />
+          <Stat label={t.vendors} value={landscape?.vendorCount} />
           <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
         </>}
       </div>}
@@ -333,6 +331,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       </aside>
       <section className="vendor-main">
         <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h2>{selectedVendor.name}</h2><div className="vendor-meta"><span>{selectedVendor.submissions.length} {t.submissions.toLowerCase()}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></div></header>
+        <VendorHarborTasks categories={landscape?.categories ?? []} language={language} vendor={selectedVendor} />
         <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="batch-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>
       </section>
@@ -404,6 +403,23 @@ function Stat({ label, value }: { label: string; value?: number | string }) {
 
 function StateCard({ children }: { children: string }) {
   return <div className="state-card">{children}</div>;
+}
+
+function VendorHarborTasks({ vendor, categories, language }: { vendor: CatalogVendor; categories: BenchmarkCategoryGroup[]; language: Language }) {
+  const t = text[language];
+  const groups = categories.map((category) => ({
+    category,
+    records: category.groups.flatMap((group) => group.records).filter((record) => record.vendor.id === vendor.id),
+  })).filter((group) => group.records.length > 0);
+  const taskCount = groups.reduce((sum, group) => sum + group.records.length, 0);
+  if (taskCount === 0) return null;
+  return <section className="vendor-harbor-tasks">
+    <div className="vendor-harbor-count">{taskCount} {t.harbor}</div>
+    <div className="vendor-harbor-category-list">{groups.map((group) => <section className="vendor-harbor-category" key={group.category.id}>
+      <header className="vendor-harbor-category-header"><h3>{group.category.label[language]}</h3></header>
+      <div className="task-list">{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>
+    </section>)}</div>
+  </section>;
 }
 
 function SubmissionCard({ submission, open, latest, language, datasetHref }: { submission: CatalogSubmission; open: boolean; latest: boolean; language: Language; datasetHref: string }) {
@@ -496,22 +512,27 @@ function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task
       {task.summary && <p>{task.summary}</p>}
     </div>
     <div className="task-checks">
-      {task.format === "harbor" ? <div className="checks">{(["environment", "oracle", "nop"] as HarborCheckPhase[]).map((phase) => {
-        const check = task.checks[phase];
-        const attempt = task.attempts?.[phase];
-        const state = check?.outcome ?? (attempt ? "attempted" : "unset");
-        const mark = state === "pass" ? "✓" : state === "fail" ? "×" : state === "attempted" ? t.attempted : t.unset;
-        const accessibleState = check?.outcome ?? attempt?.status ?? t.notAttempted;
-        return <span aria-label={`${phaseLabels[phase]}: ${accessibleState}`} className={`check ${state}`} key={phase} title={check?.summary ?? attempt?.summary ?? t.notAttempted}>
-          <span className="check-label">{phaseLabels[phase]}</span>
-          <span aria-hidden className="check-mark">{mark}</span>
-        </span>;
-      })}</div> : null}
+      {task.format === "harbor" ? <HarborChecks language={language} task={task} /> : null}
     </div>
     <div className="task-actions">{task.artifactId && <a href={`/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
     </div>
     {task.findings.length > 0 && <div className="task-findings"><div className="finding-title">{t.findings}</div><div className="task-finding-list">{task.findings.map((finding) => <div className="task-finding" key={finding.id}><strong>{phaseLabels[finding.phase]}</strong><p>{finding.finding}</p></div>)}</div></div>}
   </article>;
+}
+
+function HarborChecks({ task, language }: { task: CatalogTask; language: Language }) {
+  const t = text[language];
+  return <div className="checks">{(["environment", "oracle", "nop"] as HarborCheckPhase[]).map((phase) => {
+    const check = task.checks[phase];
+    const attempt = task.attempts?.[phase];
+    const state = check?.outcome ?? (attempt ? "attempted" : "unset");
+    const mark = state === "pass" ? "✓" : state === "fail" ? "×" : state === "attempted" ? t.attempted : t.unset;
+    const accessibleState = check?.outcome ?? attempt?.status ?? t.notAttempted;
+    return <span aria-label={`${phaseLabels[phase]}: ${accessibleState}`} className={`check ${state}`} key={phase} title={check?.summary ?? attempt?.summary ?? t.notAttempted}>
+      <span className="check-label">{phaseLabels[phase]}</span>
+      <span aria-hidden className="check-mark">{mark}</span>
+    </span>;
+  })}</div>;
 }
 
 function vendorSearchText(vendor: CatalogVendor): string {

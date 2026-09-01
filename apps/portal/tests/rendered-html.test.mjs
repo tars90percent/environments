@@ -472,6 +472,12 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /href="\/model-benchmarks"/);
   assert.match(source, /BenchmarkOverview/);
   assert.match(source, /BenchmarkDetail/);
+  assert.match(source, /<VendorHarborTasks categories=\{landscape\?\.categories \?\? \[\]\} language=\{language\} vendor=\{selectedVendor\} \/>[\s\S]*className="submission-history"/);
+  assert.match(source, /category\.groups\.flatMap\(\(group\) => group\.records\)/);
+  assert.match(source, /className="vendor-harbor-count">\{taskCount\} \{t\.harbor\}/);
+  assert.match(source, /className="vendor-harbor-category-header">[\s\S]*group\.category\.label\[language\]/);
+  assert.match(source, /group\.records\.map\(\(\{ task \}\) => <TaskRow key=\{task\.id\} language=\{language\} task=\{task\} \/>/);
+  assert.doesNotMatch(source, /vendorHarborNote|noHarborTasks/);
   assert.match(source, /grouped by vendor/);
   assert.match(landscapeSource, /task\.kind === "task" && task\.format === "harbor"/);
   assert.match(landscapeSource, /benchmarkCategoryId/);
@@ -507,7 +513,10 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Show \$\{count\} more/);
   assert.match(source, /fetch\("\/api\/catalog"/);
   assert.match(source, /filter\(\(vendor\) => vendor\.submissions\.length > 0\)/);
-  assert.match(source, /value=\{catalog \? vendors\.length : undefined\}/);
+  assert.doesNotMatch(source, /value=\{catalog \? vendors\.length : undefined\}/);
+  assert.match(source, /<Stat label=\{t\.vendors\} value=\{landscape\?\.vendorCount\} \/>/);
+  assert.doesNotMatch(source, /<Stat label=\{t\.benchmarkCategories\}/);
+  assert.doesNotMatch(source, /catalog\?\.totals\.submissions/);
   assert.doesNotMatch(source, /catalog\?\.totals\.tasks/);
   assert.match(source, /catalog\?\.totals\.harborTasks/);
   assert.doesNotMatch(source, /Upload submission|上传提交|\/api\/uploads|x-case-upload/i);
