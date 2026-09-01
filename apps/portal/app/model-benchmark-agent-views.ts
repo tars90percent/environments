@@ -339,7 +339,7 @@ const publisherMaterialManifests: Record<string, PublisherAgentMaterial[]> = {
   "deepsearchqa-oecd-criminality": [
     publisherMaterial("deepsearchqa-oecd-criminality", "public web", "open-web", {
       en: "Authoritative public webpages located during research; the benchmark row does not provide a fixed document bundle.",
-      zh: "研究过程中定位的权威公共网页；该基准数据行不提供固定文档包。",
+      zh: "研究过程中定位的权威公共网页；该 Benchmark 数据行不提供固定文档包。",
     }),
   ],
   "mcp-atlas-assaultcube-dates": [
@@ -376,7 +376,7 @@ const publisherMaterialManifests: Record<string, PublisherAgentMaterial[]> = {
     }),
     publisherMaterial("posttrainbench-aime2025", "training runtime / base model + training examples", "environment", {
       en: "The benchmark-managed base model, training examples, and compute budget exposed to the training agent.",
-      zh: "向训练智能体开放的基准托管基础模型、训练样例及算力预算。",
+      zh: "向训练 Agent 开放的 Benchmark 托管基础模型、训练样例及算力预算。",
     }),
   ],
   "spreadsheetbench-heading-of-max": [

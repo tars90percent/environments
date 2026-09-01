@@ -19,7 +19,7 @@ import {
   type HarborTaskContext,
 } from "./benchmark-landscape";
 import { groupSubmissionTasks, type SubmissionTaskGroup } from "./task-groups";
-import { aggregateBenchmarks, modelBenchmarks } from "./model-benchmark-data";
+import { modelBenchmarks } from "./model-benchmark-data";
 import { modelBenchmarkSamples } from "./model-benchmark-samples";
 import { ModelBenchmarkReferencePage } from "./model-benchmark-reference";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
@@ -41,12 +41,7 @@ const text = {
     benchmarks: "By Domain",
     byVendor: "By Vendor",
     modelBenchmarks: "Benchmark Catalog",
-    modelBenchmarkEyebrow: "Benchmark reference",
-    modelBenchmarkIntro: "Independent benchmark families with official sources and task-level sample profiles; aggregate indexes are documented separately with their constituents and weights.",
-    searchModelBenchmarks: "Search benchmark families, versions, or task patterns",
-    evaluations: "Benchmark families",
-    sampleProfiles: "Sample profiles",
-    aggregateBenchmarks: "Aggregate indexes",
+    searchModelBenchmarks: "Search benchmarks",
     benchmark: "Benchmark",
     sourceId: "Source ID",
     taskFormat: "Task format",
@@ -108,22 +103,17 @@ const text = {
     search: "搜索供应商、提交记录或任务",
     benchmarks: "按领域",
     byVendor: "按供应商",
-    modelBenchmarks: "基准目录",
-    modelBenchmarkEyebrow: "基准参考",
-    modelBenchmarkIntro: "独立记录各基准家族、官方来源与任务级样例画像；综合指数另列其组成评测与权重。",
-    searchModelBenchmarks: "搜索基准家族、版本或任务模式",
-    evaluations: "基准家族",
-    sampleProfiles: "样例画像",
-    aggregateBenchmarks: "综合指数",
-    benchmark: "所属基准",
+    modelBenchmarks: "Benchmark Catalog",
+    searchModelBenchmarks: "搜索 Benchmark",
+    benchmark: "Benchmark",
     sourceId: "来源 ID",
     taskFormat: "任务格式",
     originalLanguage: "原始语言",
     harborFormat: "Harbor 任务",
     publisherNative: "发布方原生格式",
     formatOnly: "仅格式说明",
-    benchmarkDirections: "基准方向",
-    benchmarkCategories: "基准分组",
+    benchmarkDirections: "Benchmark 方向",
+    benchmarkCategories: "Benchmark 分组",
     landscapeTitle: "RL 任务全景",
     landscapeIntro: "按目标基准分布查看各供应商提供的 Harbor 任务。",
     viewTasks: "查看任务",
@@ -259,7 +249,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const initialModelBenchmark = modelBenchmarks.find((benchmark) => benchmark.id === initialModelTask?.benchmarkId);
   const initialModelSample = initialModelTask ? modelBenchmarkSamples[initialModelTask.benchmarkId]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
   const headerTitle = view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
-  const headerIntro = view === "model-benchmarks" ? t.modelBenchmarkIntro : view === "benchmarks" ? selectedBenchmark
+  const headerIntro = view === "model-benchmarks" ? null : view === "benchmarks" ? selectedBenchmark
     ? `${selectedBenchmark.taskCount} ${t.taskRecords} · ${selectedBenchmark.vendorCount} ${t.vendors.toLowerCase()}`
     : t.landscapeIntro
     : null;
@@ -308,17 +298,13 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     </header>
 
     <main id="top">
-    {view !== "model-task" && <section className="registry-header">
+    {view !== "model-task" && <section className={`registry-header${view === "model-benchmarks" ? " model-benchmark-header" : ""}`}>
       {view === "benchmarks" && selectedBenchmark && <button className="landscape-back registry-back" onClick={showBenchmarks} type="button"><span aria-hidden>←</span>{t.backToLandscape}</button>}
-      <div className="eyebrow">{view === "model-benchmarks" ? t.modelBenchmarkEyebrow : view === "benchmarks" && selectedBenchmarkCategory ? selectedBenchmarkCategory.label[language] : t.eyebrow}</div>
+      {view !== "model-benchmarks" && <div className="eyebrow">{view === "benchmarks" && selectedBenchmarkCategory ? selectedBenchmarkCategory.label[language] : t.eyebrow}</div>}
       <h1>{headerTitle}</h1>
       {headerIntro && <p className="registry-intro">{headerIntro}</p>}
-      <div className={`registry-stats${view === "model-benchmarks" ? " model-benchmark-stats" : ""}`}>
-        {view === "model-benchmarks" ? <>
-          <Stat label={t.evaluations} value={modelBenchmarks.length} />
-          <Stat label={t.sampleProfiles} value={Object.values(modelBenchmarkSamples).flat().length} />
-          <Stat label={t.aggregateBenchmarks} value={aggregateBenchmarks.length} />
-        </> : view === "benchmarks" ? <>
+      {view !== "model-benchmarks" && <div className="registry-stats">
+        {view === "benchmarks" ? <>
           <Stat label={t.harbor} value={selectedBenchmark?.taskCount ?? landscape?.taskCount} />
           <Stat label={t.benchmarkDirections} value={selectedBenchmark ? 1 : landscape?.benchmarkCount} />
           <Stat label={t.vendors} value={selectedBenchmark?.vendorCount ?? landscape?.vendorCount} />
@@ -329,7 +315,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
           <Stat label={t.submissions} value={catalog?.totals.submissions} />
           <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
         </>}
-      </div>
+      </div>}
     </section>}
 
     <div className="page-body">

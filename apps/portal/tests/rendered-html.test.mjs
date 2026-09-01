@@ -132,7 +132,7 @@ test("requires an authenticated researcher session", async () => {
 });
 
 test("records standalone benchmark families separately from aggregate indexes", async () => {
-  const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, modelBenchmarks } = await modelBenchmarkDataModule();
+  const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, modelBenchmarks, modelBenchmarkSearchText } = await modelBenchmarkDataModule();
 
   assert.equal(artificialAnalysisIndex.version, "4.1.1");
   assert.equal(artificialAnalysisIndex.releasedAt, "2026-08-06");
@@ -143,15 +143,24 @@ test("records standalone benchmark families separately from aggregate indexes", 
   assert.ok(artificialAnalysisIndex.links.every((link) => link.url.startsWith("https://artificialanalysis.ai/")));
 
   assert.equal(modelBenchmarks.length, 38);
-  assert.equal(benchmarkReferenceCategories.length, 4);
+  assert.equal(benchmarkReferenceCategories.length, 5);
   const ids = modelBenchmarks.map((benchmark) => benchmark.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual(Object.fromEntries(benchmarkReferenceCategories.map((category) => [category.id, modelBenchmarks.filter((benchmark) => benchmark.categoryId === category.id).length])), {
-    "agents-professional": 14,
-    "coding-data": 10,
-    "knowledge-visual": 11,
+    "agents-tools": 11,
+    coding: 10,
+    "research-reasoning": 8,
+    "multimodal-documents": 6,
     cybersecurity: 3,
   });
+  assert.deepEqual(Object.fromEntries(["cursorbench", "spreadsheetbench", "browsecomp", "mmmu-pro"].map((id) => [id, modelBenchmarks.find((benchmark) => benchmark.id === id)?.categoryId])), {
+    cursorbench: "coding",
+    spreadsheetbench: "agents-tools",
+    browsecomp: "research-reasoning",
+    "mmmu-pro": "multimodal-documents",
+  });
+  assert.equal(modelBenchmarks.filter((benchmark) => modelBenchmarkSearchText(benchmark).includes("coding & software engineering")).length, 10);
+  assert.equal(modelBenchmarks.filter((benchmark) => modelBenchmarkSearchText(benchmark).includes("多模态与文档理解")).length, 6);
   assert.deepEqual(modelBenchmarks.filter((benchmark) => ["gdpval-aa-v2", "terminal-bench-2-1", "hle", "gpqa-diamond"].includes(benchmark.id)).map((benchmark) => benchmark.name), [
     "GDPval", "Terminal-Bench", "Humanity's Last Exam", "GPQA",
   ]);
@@ -454,7 +463,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /modelBenchmarks: "Benchmark Catalog"/);
   assert.match(source, /benchmarks: "按领域"/);
   assert.match(source, /byVendor: "按供应商"/);
-  assert.match(source, /modelBenchmarks: "基准目录"/);
+  assert.match(source, /modelBenchmarks: "Benchmark Catalog"/);
   assert.doesNotMatch(source, /Model benchmarks|模型基准/);
   assert.doesNotMatch(source, /Benchmark directions are grouped for navigation only/);
   assert.doesNotMatch(source, /基准分组仅用于浏览/);

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Benchmark Catalog — 小环境",
-  description: "Standalone benchmark families with official sources and sample task profiles, plus separate aggregate-index compositions and weights.",
+  description: "Benchmarks, task examples, official sources, and composite indexes.",
 };
 
 export default async function ModelBenchmarksPage() {
