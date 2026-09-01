@@ -12,6 +12,7 @@ import type {
   HarborCheckResultInput,
   HarborFindingInput,
   PurgeErroneousBenchmarksInput,
+  ReconcileHarborWorkItemsInput,
   RegisterBenchmarkInput,
   RemoveUnusedBenchmarksInput,
   ReconcileSubmissionSourceItemsInput,
@@ -742,6 +743,19 @@ export function parseWorkCompletion(value: unknown): WorkCompletionInput {
     outcome: enumValue(input.outcome, new Set(["completed", "retry", "failed"]), "outcome"),
     error: optionalString(input.error, "error"),
   } as WorkCompletionInput;
+}
+
+export function parseReconcileHarborWorkItems(value: unknown): ReconcileHarborWorkItemsInput {
+  const input = object(value, "Harbor work-item reconciliation");
+  onlyKeys(input, new Set(["taskIds", "reason", "actor"]), "Harbor work-item reconciliation");
+  const taskIds = array(input.taskIds, "taskIds").map((value, index) => identifier(value, `taskIds[${index}]`));
+  if (!taskIds.length) throw new ValidationError("taskIds must contain at least one task");
+  if (new Set(taskIds).size !== taskIds.length) throw new ValidationError("taskIds must not contain duplicates");
+  return {
+    taskIds: taskIds.sort((a, b) => a.localeCompare(b)),
+    reason: boundedString(input.reason, "reason", 2_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
 }
 
 export function parseCheckResult(value: unknown): CheckResultInput {

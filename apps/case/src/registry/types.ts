@@ -635,6 +635,19 @@ export type WorkCompletionInput = {
   error?: string;
 };
 
+export type ReconcileHarborWorkItemsInput = {
+  taskIds: string[];
+  reason: string;
+  actor: string;
+};
+
+export type ReconcileHarborWorkItemsResult = {
+  taskIds: string[];
+  workItemIds: string[];
+  itemsCompleted: number;
+  itemsUnchanged: number;
+};
+
 export type CheckResultInput = {
   id: string;
   taskVersionId: string;

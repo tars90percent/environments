@@ -103,6 +103,7 @@ case-registry restore-vendor /absolute/path/vendor-restore.json
 case-registry lease-work case-checker
 case-registry record-harbor-attempt /absolute/path/harbor-attempt.json
 case-registry record-harbor-check /absolute/path/harbor-check.json
+case-registry reconcile-harbor-work-items /absolute/path/work-reconciliation.json
 case-registry record-harbor-finding /absolute/path/harbor-finding.json
 case-registry remove-submission /absolute/path/submission-removal.json
 case-registry delete-artifact <unreferenced-artifact-id>
@@ -162,6 +163,12 @@ produce a conclusive pass/fail result. Its status is `blocked` or
 versions, and timing. This operational state does not add another check result:
 an unset phase with an attempt was tried, while an unset phase without one was
 not tried.
+
+`reconcile-harbor-work-items` completes exact queued Harbor-check work after the
+corresponding active Harbor task versions have sufficient check or attempt
+records. It is an audited, idempotent alternative to FIFO leasing when checks
+were performed directly by CASE. It refuses unrelated, unresolved, leased,
+failed, duplicate, missing, superseded, and non-Harbor targets.
 
 The root policy permits one narrowly defined execution adapter for Modal's
 partial Dockerfile implementation. When a task validly uses a named

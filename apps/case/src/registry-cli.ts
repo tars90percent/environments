@@ -26,6 +26,7 @@ import {
   parseHarborFinding,
   parsePurgeErroneousBenchmarks,
   parseRegisterBenchmark,
+  parseReconcileHarborWorkItems,
   parseRemoveUnusedBenchmarks,
   parseReconcileSubmissionSourceItems,
   parseReconcileSubmissionTasks,
@@ -177,8 +178,11 @@ if (command === "operations") {
         await repository.completeWorkItem(parseWorkCompletion(await jsonFile(argument)));
         output({ updated: true });
         break;
+      case "reconcile-harbor-work-items":
+        output(await repository.reconcileHarborWorkItems(parseReconcileHarborWorkItems(await jsonFile(argument))));
+        break;
       default:
-        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work [arguments]");
+        fail("Usage: case-registry operations|summary|catalog|vendors|vendor|batch|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
     }
   } finally {
     await repository.close();
@@ -347,6 +351,11 @@ function operationSchemas() {
     "delete-artifact": { arguments: ["<unreferenced-artifact-id>"] },
     "lease-work": { arguments: ["<worker-id>"], leaseSeconds: 900 },
     "complete-work": { arguments: ["<completion.json>"], fields: ["id", "workerId", "outcome", "error?"] },
+    "reconcile-harbor-work-items": {
+      arguments: ["<reconciliation.json>"],
+      fields: ["taskIds", "reason", "actor"],
+      note: "Completes exact queued Harbor-check work items only when every requested active Harbor task has recorded phase results or operational attempts sufficient to show its check work was processed; refuses leased, failed, unresolved, missing, duplicate, or non-Harbor targets.",
+    },
   },
   } as const;
 }

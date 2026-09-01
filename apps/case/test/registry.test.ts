@@ -12,6 +12,7 @@ import {
   parseHarborFinding,
   parsePurgeErroneousBenchmarks,
   parseRegisterBenchmark,
+  parseReconcileHarborWorkItems,
   parseRemoveUnusedBenchmarks,
   parseReconcileSubmissionSourceItems,
   parseReconcileSubmissionTasks,
@@ -286,6 +287,21 @@ test("validates non-conclusive Harbor attempts separately from results", () => {
   assert.throws(() => parseHarborCheckAttempt({ ...attempt, status: "not_run" }), ValidationError);
   assert.throws(() => parseHarborCheckAttempt({ ...attempt, outcome: "fail" }), /unsupported fields/);
   assert.throws(() => parseHarborCheckAttempt({ ...attempt, completedAt: "2026-08-20T23:59:00.000Z" }), /must not precede/);
+});
+
+test("validates exact Harbor work-item reconciliations", () => {
+  const input = {
+    taskIds: ["task-two", "task-one"],
+    reason: "The exact task versions have recorded Harbor results or attempts.",
+    actor: "CASE",
+  };
+  assert.deepEqual(parseReconcileHarborWorkItems(input), {
+    ...input,
+    taskIds: ["task-one", "task-two"],
+  });
+  assert.throws(() => parseReconcileHarborWorkItems({ ...input, taskIds: [] }), /at least one/);
+  assert.throws(() => parseReconcileHarborWorkItems({ ...input, taskIds: ["task-one", "task-one"] }), /duplicates/);
+  assert.throws(() => parseReconcileHarborWorkItems({ ...input, extra: true }), /unsupported fields/);
 });
 
 test("findings cite one failed Harbor check and have no classification fields", () => {

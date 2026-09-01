@@ -14,6 +14,8 @@ import type {
   HarborCheckResultInput,
   HarborFindingInput,
   OperationsSummary,
+  ReconcileHarborWorkItemsInput,
+  ReconcileHarborWorkItemsResult,
   ReconcileSubmissionSourceItemsInput,
   ReconcileSubmissionSourceItemsResult,
   ReconcileSubmissionTasksInput,
@@ -67,6 +69,7 @@ export interface RegistryRepository {
   registerArtifact(input: ArtifactInput): Promise<void>;
   leaseWorkItem(workerId: string, leaseSeconds: number): Promise<WorkItem | null>;
   completeWorkItem(input: WorkCompletionInput): Promise<void>;
+  reconcileHarborWorkItems(input: ReconcileHarborWorkItemsInput): Promise<ReconcileHarborWorkItemsResult>;
   sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot>;
   getSampleSubmission(id: string): Promise<SampleCatalogSubmission | null>;
   getSampleTask(id: string): Promise<SampleCatalogTask | null>;

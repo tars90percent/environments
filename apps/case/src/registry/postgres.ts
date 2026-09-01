@@ -36,6 +36,8 @@ import type {
   HarborCheckResultInput,
   HarborFindingInput,
   OperationsSummary,
+  ReconcileHarborWorkItemsInput,
+  ReconcileHarborWorkItemsResult,
   ReconcileSubmissionSourceItemsInput,
   ReconcileSubmissionSourceItemsResult,
   ReconcileSubmissionTasksInput,
@@ -3179,6 +3181,139 @@ export class PostgresRegistry implements RegistryRepository {
       [input.id, input.workerId, input.outcome, input.error ?? null],
     );
     if (!result.rowCount) throw new RegistryConflictError(`Work item ${input.id} is not leased by ${input.workerId}`);
+  }
+
+  async reconcileHarborWorkItems(input: ReconcileHarborWorkItemsInput): Promise<ReconcileHarborWorkItemsResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const tasks = await client.query<{ id: string; format_kind: string }>(
+        `SELECT id, format_kind
+         FROM registry_task_versions
+         WHERE id = ANY($1::text[]) AND superseded_at IS NULL
+         FOR UPDATE`,
+        [input.taskIds],
+      );
+      const tasksById = new Map(tasks.rows.map((task) => [task.id, task]));
+      for (const taskId of input.taskIds) {
+        const task = tasksById.get(taskId);
+        if (!task) throw new RegistryNotFoundError(`Active task ${taskId} does not exist`);
+        if (task.format_kind !== "harbor") {
+          throw new RegistryConflictError(`Harbor work cannot be reconciled for non-Harbor task ${taskId}`);
+        }
+      }
+
+      const checks = await client.query<{
+        task_version_id: string;
+        check_phase: HarborCheckPhase;
+        outcome: "pass" | "fail";
+      }>(
+        `SELECT DISTINCT ON (task_version_id, check_phase)
+                task_version_id, check_phase, outcome
+         FROM registry_check_runs
+         WHERE task_version_id = ANY($1::text[])
+           AND check_phase IN ('environment', 'oracle', 'nop')
+         ORDER BY task_version_id, check_phase, completed_at DESC, created_at DESC`,
+        [input.taskIds],
+      );
+      const attempts = await client.query<{ task_version_id: string; check_phase: HarborCheckPhase }>(
+        `SELECT DISTINCT ON (task_version_id, check_phase)
+                task_version_id, check_phase
+         FROM registry_harbor_check_attempts
+         WHERE task_version_id = ANY($1::text[])
+           AND check_phase IN ('environment', 'oracle', 'nop')
+         ORDER BY task_version_id, check_phase, completed_at DESC, created_at DESC`,
+        [input.taskIds],
+      );
+      const checksByTask = new Map<string, Map<HarborCheckPhase, "pass" | "fail">>();
+      for (const check of checks.rows) {
+        const phases = checksByTask.get(check.task_version_id) ?? new Map();
+        phases.set(check.check_phase, check.outcome);
+        checksByTask.set(check.task_version_id, phases);
+      }
+      const attemptsByTask = new Map<string, Set<HarborCheckPhase>>();
+      for (const attempt of attempts.rows) {
+        const phases = attemptsByTask.get(attempt.task_version_id) ?? new Set();
+        phases.add(attempt.check_phase);
+        attemptsByTask.set(attempt.task_version_id, phases);
+      }
+      for (const taskId of input.taskIds) {
+        const taskChecks = checksByTask.get(taskId) ?? new Map();
+        const taskAttempts = attemptsByTask.get(taskId) ?? new Set();
+        const environment = taskChecks.get("environment");
+        if (!environment && !taskAttempts.has("environment")) {
+          throw new RegistryConflictError(`Harbor work for ${taskId} has no Environment check or attempt`);
+        }
+        if (environment === "pass") {
+          for (const phase of ["oracle", "nop"] as const) {
+            if (!taskChecks.has(phase) && !taskAttempts.has(phase)) {
+              throw new RegistryConflictError(`Harbor work for ${taskId} has no ${phase} check or attempt after Environment passed`);
+            }
+          }
+        }
+      }
+
+      const workItems = await client.query<{
+        id: string;
+        entity_id: string;
+        status: string;
+      }>(
+        `SELECT id, entity_id, status
+         FROM registry_work_items
+         WHERE kind = 'harbor_checks'
+           AND entity_type = 'task'
+           AND entity_id = ANY($1::text[])
+         ORDER BY entity_id, created_at
+         FOR UPDATE`,
+        [input.taskIds],
+      );
+      const itemsByTask = new Map<string, Array<{ id: string; status: string }>>();
+      for (const item of workItems.rows) {
+        const items = itemsByTask.get(item.entity_id) ?? [];
+        items.push({ id: item.id, status: item.status });
+        itemsByTask.set(item.entity_id, items);
+      }
+      for (const taskId of input.taskIds) {
+        const items = itemsByTask.get(taskId) ?? [];
+        if (items.length !== 1) {
+          throw new RegistryConflictError(`Expected exactly one Harbor work item for ${taskId}, found ${items.length}`);
+        }
+        if (!new Set(["queued", "completed"]).has(items[0]!.status)) {
+          throw new RegistryConflictError(`Harbor work item ${items[0]!.id} is ${items[0]!.status}, not queued or completed`);
+        }
+      }
+
+      const queuedIds = workItems.rows.filter((item) => item.status === "queued").map((item) => item.id);
+      if (queuedIds.length) {
+        await client.query(
+          `UPDATE registry_work_items
+           SET status = 'completed', leased_by = NULL, lease_expires_at = NULL,
+               last_error = NULL, updated_at = now()
+           WHERE id = ANY($1::text[]) AND status = 'queued'`,
+          [queuedIds],
+        );
+        for (const taskId of input.taskIds) {
+          const item = itemsByTask.get(taskId)![0]!;
+          if (item.status !== "queued") continue;
+          await this.insertStatusEvent(client, "task", taskId, "harbor_checks.work_reconciled", input.actor, {
+            workItemId: item.id,
+            reason: input.reason,
+          });
+        }
+      }
+      await client.query("COMMIT");
+      return {
+        taskIds: input.taskIds,
+        workItemIds: workItems.rows.map((item) => item.id).sort((a, b) => a.localeCompare(b)),
+        itemsCompleted: queuedIds.length,
+        itemsUnchanged: workItems.rows.length - queuedIds.length,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private async catalogSnapshot(scope: CatalogScope): Promise<CatalogSnapshot> {
