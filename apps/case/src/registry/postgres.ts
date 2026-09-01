@@ -1686,13 +1686,14 @@ export class PostgresRegistry implements RegistryRepository {
         throw new RegistryConflictError(`Submission ${input.submissionId} is not a sample submission`);
       }
 
-      const artifactIds = [...new Set(input.tasks.map((task) => task.artifactId))];
+      const artifactIds = [...new Set(input.tasks.flatMap((task) => task.artifactId ? [task.artifactId] : []))];
       const artifactResult = await client.query<{ id: string; sha256: string }>(
         "SELECT id, sha256 FROM registry_artifacts WHERE id = ANY($1::text[])",
         [artifactIds],
       );
       const artifacts = new Map(artifactResult.rows.map((artifact) => [artifact.id, artifact.sha256]));
       for (const task of input.tasks) {
+        if (!task.artifactId) continue;
         if (artifacts.get(task.artifactId) !== task.contentSha256) {
           throw new RegistryConflictError(`Task ${task.id} must reference its exact immutable artifact`);
         }
@@ -1849,6 +1850,12 @@ export class PostgresRegistry implements RegistryRepository {
           }
           taskVersionsUnchanged += 1;
           continue;
+        }
+
+        if (!task.artifactId) {
+          throw new RegistryConflictError(
+            `Task ${task.id} may omit artifactId only when retaining an unchanged legacy active version`,
+          );
         }
 
         if (current) {

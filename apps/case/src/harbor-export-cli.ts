@@ -49,6 +49,14 @@ export type HarborExportResult = {
   errors: Array<{ taskId: string; error: string }>;
 };
 
+export type HarborPruneResult = {
+  submissionId: string;
+  activePrefixCount: number;
+  deletedPrefixCount: number;
+  deletedObjectCount: number;
+  deletedPrefixes: Array<{ prefix: string; objectCount: number }>;
+};
+
 export async function exportSubmissions(input: {
   repository: RegistryRepository;
   sourceStore: ArtifactStore;
@@ -112,6 +120,50 @@ export async function exportSubmissions(input: {
     sizeBytes: tasks.reduce((sum, task) => sum + task.sizeBytes, 0),
     tasks,
     errors,
+  };
+}
+
+export async function pruneInactiveSubmissionHarborTaskPrefixes(input: {
+  repository: RegistryRepository;
+  destinationStore: Pick<ArtifactStore, "listKeys" | "deleteObject">;
+  submissionId: string;
+}): Promise<HarborPruneResult> {
+  const snapshot = await input.repository.sampleCatalogSnapshot();
+  const match = snapshot.vendors.flatMap((vendor) => vendor.submissions
+    .filter((submission) => submission.id === input.submissionId)
+    .map((submission) => ({ vendor, submission })))[0];
+  if (!match) throw new Error(`Catalog-visible submission not found: ${input.submissionId}`);
+
+  const basePrefix = submissionExportPrefix(match.vendor.id, match.submission.id);
+  const activePrefixes = new Set(match.submission.tasks
+    .filter((task) => task.kind === "task" && task.format === "harbor")
+    .map((task) => taskExportPrefix(match.vendor.id, match.submission.id, task.sourcePath)));
+  const keys = await input.destinationStore.listKeys(`${basePrefix}/`);
+  const objectsByPrefix = new Map<string, string[]>();
+  for (const key of keys) {
+    const relativeKey = key.slice(basePrefix.length + 1);
+    const separator = relativeKey.indexOf("/");
+    if (separator <= 0) throw new Error(`Harbor export object is outside a task prefix: ${key}`);
+    const prefix = `${basePrefix}/${relativeKey.slice(0, separator)}`;
+    const values = objectsByPrefix.get(prefix) ?? [];
+    values.push(key);
+    objectsByPrefix.set(prefix, values);
+  }
+
+  const stale = [...objectsByPrefix.entries()]
+    .filter(([prefix]) => !activePrefixes.has(prefix))
+    .sort(([left], [right]) => left.localeCompare(right));
+  await mapLimit(stale, 4, async ([prefix, prefixKeys]) => {
+    await mapLimit(prefixKeys, 12, (key) => input.destinationStore.deleteObject(key));
+    const remaining = await input.destinationStore.listKeys(`${prefix}/`);
+    if (remaining.length) throw new Error(`Inactive Harbor task prefix was not fully removed: ${prefix}`);
+  });
+  return {
+    submissionId: input.submissionId,
+    activePrefixCount: activePrefixes.size,
+    deletedPrefixCount: stale.length,
+    deletedObjectCount: stale.reduce((count, [, prefixKeys]) => count + prefixKeys.length, 0),
+    deletedPrefixes: stale.map(([prefix, prefixKeys]) => ({ prefix, objectCount: prefixKeys.length })),
   };
 }
 
@@ -307,7 +359,11 @@ export async function findHarborTaskRoot(extractedRoot: string, sourcePath: stri
 
 export function taskExportPrefix(vendorId: string, submissionId: string, sourcePath: string | null): string {
   const taskName = taskExportName(sourcePath);
-  return [safeComponent(vendorId, "vendor"), safeComponent(submissionId, "submission"), safeComponent(taskName, "task")].join("/");
+  return `${submissionExportPrefix(vendorId, submissionId)}/${safeComponent(taskName, "task")}`;
+}
+
+export function submissionExportPrefix(vendorId: string, submissionId: string): string {
+  return [safeComponent(vendorId, "vendor"), safeComponent(submissionId, "submission")].join("/");
 }
 
 function taskExportName(sourcePath: string | null): string {

@@ -7,7 +7,12 @@ import { basename } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { contentTypeFor, storeSourcePayload } from "./capture-runtime.js";
-import { publishSubmissionHarborTasks, registerTaskSetWithHarborPublication } from "./harbor-publication.js";
+import {
+  pruneSubmissionHarborTasks,
+  publishSubmissionHarborTasks,
+  reconcileTaskSetWithHarborPublication,
+  registerTaskSetWithHarborPublication,
+} from "./harbor-publication.js";
 import type { ArtifactStore } from "./registry/artifacts.js";
 import { localArtifactStore, openLocalRepository } from "./registry/local.js";
 import type { RegistryRepository } from "./registry/repository.js";
@@ -117,10 +122,11 @@ if (command === "operations") {
       }
       case "reconcile-submission-tasks": {
         const registration = parseReconcileSubmissionTasks(await jsonFile(argument));
-        output(await registerTaskSetWithHarborPublication({
+        output(await reconcileTaskSetWithHarborPublication({
           registration,
           register: () => repository.reconcileSubmissionTasks(registration),
           publish: (submissionId) => publishSubmissionHarborTasks(repository, submissionId),
+          prune: (submissionId) => pruneSubmissionHarborTasks(repository, submissionId),
         }));
         break;
       }
@@ -321,7 +327,7 @@ function operationSchemas() {
     "reconcile-submission-tasks": {
       arguments: ["<reconciliation.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "reason", "actor"],
-      note: "Atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version. When the desired active set contains Harbor tasks, publication to harbor-tasks runs after commit and is safely retryable.",
+      note: "Atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version. After commit, active Harbor tasks are published before inactive task prefixes are removed from harbor-tasks; both steps are safely retryable. A null artifactId is accepted only to retain an exact unchanged legacy version that predates task-artifact links.",
     },
     "classify-submission": { arguments: ["<classification.json>"], fields: ["batchId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },

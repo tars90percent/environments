@@ -154,6 +154,14 @@ test("validates complete audited task reconciliations", () => {
   const parsed = parseReconcileSubmissionTasks(input);
   assert.equal(parsed.reason, input.reason);
   assert.deepEqual(parsed.tasks.map((task) => [task.id, task.kind]), [["trace-v2", "trace"]]);
+  assert.equal(parseReconcileSubmissionTasks({
+    ...input,
+    tasks: [{ ...input.tasks[0], artifactId: null }],
+  }).tasks[0]?.artifactId, null);
+  assert.throws(() => parseAppendTasks({
+    ...input,
+    tasks: [{ ...input.tasks[0], artifactId: null }],
+  }), ValidationError);
   assert.throws(() => parseReconcileSubmissionTasks({ ...input, reason: "" }), ValidationError);
   assert.throws(() => parseReconcileSubmissionTasks({ ...input, tasks: [] }), ValidationError);
 });

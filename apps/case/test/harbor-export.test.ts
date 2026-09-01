@@ -3,8 +3,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { findHarborTaskRoot, harborTaskFiles, publishTaskFiles, taskExportPrefix } from "../src/harbor-export-cli.js";
+import {
+  findHarborTaskRoot,
+  harborTaskFiles,
+  pruneInactiveSubmissionHarborTaskPrefixes,
+  publishTaskFiles,
+  taskExportPrefix,
+} from "../src/harbor-export-cli.js";
 import type { ArtifactStore } from "../src/registry/artifacts.js";
+import type { RegistryRepository } from "../src/registry/repository.js";
 
 test("builds the requested vendor/submission/task export path without stable keys", () => {
   assert.equal(
@@ -115,4 +122,83 @@ test("publishes an exact task without inventing a missing task.toml", async () =
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("prunes only inactive task prefixes for one submission and is idempotent", async () => {
+  const objects = new Set([
+    "vendor-a/submission-1/active/instruction.md",
+    "vendor-a/submission-1/active/task.toml",
+    "vendor-a/submission-1/stale/instruction.md",
+    "vendor-a/submission-1/stale/material.toml",
+    "vendor-a/submission-2/unrelated/task.toml",
+  ]);
+  const repository = {
+    async sampleCatalogSnapshot() {
+      return {
+        generatedAt: "2026-09-01T00:00:00.000Z",
+        vendors: [{
+          id: "vendor-a",
+          name: "Vendor A",
+          short: "A",
+          submissions: [{
+            id: "submission-1",
+            date: "2026-09-01",
+            label: "Sample",
+            source: "Feishu",
+            formats: ["harbor"],
+            sourceEvents: [],
+            tasks: [{
+              id: "active-version",
+              stableKey: "active",
+              title: "Active",
+              summary: null,
+              kind: "task",
+              format: "harbor",
+              benchmark: { id: "unspecified", displayName: "Unspecified" },
+              gpuRequired: false,
+              sourcePath: "delivery.zip!/active/",
+              artifactId: `artifact:sha256:${"a".repeat(64)}`,
+              contentSha256: "a".repeat(64),
+              sourceItemIds: ["source-item-1"],
+              checks: {},
+              attempts: {},
+              findings: [],
+            }],
+          }],
+        }],
+        totals: { vendors: 1, submissions: 1, tasks: 1, harborTasks: 1 },
+      };
+    },
+  } as unknown as RegistryRepository;
+  const destinationStore = {
+    async listKeys(prefix: string) {
+      return [...objects].filter((key) => key.startsWith(prefix)).sort();
+    },
+    async deleteObject(key: string) {
+      objects.delete(key);
+    },
+  } as Pick<ArtifactStore, "listKeys" | "deleteObject">;
+
+  const first = await pruneInactiveSubmissionHarborTaskPrefixes({
+    repository,
+    destinationStore,
+    submissionId: "submission-1",
+  });
+  assert.equal(first.activePrefixCount, 1);
+  assert.equal(first.deletedPrefixCount, 1);
+  assert.equal(first.deletedObjectCount, 2);
+  assert.deepEqual(first.deletedPrefixes, [{
+    prefix: "vendor-a/submission-1/stale",
+    objectCount: 2,
+  }]);
+  assert.equal(objects.has("vendor-a/submission-1/active/task.toml"), true);
+  assert.equal(objects.has("vendor-a/submission-2/unrelated/task.toml"), true);
+
+  const second = await pruneInactiveSubmissionHarborTaskPrefixes({
+    repository,
+    destinationStore,
+    submissionId: "submission-1",
+  });
+  assert.equal(second.deletedPrefixCount, 0);
+  assert.equal(second.deletedObjectCount, 0);
 });

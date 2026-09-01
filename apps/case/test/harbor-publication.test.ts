@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registerTaskSetWithHarborPublication } from "../src/harbor-publication.js";
-import type { HarborExportResult } from "../src/harbor-export-cli.js";
+import {
+  reconcileTaskSetWithHarborPublication,
+  registerTaskSetWithHarborPublication,
+} from "../src/harbor-publication.js";
+import type { HarborExportResult, HarborPruneResult } from "../src/harbor-export-cli.js";
 import type { TaskRegistrationInput } from "../src/registry/types.js";
 
 const harborTask: TaskRegistrationInput = {
@@ -33,6 +36,14 @@ const published: HarborExportResult = {
     status: "published",
   }],
   errors: [],
+};
+
+const pruned: HarborPruneResult = {
+  submissionId: "submission-1",
+  activePrefixCount: 1,
+  deletedPrefixCount: 1,
+  deletedObjectCount: 5,
+  deletedPrefixes: [{ prefix: "vendor/submission-1/retired", objectCount: 5 }],
 };
 
 test("publishes Harbor files only after the registry transaction succeeds", async () => {
@@ -98,4 +109,56 @@ test("surfaces publication failures after registration so the operation can be r
     /bucket unavailable/,
   );
   assert.equal(registered, true);
+});
+
+test("reconciliation publishes active Harbor tasks before pruning inactive prefixes", async () => {
+  const events: string[] = [];
+  const result = await reconcileTaskSetWithHarborPublication({
+    registration: { submissionId: "submission-1", tasks: [harborTask] },
+    async register() {
+      events.push("registered");
+      return { taskVersionsAdded: 1 };
+    },
+    async publish() {
+      assert.deepEqual(events, ["registered"]);
+      events.push("published");
+      return published;
+    },
+    async prune() {
+      assert.deepEqual(events, ["registered", "published"]);
+      events.push("pruned");
+      return pruned;
+    },
+  });
+
+  assert.deepEqual(events, ["registered", "published", "pruned"]);
+  assert.equal(result.harborTaskPublication.status, "completed");
+  assert.deepEqual(result.harborTaskPruning, pruned);
+});
+
+test("reconciliation still prunes when no active task is Harbor", async () => {
+  const events: string[] = [];
+  const result = await reconcileTaskSetWithHarborPublication({
+    registration: {
+      submissionId: "submission-1",
+      tasks: [{ ...harborTask, format: "non_harbor" }],
+    },
+    async register() {
+      events.push("registered");
+      return { taskVersionsAdded: 1 };
+    },
+    async publish() {
+      events.push("published");
+      return published;
+    },
+    async prune() {
+      assert.deepEqual(events, ["registered"]);
+      events.push("pruned");
+      return { ...pruned, activePrefixCount: 0 };
+    },
+  });
+
+  assert.deepEqual(events, ["registered", "pruned"]);
+  assert.equal(result.harborTaskPublication.status, "not_applicable");
+  assert.equal(result.harborTaskPruning.activePrefixCount, 0);
 });

@@ -329,14 +329,26 @@ export function parseReconcileSubmissionTasks(value: unknown): ReconcileSubmissi
     new Set(["submissionId", "benchmarkAssignments", "tasks", "reason", "actor"]),
     "submission task reconciliation",
   );
+  const rawTasks = array(input.tasks, "tasks");
+  const legacyNullArtifactIndexes = new Set<number>();
+  const appendCompatibleTasks = rawTasks.map((value, index) => {
+    const task = object(value, `tasks[${index}]`);
+    if (task.artifactId !== null) return task;
+    legacyNullArtifactIndexes.add(index);
+    const contentSha256 = sha256(task.contentSha256, `tasks[${index}].contentSha256`);
+    return { ...task, artifactId: `artifact:sha256:${contentSha256}` };
+  });
   const parsed = parseAppendTasks({
     submissionId: input.submissionId,
     benchmarkAssignments: input.benchmarkAssignments,
-    tasks: input.tasks,
+    tasks: appendCompatibleTasks,
     actor: input.actor,
   });
   return {
     ...parsed,
+    tasks: parsed.tasks.map((task, index) => legacyNullArtifactIndexes.has(index)
+      ? { ...task, artifactId: null }
+      : task),
     reason: boundedString(input.reason, "reason", 2_000),
   };
 }

@@ -490,12 +490,18 @@ export type AppendTasksResult = {
   taskIds: string[];
 };
 
+export type ReconcileTaskRegistrationInput = Omit<TaskRegistrationInput, "artifactId"> & {
+  /** Null is accepted only to retain an unchanged legacy active version that predates exact artifact links. */
+  artifactId: string | null;
+};
+
 /**
  * Replaces the active parsed-object set for one submission while retaining every
  * previous task version as superseded history. The task list is the complete
  * desired active set, not a patch.
  */
-export type ReconcileSubmissionTasksInput = AppendTasksInput & {
+export type ReconcileSubmissionTasksInput = Omit<AppendTasksInput, "tasks"> & {
+  tasks: ReconcileTaskRegistrationInput[];
   reason: string;
 };
 
