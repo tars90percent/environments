@@ -55,16 +55,57 @@ async function fixture(overrides = {}) {
   };
 }
 
-test("health check is public but bucket paths require a bearer token", async () => {
+test("health and documentation are public but bucket paths require a bearer token", async () => {
   const app = await fixture();
   try {
     const health = await fetch(`${app.baseUrl}/healthz`);
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), { status: "ok" });
 
+    const docs = await fetch(`${app.baseUrl}/docs`);
+    assert.equal(docs.status, 200);
+    assert.match(docs.headers.get("content-type"), /^text\/html/);
+    const docsBody = await docs.text();
+    assert.match(docsBody, /vendor\/\s*submission\/\s*task\//);
+    assert.match(docsBody, /recursive=1&amp;limit=1000/);
+    assert.match(docsBody, /OpenAPI 3\.1 specification/);
+
+    const openapi = await fetch(`${app.baseUrl}/openapi.json`);
+    assert.equal(openapi.status, 200);
+    assert.match(openapi.headers.get("content-type"), /^application\/vnd\.oai\.openapi\+json/);
+    const specification = await openapi.json();
+    assert.equal(specification.openapi, "3.1.0");
+    assert.deepEqual(specification.security, [{ bearerAuth: [] }]);
+    assert.deepEqual(specification.paths["/docs"].get.security, []);
+    assert.deepEqual(specification.paths["/openapi.json"].get.security, []);
+    assert.deepEqual(
+      specification.paths["/"].get.parameters.map((parameter) => parameter.name),
+      ["recursive", "limit", "cursor"],
+    );
+
     const unauthorized = await fetch(`${app.baseUrl}/`);
     assert.equal(unauthorized.status, 401);
     assert.equal(unauthorized.headers.get("www-authenticate"), 'Bearer realm="harbor-tasks"');
+    assert.deepEqual(await unauthorized.json(), {
+      error: "unauthorized",
+      documentation: "/docs",
+      openapi: "/openapi.json",
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test("public documentation routes are read-only", async () => {
+  const app = await fixture();
+  try {
+    const docsHead = await fetch(`${app.baseUrl}/docs`, { method: "HEAD" });
+    assert.equal(docsHead.status, 200);
+    assert.equal(await docsHead.text(), "");
+
+    const openapiPost = await fetch(`${app.baseUrl}/openapi.json`, { method: "POST" });
+    assert.equal(openapiPost.status, 405);
+    assert.equal(openapiPost.headers.get("allow"), "GET, HEAD");
   } finally {
     await app.close();
   }

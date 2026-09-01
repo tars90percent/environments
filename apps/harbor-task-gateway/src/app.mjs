@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { basename } from "node:path/posix";
+import { documentationHtml, openApiDocument } from "./docs.mjs";
 
 const defaultPageSize = 200;
 const maximumPageSize = 1_000;
@@ -29,10 +30,29 @@ export function createGatewayHandler({
       return response.end(request.method === "HEAD" ? undefined : JSON.stringify({ status: "ok" }));
     }
 
+    if (url.pathname === "/docs" || url.pathname === "/docs/") {
+      if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed(response, ["GET", "HEAD"]);
+      response.statusCode = 200;
+      response.setHeader("Cache-Control", "public, max-age=300");
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.setHeader("Link", '</openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"');
+      return response.end(request.method === "HEAD" ? undefined : documentationHtml());
+    }
+
+    if (url.pathname === "/openapi.json") {
+      if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed(response, ["GET", "HEAD"]);
+      response.statusCode = 200;
+      response.setHeader("Cache-Control", "public, max-age=300");
+      response.setHeader("Content-Type", "application/vnd.oai.openapi+json; charset=utf-8");
+      response.setHeader("Link", '</docs>; rel="help"; type="text/html"');
+      return response.end(request.method === "HEAD" ? undefined : JSON.stringify(openApiDocument()));
+    }
+
     if (!authorized(request.headers.authorization, authToken)) {
       response.statusCode = 401;
       response.setHeader("WWW-Authenticate", 'Bearer realm="harbor-tasks"');
-      return json(response, { error: "unauthorized" });
+      response.setHeader("Link", '</docs>; rel="help"; type="text/html", </openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"');
+      return json(response, { error: "unauthorized", documentation: "/docs", openapi: "/openapi.json" });
     }
 
     if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed(response, ["GET", "HEAD"]);
