@@ -64,6 +64,8 @@ import type {
   SubmissionRemovalResult,
   SubmissionReview,
   SubmissionReviewInput,
+  UpdateBenchmarkInput,
+  UpdateBenchmarkResult,
   TaskFindingInput,
   TaskFindingUpdateInput,
   TaskSourceLinksInput,
@@ -1412,6 +1414,59 @@ export class PostgresRegistry implements RegistryRepository {
       });
       await client.query("COMMIT");
       return { benchmark: benchmarkFromRow(inserted.rows[0]!), created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateBenchmark(input: UpdateBenchmarkInput): Promise<UpdateBenchmarkResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("LOCK TABLE registry_benchmarks IN SHARE ROW EXCLUSIVE MODE");
+      const existingResult = await client.query<BenchmarkRow>(
+        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks WHERE id = $1",
+        [input.id],
+      );
+      const existing = existingResult.rows[0];
+      if (!existing) throw new RegistryNotFoundError(`Benchmark ${input.id} does not exist`);
+
+      const requestedLabels = new Set([input.id, input.displayName, ...(input.aliases ?? [])].map(normalizedBenchmarkLabel));
+      const otherBenchmarks = await client.query<BenchmarkRow>(
+        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks WHERE id <> $1",
+        [input.id],
+      );
+      for (const benchmark of otherBenchmarks.rows) {
+        const registeredLabels = [benchmark.id, benchmark.display_name, ...benchmark.aliases].map(normalizedBenchmarkLabel);
+        if (registeredLabels.some((label) => requestedLabels.has(label))) {
+          throw new RegistryConflictError(`Benchmark ${input.id} conflicts with registered benchmark ${benchmark.id}`);
+        }
+      }
+
+      const aliases = input.aliases ?? [];
+      const updated = existing.display_name !== input.displayName || hashValue(existing.aliases) !== hashValue(aliases);
+      if (!updated) {
+        await client.query("COMMIT");
+        return { benchmark: benchmarkFromRow(existing), updated: false };
+      }
+
+      const result = await client.query<BenchmarkRow>(
+        `UPDATE registry_benchmarks
+         SET display_name = $2, aliases = $3::jsonb
+         WHERE id = $1
+         RETURNING id, display_name, aliases, created_at`,
+        [input.id, input.displayName, json(aliases)],
+      );
+      await this.insertStatusEvent(client, "benchmark", input.id, "benchmark.updated", input.actor, {
+        reason: input.reason,
+        before: { displayName: existing.display_name, aliases: existing.aliases },
+        after: { displayName: input.displayName, aliases },
+      });
+      await client.query("COMMIT");
+      return { benchmark: benchmarkFromRow(result.rows[0]!), updated: true };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

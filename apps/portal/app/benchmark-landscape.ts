@@ -132,6 +132,10 @@ const benchmarkCategories: Partial<Record<string, BenchmarkCategoryId>> = Object
     "network-engineering",
     "sre",
     "terminal-bench",
+    "terminal-bench-2-1",
+    "terminal-bench-3",
+    "frontier-bench",
+    "terminal-bench-4",
     "ultra-long-horizon",
   ]),
   ...assign("tool-use", [
@@ -153,6 +157,7 @@ const benchmarkCategories: Partial<Record<string, BenchmarkCategoryId>> = Object
     "mathematical-reasoning",
     "molecular-bench",
     "stem-rl-env",
+    "terminal-bench-science",
     "worldsims",
   ]),
   ...assign("specialized", [

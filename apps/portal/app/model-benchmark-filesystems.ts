@@ -26,7 +26,13 @@ function harborEntryRole(path: string): UpstreamTaskFilesystemEntry["role"] {
   if (path === "README.md") return "documentation";
   if (path === "solution" || path.startsWith("solution/")) return "reference-solution";
   if (path === "tests" || path.startsWith("tests/") || path.startsWith("environment/hidden") || path.startsWith("environment/golden-generation")) return "verifier";
-  if (path.startsWith("environment/benchmarks") || path.startsWith("environment/starter")) return "input-artifact";
+  if (
+    path.startsWith("environment/benchmarks")
+    || path.startsWith("environment/starter")
+    || path.startsWith("environment/data/")
+    || path.startsWith("environment/spec/")
+    || path === "environment/mysql/datadir.tar.zst"
+  ) return "input-artifact";
   if (path === "environment/Dockerfile" || path === "environment") return "environment";
   if (path.startsWith("environment/")) return "environment-helper";
   return "repository";
@@ -329,8 +335,207 @@ const sweMarathonBiofabricFiles: HarborFileSpec[] = [
   ["tests/test.sh", 510],
 ];
 
+const tb3LiveDatabaseCutoverFiles: HarborFileSpec[] = [
+  ["README.md", 3332],
+  ["environment/Dockerfile", 1272],
+  ["environment/api/__init__.py", 117],
+  ["environment/api/config.py", 675],
+  ["environment/api/db.py", 911],
+  ["environment/api/gunicorn.conf.py", 452],
+  ["environment/api/main.py", 14339],
+  ["environment/api/models.py", 2041],
+  ["environment/api/requirements.txt", 248],
+  ["environment/customer/Dockerfile", 489],
+  ["environment/customer/multiproc.py", 29634],
+  ["environment/docker-compose.yaml", 3072],
+  ["environment/entrypoint.sh", 231],
+  ["environment/mysql/Dockerfile", 862],
+  ["environment/mysql/README.md", 720],
+  ["environment/mysql/datadir.tar.zst", 99277085],
+  ["environment/mysql/seed/generate.py", 11409],
+  ["environment/mysql/seed/run-seed.sh", 3700],
+  ["environment/mysql/seed/schema.sql", 3500],
+  ["environment/postgres/Dockerfile", 130],
+  ["environment/postgres/init.sql", 1510],
+  ["instruction.md", 1016],
+  ["solution/api/cutover.py", 6795],
+  ["solution/api/db.py", 3137],
+  ["solution/api/main.py", 13211],
+  ["solution/api/migrate.py", 11457],
+  ["solution/api/orm.py", 5278],
+  ["solution/api/replicator.py", 6581],
+  ["solution/solve.sh", 1035],
+  ["task.toml", 4646],
+  ["tests/Dockerfile", 1662],
+  ["tests/api_baseline/__init__.py", 117],
+  ["tests/api_baseline/config.py", 675],
+  ["tests/api_baseline/db.py", 911],
+  ["tests/api_baseline/gunicorn.conf.py", 452],
+  ["tests/api_baseline/main.py", 14339],
+  ["tests/api_baseline/models.py", 2041],
+  ["tests/api_baseline/requirements.txt", 248],
+  ["tests/test.sh", 6817],
+  ["tests/test_outputs.py", 25447],
+];
+
+const tb3BipedContactDynamicsFiles: HarborFileSpec[] = [
+  ["README.md", 6274],
+  ["cheat/solve.py", 1180],
+  ["cheat/solve.sh", 538],
+  ["environment/Dockerfile", 616],
+  ["environment/data/LICENSE_2DBiped", 11357],
+  ["environment/data/README_2DBiped.md", 5841],
+  ["environment/data/biped_model.py", 2505],
+  ["environment/data/configs/visible.json", 741],
+  ["environment/data/make_trajectories.py", 1819],
+  ["environment/data/planar_walker.urdf", 6883],
+  ["environment/data/submission/solve.py", 2580],
+  ["instruction.md", 5436],
+  ["solution/generate_solution.py", 17390],
+  ["solution/solve.sh", 333],
+  ["task.toml", 817],
+  ["tests/Dockerfile", 701],
+  ["tests/data/biped_model.py", 2505],
+  ["tests/data/configs/hidden_jump.json", 750],
+  ["tests/data/configs/hidden_stride.json", 751],
+  ["tests/data/configs/visible.json", 748],
+  ["tests/data/planar_walker.urdf", 6883],
+  ["tests/test.sh", 620],
+  ["tests/test_state.py", 20036],
+];
+
+const tb4FreecadImpellerFiles: HarborFileSpec[] = [
+  ["README.md", 7687],
+  ["environment/Dockerfile", 920],
+  ["instruction.md", 1341],
+  ["solution/solve.py", 20834],
+  ["solution/solve.sh", 511],
+  ["task.toml", 942],
+  ["tests/Dockerfile", 793],
+  ["tests/grader/param_check.py", 287],
+  ["tests/grader/reference_base.FCStd", 384026],
+  ["tests/grader/reference_target.FCStd", 219489],
+  ["tests/grader/spec.json", 4059],
+  ["tests/run_scorer.py", 4430],
+  ["tests/test.sh", 3673],
+];
+
+const tb4FormalCryptoFiles: HarborFileSpec[] = [
+  ["README.md", 6199],
+  ["cheat/solve.sage", 1121],
+  ["cheat/solve.sh", 411],
+  ["environment/Dockerfile", 1352],
+  ["environment/data/data.tar.gz", 53025],
+  ["instruction.md", 1538],
+  ["solution/solve.sage", 33128],
+  ["solution/solve.sh", 110],
+  ["task.toml", 786],
+  ["tests/Dockerfile", 2317],
+  ["tests/data.tar.gz", 1549009],
+  ["tests/test.sh", 979],
+  ["tests/test_outputs.py", 11406],
+];
+
+const tbScienceCellLineageFiles: HarborFileSpec[] = [
+  ["README.md", 8780],
+  ["environment/Dockerfile", 1256],
+  ["environment/data/lineage_movie.mp4", 25492598],
+  ["instruction.md", 5759],
+  ["solution/solve.py", 10542],
+  ["solution/solve.sh", 692],
+  ["solution/sparse_clicks.json.gz", 20240],
+  ["task.toml", 1866],
+  ["tests/Dockerfile", 1232],
+  ["tests/expert_annotation.xml.gz", 1190773],
+  ["tests/lineage_truth.py", 13466],
+  ["tests/requirements.txt", 124],
+  ["tests/test.sh", 522],
+  ["tests/test_outputs.py", 14471],
+];
+
+const tbScienceReactorControlFiles: HarborFileSpec[] = [
+  ["README.md", 8221],
+  ["authoring/evidence/fixed_schedule_baseline.py", 1736],
+  ["authoring/evidence/identification_gate.py", 11009],
+  ["authoring/evidence/independent_controller.py", 20580],
+  ["authoring/evidence/run_calibration.py", 6147],
+  ["authoring/provenance/PHYSICAL_BASIS.md", 5287],
+  ["authoring/provenance/generate_data.py", 20274],
+  ["environment/.dockerignore", 30],
+  ["environment/Dockerfile", 288],
+  ["environment/requirements.txt", 27],
+  ["environment/spec/controller_api.md", 3124],
+  ["environment/spec/plant_model.md", 7388],
+  ["environment/spec/plant_params.json", 1468],
+  ["environment/spec/scenarios_public.json", 2522],
+  ["instruction.md", 2070],
+  ["solution/controller.py", 9627],
+  ["solution/make_design_report.py", 1584],
+  ["solution/plant.py", 15004],
+  ["solution/solve.sh", 270],
+  ["task.toml", 2473],
+  ["tests/Dockerfile", 376],
+  ["tests/controller_host.py", 3025],
+  ["tests/fixtures/plant_params.json", 1468],
+  ["tests/fixtures/reference_times.json", 615],
+  ["tests/fixtures/scenarios_private.json", 8787],
+  ["tests/fixtures/scenarios_public.json", 2522],
+  ["tests/fixtures/verification_manifest.json", 964],
+  ["tests/plant.py", 15004],
+  ["tests/test.sh", 367],
+  ["tests/test_outputs.py", 18124],
+];
+
 
 export const modelBenchmarkTaskFilesystems: Record<string, UpstreamTaskFilesystem> = {
+  "tb3-live-database-cutover": {
+    repository: "harbor-framework/terminal-bench",
+    repositoryPath: "tasks/live-database-cutover",
+    rootUrl: "https://github.com/harbor-framework/terminal-bench/tree/2b0442c3c583b710ca8da14c8e601b99f2f1f244/tasks/live-database-cutover",
+    treeSha: "2b0442c3c583b710ca8da14c8e601b99f2f1f244",
+    verifiedAt: "2026-09-02",
+    entries: harborTaskEntries(tb3LiveDatabaseCutoverFiles),
+  },
+  "tb3-biped-contact-dynamics": {
+    repository: "harbor-framework/terminal-bench",
+    repositoryPath: "tasks/biped-contact-dynamics",
+    rootUrl: "https://github.com/harbor-framework/terminal-bench/tree/2b0442c3c583b710ca8da14c8e601b99f2f1f244/tasks/biped-contact-dynamics",
+    treeSha: "2b0442c3c583b710ca8da14c8e601b99f2f1f244",
+    verifiedAt: "2026-09-02",
+    entries: harborTaskEntries(tb3BipedContactDynamicsFiles),
+  },
+  "tb4-freecad-impeller": {
+    repository: "harbor-framework/terminal-bench",
+    repositoryPath: "tasks/freecad-impeller",
+    rootUrl: "https://github.com/harbor-framework/terminal-bench/tree/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/freecad-impeller",
+    treeSha: "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+    verifiedAt: "2026-09-02",
+    entries: harborTaskEntries(tb4FreecadImpellerFiles),
+  },
+  "tb4-formal-crypto": {
+    repository: "harbor-framework/terminal-bench",
+    repositoryPath: "tasks/formal-crypto",
+    rootUrl: "https://github.com/harbor-framework/terminal-bench/tree/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/formal-crypto",
+    treeSha: "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+    verifiedAt: "2026-09-02",
+    entries: harborTaskEntries(tb4FormalCryptoFiles),
+  },
+  "tb-science-cell-lineage": {
+    repository: "harbor-framework/terminal-bench-science",
+    repositoryPath: "tasks/life-sciences/biology/cell-lineage-reconstruction",
+    rootUrl: "https://github.com/harbor-framework/terminal-bench-science/tree/f81afac4f11048e77a15dfc8fb1dbfb897fea0ce/tasks/life-sciences/biology/cell-lineage-reconstruction",
+    treeSha: "f81afac4f11048e77a15dfc8fb1dbfb897fea0ce",
+    verifiedAt: "2026-09-02",
+    entries: harborTaskEntries(tbScienceCellLineageFiles),
+  },
+  "tb-science-reactor-control": {
+    repository: "harbor-framework/terminal-bench-science",
+    repositoryPath: "tasks/engineering-sciences/chemical-engineering/reactor-safety-control",
+    rootUrl: "https://github.com/harbor-framework/terminal-bench-science/tree/f81afac4f11048e77a15dfc8fb1dbfb897fea0ce/tasks/engineering-sciences/chemical-engineering/reactor-safety-control",
+    treeSha: "f81afac4f11048e77a15dfc8fb1dbfb897fea0ce",
+    verifiedAt: "2026-09-02",
+    entries: harborTaskEntries(tbScienceReactorControlFiles),
+  },
   "frontierswe-cranelift-codegen": {
     repository: "Proximal-Labs/frontier-swe",
     repositoryPath: "tasks/cranelift-codegen-opt",

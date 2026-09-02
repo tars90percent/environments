@@ -58,6 +58,32 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       aliases: ["science_bench"],
       actor: "TARS",
     })).created, false);
+    const updatedBenchmark = await repository.updateBenchmark({
+      id: "science-bench",
+      displayName: "Science Bench 2",
+      aliases: ["science_bench", "science-bench-v2"],
+      reason: "Exercise an audited benchmark rename.",
+      actor: "TARS",
+    });
+    assert.equal(updatedBenchmark.updated, true);
+    assert.equal(updatedBenchmark.benchmark.displayName, "Science Bench 2");
+    assert.equal((await repository.updateBenchmark({
+      id: "science-bench",
+      displayName: "Science Bench 2",
+      aliases: ["science_bench", "science-bench-v2"],
+      reason: "Verify idempotency.",
+      actor: "TARS",
+    })).updated, false);
+    await assert.rejects(
+      () => repository!.updateBenchmark({
+        id: "science-bench",
+        displayName: "Terminal-Bench",
+        aliases: [],
+        reason: "Exercise label conflict protection.",
+        actor: "TARS",
+      }),
+      /conflicts with registered benchmark terminal-bench/,
+    );
     await repository.registerBenchmark({
       id: "unused-bench",
       displayName: "Unused Bench",

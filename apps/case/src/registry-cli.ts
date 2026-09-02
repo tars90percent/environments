@@ -35,6 +35,7 @@ import {
   parseSubmissionIntakeClassification,
   parseSubmissionManifest,
   parseSubmissionRemoval,
+  parseUpdateBenchmark,
   parseVendorArchive,
   parseVendorInteractionDelete,
   parseVendorInteraction,
@@ -129,6 +130,9 @@ if (command === "operations") {
       case "register-benchmark":
         output(await repository.registerBenchmark(parseRegisterBenchmark(await jsonFile(argument))));
         break;
+      case "update-benchmark":
+        output(await repository.updateBenchmark(parseUpdateBenchmark(await jsonFile(argument))));
+        break;
       case "remove-unused-benchmarks":
         output(await repository.removeUnusedBenchmarks(parseRemoveUnusedBenchmarks(await jsonFile(argument))));
         break;
@@ -222,7 +226,7 @@ if (command === "operations") {
         output(await repository.reconcileHarborWorkItems(parseReconcileHarborWorkItems(await jsonFile(argument))));
         break;
       default:
-        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
+        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|benchmarks|register-benchmark|update-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
     }
   } finally {
     await repository.close();
@@ -367,6 +371,11 @@ function operationSchemas() {
     "source-event": { arguments: ["<source-event-id>"] },
     benchmarks: { arguments: [], result: "registered general benchmark directions" },
     "register-benchmark": { arguments: ["<benchmark.json>"], fields: ["id", "displayName", "aliases?", "actor"] },
+    "update-benchmark": {
+      arguments: ["<update.json>"],
+      fields: ["id", "displayName", "aliases?", "reason", "actor"],
+      note: "Updates a benchmark label and aliases in place, retaining assignments and recording an audited before/after event.",
+    },
     "remove-unused-benchmarks": {
       arguments: ["<removal.json>"],
       fields: ["benchmarkIds"],

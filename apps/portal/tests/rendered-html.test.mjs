@@ -142,7 +142,7 @@ test("records standalone benchmark families separately from aggregate indexes", 
   assert.equal(artificialAnalysisIndex.components.reduce((total, component) => total + component.weight, 0), 100);
   assert.ok(artificialAnalysisIndex.links.every((link) => link.url.startsWith("https://artificialanalysis.ai/")));
 
-  assert.equal(modelBenchmarks.length, 38);
+  assert.equal(modelBenchmarks.length, 41);
   assert.equal(benchmarkReferenceCategories.length, 8);
   const ids = modelBenchmarks.map((benchmark) => benchmark.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -150,9 +150,9 @@ test("records standalone benchmark families separately from aggregate indexes", 
     "professional-work": 3,
     "tools-computer-use": 7,
     "web-research": 2,
-    "software-engineering": 9,
+    "software-engineering": 11,
     "model-training": 1,
-    "science-knowledge": 5,
+    "science-knowledge": 6,
     "documents-vision": 8,
     cybersecurity: 3,
   });
@@ -218,8 +218,8 @@ test("retains public-task profiles for every open family and format archetypes f
 
   assert.deepEqual(Object.keys(modelBenchmarkSampleContext).sort(), benchmarkIds.toSorted());
   assert.ok(benchmarkIds.every((id) => modelBenchmarks.some((benchmark) => benchmark.id === id)));
-  assert.equal(benchmarkIds.length, 35);
-  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 44);
+  assert.equal(benchmarkIds.length, 38);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 50);
 
   const profileIds = [];
   for (const benchmarkId of benchmarkIds) {
@@ -236,10 +236,10 @@ test("retains public-task profiles for every open family and format archetypes f
     }
   }
   assert.equal(new Set(profileIds).size, profileIds.length);
-  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 2).length, 9);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 2).length, 12);
   assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 1).length, 26);
-  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].some((profile) => profile.sourceKind === "public-task")).length, 33);
-  assert.equal(Object.values(modelBenchmarkSamples).flat().filter((profile) => profile.sourceKind === "public-task").length, 40);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].some((profile) => profile.sourceKind === "public-task")).length, 36);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().filter((profile) => profile.sourceKind === "public-task").length, 46);
 
   for (const benchmarkId of ["hle", "gpqa-diamond"]) {
     assert.ok(modelBenchmarkSamples[benchmarkId].every((profile) => profile.sourceKind === "format-archetype" && profile.sourceId === null));
@@ -247,7 +247,15 @@ test("retains public-task profiles for every open family and format archetypes f
   for (const benchmarkId of benchmarkIds.filter((id) => !["hle", "gpqa-diamond"].includes(id))) {
     assert.ok(modelBenchmarkSamples[benchmarkId].every((profile) => profile.sourceKind === "public-task" && profile.sourceId));
   }
-  assert.deepEqual(benchmarkIds.filter((id) => modelBenchmarkSampleContext[id].format === "harbor").sort(), ["deepswe", "frontierswe", "swe-marathon", "terminal-bench-2-1"]);
+  assert.deepEqual(benchmarkIds.filter((id) => modelBenchmarkSampleContext[id].format === "harbor").sort(), [
+    "deepswe",
+    "frontierswe",
+    "swe-marathon",
+    "terminal-bench-2-1",
+    "terminal-bench-3",
+    "terminal-bench-4",
+    "terminal-bench-science",
+  ]);
 });
 
 test("records complete upstream filesystem metadata for Harbor sample tasks", async () => {
@@ -256,6 +264,12 @@ test("records complete upstream filesystem metadata for Harbor sample tasks", as
     "deepswe-abs-module-cache",
     "frontierswe-cranelift-codegen",
     "swe-marathon-biofabric-rust",
+    "tb-science-cell-lineage",
+    "tb-science-reactor-control",
+    "tb3-biped-contact-dynamics",
+    "tb3-live-database-cutover",
+    "tb4-formal-crypto",
+    "tb4-freecad-impeller",
     "terminal-financial-documents",
     "terminal-wal-recovery",
   ]);
@@ -264,6 +278,10 @@ test("records complete upstream filesystem metadata for Harbor sample tasks", as
   const frontierSwe = modelBenchmarkTaskFilesystems["frontierswe-cranelift-codegen"];
   const financial = modelBenchmarkTaskFilesystems["terminal-financial-documents"];
   const sweMarathon = modelBenchmarkTaskFilesystems["swe-marathon-biofabric-rust"];
+  const tb3Biped = modelBenchmarkTaskFilesystems["tb3-biped-contact-dynamics"];
+  const tb3Cutover = modelBenchmarkTaskFilesystems["tb3-live-database-cutover"];
+  const tb4Impeller = modelBenchmarkTaskFilesystems["tb4-freecad-impeller"];
+  const tbScienceLineage = modelBenchmarkTaskFilesystems["tb-science-cell-lineage"];
   const wal = modelBenchmarkTaskFilesystems["terminal-wal-recovery"];
   assert.equal(deepSwe.treeSha, "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea");
   assert.equal(deepSwe.verifiedAt, "2026-08-31");
@@ -286,6 +304,13 @@ test("records complete upstream filesystem metadata for Harbor sample tasks", as
   assert.equal(sweMarathon.entries.filter((entry) => entry.kind === "directory").length, 37);
   assert.equal(sweMarathon.entries.find((entry) => entry.path === "instruction.md")?.sizeBytes, 295);
   assert.equal(sweMarathon.entries.find((entry) => entry.path === "task.toml")?.sizeBytes, 319);
+  assert.equal(tb3Cutover.treeSha, "2b0442c3c583b710ca8da14c8e601b99f2f1f244");
+  assert.equal(tb3Cutover.entries.find((entry) => entry.path === "environment/mysql/datadir.tar.zst")?.role, "input-artifact");
+  assert.equal(tb3Biped.entries.find((entry) => entry.path === "instruction.md")?.sizeBytes, 5436);
+  assert.equal(tb4Impeller.treeSha, "452bf305c6daa62fc59061d22133a7cbc7c1572e");
+  assert.equal(tb4Impeller.entries.find((entry) => entry.path === "tests/grader/reference_base.FCStd")?.sizeBytes, 384026);
+  assert.equal(tbScienceLineage.treeSha, "f81afac4f11048e77a15dfc8fb1dbfb897fea0ce");
+  assert.equal(tbScienceLineage.entries.find((entry) => entry.path === "environment/data/lineage_movie.mp4")?.role, "input-artifact");
 
   for (const filesystem of Object.values(modelBenchmarkTaskFilesystems)) {
     assert.match(filesystem.verifiedAt, /^\d{4}-\d{2}-\d{2}$/);

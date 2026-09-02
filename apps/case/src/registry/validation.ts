@@ -30,6 +30,7 @@ import type {
   TaskFindingInput,
   TaskFindingUpdateInput,
   TaskSourceLinksInput,
+  UpdateBenchmarkInput,
   VendorArchiveInput,
   VendorEventKind,
   VendorEventInput,
@@ -384,6 +385,24 @@ export function parseRegisterBenchmark(value: unknown): RegisterBenchmarkInput {
     id: identifier(input.id, "id"),
     displayName: boundedString(input.displayName, "displayName", 300),
     aliases,
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseUpdateBenchmark(value: unknown): UpdateBenchmarkInput {
+  const input = object(value, "benchmark update");
+  onlyKeys(input, new Set(["id", "displayName", "aliases", "reason", "actor"]), "benchmark update");
+  const aliases = (optionalStringArray(input.aliases, "aliases") ?? [])
+    .map((alias) => boundedString(alias, "aliases[]", 300))
+    .sort((a, b) => a.localeCompare(b));
+  if (new Set(aliases.map((alias) => alias.normalize("NFKC").trim().toLowerCase().replace(/[\s_-]+/g, "-"))).size !== aliases.length) {
+    throw new ValidationError("benchmark aliases must be unique ignoring case");
+  }
+  return {
+    id: identifier(input.id, "id"),
+    displayName: boundedString(input.displayName, "displayName", 300),
+    aliases,
+    reason: boundedString(input.reason, "reason", 2_000),
     actor: boundedString(input.actor, "actor", 500),
   };
 }

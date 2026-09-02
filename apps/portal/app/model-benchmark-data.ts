@@ -65,7 +65,7 @@ export type AggregateBenchmarkReference = {
   }>;
 };
 
-export const benchmarkReferenceVerifiedAt = "2026-08-31";
+export const benchmarkReferenceVerifiedAt = "2026-09-02";
 
 export const benchmarkReferenceCategories = [
   {
@@ -230,6 +230,91 @@ export const modelBenchmarks = [
         { label: { en: "Release notes", zh: "发布说明" }, url: "https://www.tbench.ai/news/terminal-bench-2-1" },
         { label: { en: "Dataset repository", zh: "数据集仓库" }, url: "https://github.com/harbor-framework/terminal-bench-2-1" },
         { label: { en: "Harbor Hub", zh: "Harbor Hub" }, url: "https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1/latest" },
+      ],
+    },
+    {
+      id: "terminal-bench-3",
+      name: "Terminal-Bench 3",
+      aliases: ["Frontier-Bench", "FrontierBench", "TB3"],
+      creators: { en: "Ryan Marten, Alex Shaw, Andy Konwinski, Ludwig Schmidt et al., with domain contributors and reviewers", zh: "Ryan Marten、Alex Shaw、Andy Konwinski、Ludwig Schmidt 等人与各领域贡献者及评审者" },
+      publisher: "Harbor Framework · Laude Institute",
+      categoryId: "software-engineering",
+      version: "3.0.0",
+      versionNote: {
+        en: "Released as Frontier-Bench, this 74-task successor to Terminal-Bench 2 was subsequently renamed Terminal-Bench 3. The median expert estimate is 4 hours; four tasks require a GPU.",
+        zh: "该版本最初以 Frontier-Bench 发布，是 Terminal-Bench 2 的 74 题后续版本，之后更名为 Terminal-Bench 3。专家工时估计中位数为 4 小时，其中 4 题需要 GPU。",
+      },
+      summary: {
+        en: "Long-horizon terminal work across hardware, machine learning, media, operations, science, security, and software, with task-specific executable verification.",
+        zh: "覆盖硬件、机器学习、媒体、运营、科学、安全与软件的长时程终端工作，并使用任务专属的可执行验证器。",
+      },
+      questionCount: { en: "74 tasks · Software 20, Science 15, ML 13, Operations 10, Security 7, Hardware 5, Media 4", zh: "74 项任务 · 软件 20、科学 15、机器学习 13、运营 10、安全 7、硬件 5、媒体 4" },
+      repeats: 5,
+      responseType: { en: "Terminal task execution and file artifacts", zh: "终端任务执行与文件产物" },
+      scoring: { en: "Task-specific executable verifiers, mean reward", zh: "任务专属可执行验证器，平均奖励" },
+      toolUse: false,
+      access: "public",
+      links: [
+        { label: { en: "3.0.0 release", zh: "3.0.0 版本" }, url: "https://github.com/harbor-framework/terminal-bench/releases/tag/v3.0.0" },
+        { label: { en: "Tagged task set", zh: "固定版本任务集" }, url: "https://github.com/harbor-framework/terminal-bench/tree/v3.0.0/tasks" },
+        { label: { en: "Task proposal rubric", zh: "任务提案细则" }, url: "https://github.com/harbor-framework/terminal-bench/blob/v3.0.0/rubrics/task-proposal.md" },
+      ],
+    },
+    {
+      id: "terminal-bench-4",
+      name: "Terminal-Bench 4",
+      aliases: ["TB4"],
+      creators: { en: "Ryan Marten, Alex Shaw, Andy Konwinski, Ludwig Schmidt et al., with domain contributors and reviewers", zh: "Ryan Marten、Alex Shaw、Andy Konwinski、Ludwig Schmidt 等人与各领域贡献者及评审者" },
+      publisher: "Harbor Framework · Laude Institute",
+      categoryId: "software-engineering",
+      version: "4.0.0",
+      versionNote: {
+        en: "A curated 66-task revision of the TB3 set: all 66 tasks carry forward from 3.0.0, while eight TB3 tasks were removed. Every agent run has an eight-hour limit; three tasks require a GPU.",
+        zh: "这是 TB3 任务集的 66 题精编版：66 题均沿用自 3.0.0，并移除了 8 道 TB3 任务。所有智能体运行时限均为 8 小时，其中 3 题需要 GPU。",
+      },
+      summary: {
+        en: "The current continuous Terminal-Bench release preserves TB3's seven-domain mix while tightening the task set and standardizing long agent budgets.",
+        zh: "当前持续演进的 Terminal-Bench 版本保留 TB3 的七领域构成，同时收紧任务集并统一长时程智能体预算。",
+      },
+      questionCount: { en: "66 tasks · Software 18, Science 14, ML 11, Operations 9, Security 5, Hardware 5, Media 4", zh: "66 项任务 · 软件 18、科学 14、机器学习 11、运营 9、安全 5、硬件 5、媒体 4" },
+      repeats: 5,
+      responseType: { en: "Terminal task execution and file artifacts", zh: "终端任务执行与文件产物" },
+      scoring: { en: "Task-specific executable verifiers, mean reward", zh: "任务专属可执行验证器，平均奖励" },
+      toolUse: false,
+      access: "public",
+      links: [
+        { label: { en: "4.0.0 release", zh: "4.0.0 版本" }, url: "https://github.com/harbor-framework/terminal-bench/releases/tag/v4.0.0" },
+        { label: { en: "Tagged task set", zh: "固定版本任务集" }, url: "https://github.com/harbor-framework/terminal-bench/tree/v4.0.0/tasks" },
+        { label: { en: "Harbor Hub", zh: "Harbor Hub" }, url: "https://hub.harborframework.com/datasets/terminal-bench/terminal-bench/latest" },
+      ],
+    },
+    {
+      id: "terminal-bench-science",
+      name: "Terminal-Bench-Science",
+      aliases: ["TB-Science", "Terminal Bench Science"],
+      creators: { en: "Steven Dillmann, Sanmi Koyejo, Ludwig Schmidt et al., with scientific contributors and reviewers", zh: "Steven Dillmann、Sanmi Koyejo、Ludwig Schmidt 等人与科学任务贡献者及评审者" },
+      publisher: "Stanford University · Laude Institute · Harbor Framework",
+      categoryId: "science-knowledge",
+      version: "0.1.0",
+      versionNote: {
+        en: "The first tagged release contains 70 expert-curated research workflows. The median expert estimate is 12 hours, and every agent run has an eight-hour limit.",
+        zh: "首个固定版本包含 70 项专家策划的科研工作流。专家工时估计中位数为 12 小时，每次智能体运行时限为 8 小时。",
+      },
+      summary: {
+        en: "Objectively verified terminal workflows drawn from real scientific research across life, physical, earth, mathematical, and engineering sciences.",
+        zh: "来自真实科研工作的可客观验证终端任务，覆盖生命、物理、地球、数学与工程科学。",
+      },
+      questionCount: { en: "70 tasks · Life 19, Physical 17, Mathematical 17, Engineering 9, Earth 8", zh: "70 项任务 · 生命科学 19、物理科学 17、数学科学 17、工程科学 9、地球科学 8" },
+      repeats: 5,
+      responseType: { en: "Scientific code, analyses, models, and data artifacts", zh: "科学代码、分析、模型与数据产物" },
+      scoring: { en: "Task-specific executable verifiers, mean reward", zh: "任务专属可执行验证器，平均奖励" },
+      toolUse: false,
+      access: "public",
+      links: [
+        { label: { en: "Benchmark site", zh: "Benchmark 官网" }, url: "https://terminal-bench-science.ai/" },
+        { label: { en: "0.1.0 release", zh: "0.1.0 版本" }, url: "https://github.com/harbor-framework/terminal-bench-science/releases/tag/v0.1.0" },
+        { label: { en: "Tagged task set", zh: "固定版本任务集" }, url: "https://github.com/harbor-framework/terminal-bench-science/tree/v0.1.0/tasks" },
+        { label: { en: "Harbor Hub", zh: "Harbor Hub" }, url: "https://hub.harborframework.com/datasets/terminal-bench-science/terminal-bench-science/latest" },
       ],
     },
     {

@@ -21,6 +21,7 @@ import {
   parseSubmissionIntakeClassification,
   parseSubmissionManifest,
   parseSubmissionRemoval,
+  parseUpdateBenchmark,
   ValidationError,
 } from "../src/registry/validation.js";
 
@@ -184,6 +185,20 @@ test("validates managed benchmark directions", () => {
   assert.equal(parsed.id, "terminal-bench");
   assert.deepEqual(parsed.aliases, ["terminal_bench", "TerminalBench"].sort((a, b) => a.localeCompare(b)));
   assert.throws(() => parseRegisterBenchmark({ ...parsed, aliases: ["Terminal Bench", "terminal_bench"] }), /unique ignoring case/);
+});
+
+test("validates audited benchmark label updates", () => {
+  const parsed = parseUpdateBenchmark({
+    id: "frontier-bench",
+    displayName: "Terminal-Bench 3",
+    aliases: ["tb3", "FrontierBench"],
+    reason: "Record the benchmark's published rename while preserving its registry identity.",
+    actor: "Vincent Wu via Codex",
+  });
+  assert.equal(parsed.id, "frontier-bench");
+  assert.deepEqual(parsed.aliases, ["tb3", "FrontierBench"].sort((a, b) => a.localeCompare(b)));
+  assert.throws(() => parseUpdateBenchmark({ ...parsed, reason: "" }), ValidationError);
+  assert.throws(() => parseUpdateBenchmark({ ...parsed, aliases: ["Terminal Bench", "terminal_bench"] }), /unique ignoring case/);
 });
 
 test("validates atomic unused benchmark removals", () => {

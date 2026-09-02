@@ -36,6 +36,8 @@ import type {
   SubmissionIntakeClassificationResult,
   SubmissionRemovalInput,
   SubmissionRemovalResult,
+  UpdateBenchmarkInput,
+  UpdateBenchmarkResult,
   VendorArchiveInput,
   VendorArchiveResult,
   VendorDirectoryEntry,
@@ -60,6 +62,7 @@ export interface RegistryRepository {
   ingestSubmission(manifest: SubmissionManifest): Promise<{ submissionId: string; created: boolean }>;
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
+  updateBenchmark(input: UpdateBenchmarkInput): Promise<UpdateBenchmarkResult>;
   removeUnusedBenchmarks(input: RemoveUnusedBenchmarksInput): Promise<RemoveUnusedBenchmarksResult>;
   purgeErroneousBenchmarks(input: PurgeErroneousBenchmarksInput): Promise<PurgeErroneousBenchmarksResult>;
   assignTaskBenchmarks(input: AssignTaskBenchmarksInput): Promise<AssignTaskBenchmarksResult>;

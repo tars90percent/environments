@@ -490,6 +490,19 @@ export type RegisterBenchmarkResult = {
   created: boolean;
 };
 
+export type UpdateBenchmarkInput = {
+  id: string;
+  displayName: string;
+  aliases?: string[];
+  reason: string;
+  actor: string;
+};
+
+export type UpdateBenchmarkResult = {
+  benchmark: RegistryBenchmark;
+  updated: boolean;
+};
+
 export type RemoveUnusedBenchmarksInput = {
   benchmarkIds: string[];
 };
