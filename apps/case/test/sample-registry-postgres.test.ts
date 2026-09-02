@@ -124,6 +124,11 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     await assert.rejects(() => repository!.recordHarborCheck(check("task-trace", evidenceSha)), RegistryConflictError);
     await repository.recordHarborCheck(check("task-one", evidenceSha));
     await repository.recordHarborFinding({ id: "finding-environment", taskId: "task-one", checkRunId: "check-environment", finding: "Harbor could not prepare the task environment." });
+    assert.deepEqual(await repository.createVendorTimeline({ vendorId: "vendor-one", actor: "TARS" }), {
+      vendorId: "vendor-one",
+      created: true,
+    });
+    assert.equal((await repository.createVendorTimeline({ vendorId: "vendor-one", actor: "TARS" })).created, false);
     const interaction = {
       id: "interaction:vendor-one:starter-delivery",
       vendorId: "vendor-one",
@@ -145,8 +150,8 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     });
     assert.equal((await repository.recordVendorInteraction(interaction)).created, false);
     await assert.rejects(
-      () => repository!.recordVendorInteraction({ ...interaction, summary: "Changed immutable narrative." }),
-      /different immutable contents/,
+      () => repository!.recordVendorInteraction({ ...interaction, summary: "Changed narrative." }),
+      /different contents/,
     );
     await repository.recordVendorInteraction({
       ...interaction,
@@ -169,6 +174,38 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     }]);
     assert.equal("sourceEventIds" in (catalog.vendors[0]?.interactions[0] ?? {}), false);
     assert.equal("actor" in (catalog.vendors[0]?.interactions[0] ?? {}), false);
+    const initialTimeline = await repository.getVendorTimeline("vendor-one");
+    assert.equal(initialTimeline?.interactions.length, 2);
+    assert.deepEqual(initialTimeline?.history.map((change) => change.action), [
+      "timeline_created",
+      "interaction_created",
+      "interaction_created",
+    ]);
+    assert.deepEqual(await repository.updateVendorInteraction({
+      id: interaction.id,
+      changes: { title: "Starter delivery received and registered" },
+      reason: "Clarify that the delivery was registered.",
+      actor: "TARS",
+    }), { interactionId: interaction.id, updated: true });
+    assert.deepEqual(await repository.deleteVendorInteraction({
+      id: "interaction:vendor-one:internal-note",
+      reason: "Duplicate internal note.",
+      actor: "TARS",
+    }), { interactionId: "interaction:vendor-one:internal-note", deleted: true });
+    assert.deepEqual(await repository.deleteVendorInteraction({
+      id: "interaction:vendor-one:internal-note",
+      reason: "Idempotent retry.",
+      actor: "TARS",
+    }), { interactionId: "interaction:vendor-one:internal-note", deleted: false });
+    const editedTimeline = await repository.getVendorTimeline("vendor-one");
+    assert.equal(editedTimeline?.interactions.length, 1);
+    assert.equal(editedTimeline?.interactions[0]?.title, "Starter delivery received and registered");
+    assert.equal((await repository.getVendorInteraction(interaction.id))?.title, "Starter delivery received and registered");
+    assert.deepEqual(editedTimeline?.history.slice(-2).map((change) => change.action), [
+      "interaction_updated",
+      "interaction_deleted",
+    ]);
+    assert.equal(editedTimeline?.history.at(-1)?.before?.title, "Internal note");
     const submission = catalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-one");
     const secondSubmission = catalog.vendors[0]?.submissions.find((candidate) => candidate.id === "submission-two");
     assert.deepEqual(submission?.sourceEvents[0]?.items.map((item) => item.artifactKind), [null, "source_payload", "source_payload"]);
@@ -379,6 +416,20 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.equal(correctedTask?.checks.environment?.outcome, "pass");
     assert.equal(correctedTask?.gpuRequired, true);
     assert.deepEqual(correctedTask?.findings, []);
+    assert.deepEqual(await repository.deleteVendorTimeline({
+      vendorId: "vendor-one",
+      reason: "Exercise audited timeline deletion.",
+      actor: "TARS",
+    }), { vendorId: "vendor-one", deleted: true, interactionCount: 1 });
+    assert.equal(await repository.getVendorTimeline("vendor-one"), null);
+    const deletedTimelineHistory = await repository.getVendorTimelineHistory("vendor-one");
+    assert.equal(deletedTimelineHistory.at(-1)?.action, "timeline_deleted");
+    assert.equal((deletedTimelineHistory.at(-1)?.before?.interactions as unknown[])?.length, 1);
+    assert.deepEqual(await repository.deleteVendorTimeline({
+      vendorId: "vendor-one",
+      reason: "Idempotent retry.",
+      actor: "TARS",
+    }), { vendorId: "vendor-one", deleted: false, interactionCount: 0 });
   } finally {
     await repository?.close();
     await administrator.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);

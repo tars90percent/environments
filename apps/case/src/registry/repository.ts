@@ -39,7 +39,15 @@ import type {
   VendorArchiveInput,
   VendorArchiveResult,
   VendorDirectoryEntry,
+  VendorInteraction,
+  VendorInteractionDeleteInput,
   VendorInteractionInput,
+  VendorInteractionUpdateInput,
+  VendorTimeline,
+  VendorTimelineChange,
+  VendorTimelineCreateInput,
+  VendorTimelineDeleteInput,
+  VendorTimelineDeleteResult,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -62,7 +70,14 @@ export interface RegistryRepository {
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   vendorDirectory(includeArchived?: boolean): Promise<VendorDirectoryEntry[]>;
+  createVendorTimeline(input: VendorTimelineCreateInput): Promise<{ vendorId: string; created: boolean }>;
+  getVendorTimeline(vendorId: string): Promise<VendorTimeline | null>;
+  getVendorTimelineHistory(vendorId: string): Promise<VendorTimelineChange[]>;
+  getVendorInteraction(interactionId: string): Promise<VendorInteraction | null>;
   recordVendorInteraction(input: VendorInteractionInput): Promise<{ interactionId: string; created: boolean }>;
+  updateVendorInteraction(input: VendorInteractionUpdateInput): Promise<{ interactionId: string; updated: boolean }>;
+  deleteVendorInteraction(input: VendorInteractionDeleteInput): Promise<{ interactionId: string; deleted: boolean }>;
+  deleteVendorTimeline(input: VendorTimelineDeleteInput): Promise<VendorTimelineDeleteResult>;
   archiveVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   restoreVendor(input: VendorArchiveInput): Promise<VendorArchiveResult>;
   recordHarborAttempt(input: HarborCheckAttemptInput): Promise<void>;

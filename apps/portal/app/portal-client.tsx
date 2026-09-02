@@ -345,8 +345,8 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       </aside>
       <section className="vendor-main">
         <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h2>{selectedVendor.name}</h2><div className="vendor-meta">{selectedVendor.submissions.length > 0 && <><span>{selectedVendor.submissions.length} {t.submissions.toLowerCase()}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></>}{selectedVendor.interactions.length > 0 && <span>{selectedVendor.interactions.length} {t.interactions}</span>}</div></header>
-        <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />
         <VendorInteractionTimeline interactions={selectedVendor.interactions} language={language} />
+        <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />
         {selectedVendor.submissions.length > 0 && <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="submission-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>}
       </section>

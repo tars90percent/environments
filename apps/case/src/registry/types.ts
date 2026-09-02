@@ -196,6 +196,65 @@ export type VendorInteractionInput = {
 
 export type VendorInteraction = VendorInteractionInput & {
   createdAt: string;
+  updatedAt: string;
+};
+
+export type VendorTimelineCreateInput = {
+  vendorId: string;
+  actor: string;
+};
+
+export type VendorTimelineDeleteInput = {
+  vendorId: string;
+  reason: string;
+  actor: string;
+};
+
+export type VendorInteractionUpdateInput = {
+  id: string;
+  changes: Partial<Omit<VendorInteractionInput, "id" | "vendorId" | "actor">>;
+  reason: string;
+  actor: string;
+};
+
+export type VendorInteractionDeleteInput = {
+  id: string;
+  reason: string;
+  actor: string;
+};
+
+export type VendorTimelineChangeAction =
+  | "timeline_created"
+  | "interaction_created"
+  | "interaction_updated"
+  | "interaction_deleted"
+  | "timeline_deleted";
+
+export type VendorTimelineChange = {
+  id: string;
+  vendorId: string;
+  interactionId: string | null;
+  action: VendorTimelineChangeAction;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  reason: string | null;
+  actor: string;
+  createdAt: string;
+};
+
+export type VendorTimeline = {
+  vendorId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  interactions: VendorInteraction[];
+  history: VendorTimelineChange[];
+};
+
+export type VendorTimelineDeleteResult = {
+  vendorId: string;
+  deleted: boolean;
+  interactionCount: number;
 };
 
 export type VendorDirectoryEntry = RegistryVendorInput & {

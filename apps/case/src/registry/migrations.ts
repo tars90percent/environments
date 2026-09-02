@@ -1709,6 +1709,55 @@ const migrations: Migration[] = [
         'Append-only, provenance-aware vendor interaction chronology. Portal visibility is explicit and the portal projection omits private source locators.';
     `,
   },
+  {
+    id: "023_vendor_timeline_management",
+    sql: `
+      CREATE TABLE registry_vendor_timelines (
+        vendor_id text PRIMARY KEY REFERENCES registry_vendors(id) ON DELETE CASCADE,
+        created_by text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      INSERT INTO registry_vendor_timelines(vendor_id, created_by, created_at, updated_at)
+      SELECT vendor_id, 'migration:023_vendor_timeline_management', MIN(created_at), MAX(created_at)
+      FROM registry_vendor_interactions
+      GROUP BY vendor_id;
+
+      ALTER TABLE registry_vendor_interactions
+        ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now();
+
+      UPDATE registry_vendor_interactions SET updated_at = created_at;
+
+      ALTER TABLE registry_vendor_interactions
+        ADD CONSTRAINT registry_vendor_interactions_timeline_fk
+        FOREIGN KEY (vendor_id) REFERENCES registry_vendor_timelines(vendor_id) ON DELETE CASCADE;
+
+      CREATE TABLE registry_vendor_timeline_changes (
+        id bigserial PRIMARY KEY,
+        vendor_id text NOT NULL REFERENCES registry_vendors(id) ON DELETE CASCADE,
+        interaction_id text,
+        action text NOT NULL CHECK (action IN (
+          'timeline_created', 'interaction_created', 'interaction_updated', 'interaction_deleted', 'timeline_deleted'
+        )),
+        before_payload jsonb,
+        after_payload jsonb,
+        reason text,
+        actor text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX registry_vendor_timeline_changes_vendor_idx
+        ON registry_vendor_timeline_changes(vendor_id, created_at, id);
+
+      COMMENT ON TABLE registry_vendor_timelines IS
+        'Explicit active vendor timelines. Recording a first interaction may create the timeline automatically.';
+      COMMENT ON TABLE registry_vendor_timeline_changes IS
+        'Audit history for vendor timeline and interaction creation, edits, and deletions.';
+      COMMENT ON TABLE registry_vendor_interactions IS
+        'Current vendor timeline entries. Edits and deletions are retained in registry_vendor_timeline_changes.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

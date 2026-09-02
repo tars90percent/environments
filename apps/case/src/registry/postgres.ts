@@ -74,7 +74,14 @@ import type {
   VendorEvent,
   VendorEventInput,
   VendorInteraction,
+  VendorInteractionDeleteInput,
   VendorInteractionInput,
+  VendorInteractionUpdateInput,
+  VendorTimeline,
+  VendorTimelineChange,
+  VendorTimelineCreateInput,
+  VendorTimelineDeleteInput,
+  VendorTimelineDeleteResult,
   WorkCompletionInput,
   WorkItem,
 } from "./types.js";
@@ -307,6 +314,25 @@ type VendorInteractionRow = {
   occurred_at: string | Date;
   source_event_ids: string[];
   batch_ids: string[];
+  actor: string;
+  payload_sha256: string;
+  created_at: string | Date;
+  updated_at: string | Date;
+};
+type VendorTimelineRow = {
+  vendor_id: string;
+  created_by: string;
+  created_at: string | Date;
+  updated_at: string | Date;
+};
+type VendorTimelineChangeRow = {
+  id: string;
+  vendor_id: string;
+  interaction_id: string | null;
+  action: VendorTimelineChange["action"];
+  before_payload: Record<string, unknown> | null;
+  after_payload: Record<string, unknown> | null;
+  reason: string | null;
   actor: string;
   created_at: string | Date;
 };
@@ -746,6 +772,72 @@ export class PostgresRegistry implements RegistryRepository {
     return result.rows.map(vendorEventFromRow);
   }
 
+  async createVendorTimeline(input: VendorTimelineCreateInput): Promise<{ vendorId: string; created: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const vendor = await client.query<{ id: string }>("SELECT id FROM registry_vendors WHERE id = $1", [input.vendorId]);
+      if (!vendor.rowCount) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
+      const created = await this.ensureVendorTimeline(client, input.vendorId, input.actor);
+      await client.query("COMMIT");
+      return { vendorId: input.vendorId, created };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getVendorTimeline(vendorId: string): Promise<VendorTimeline | null> {
+    const timeline = await this.pool.query<VendorTimelineRow>(
+      `SELECT vendor_id, created_by, created_at, updated_at
+       FROM registry_vendor_timelines WHERE vendor_id = $1`,
+      [vendorId],
+    );
+    if (!timeline.rows[0]) return null;
+    const interactions = await this.pool.query<VendorInteractionRow>(
+      `SELECT id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
+              occurred_at, source_event_ids, batch_ids, actor, payload_sha256, created_at, updated_at
+       FROM registry_vendor_interactions
+       WHERE vendor_id = $1
+       ORDER BY occurred_at, created_at, id`,
+      [vendorId],
+    );
+    const row = timeline.rows[0];
+    return {
+      vendorId: row.vendor_id,
+      createdBy: row.created_by,
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+      interactions: interactions.rows.map(vendorInteractionFromRow),
+      history: await this.getVendorTimelineHistory(vendorId),
+    };
+  }
+
+  async getVendorTimelineHistory(vendorId: string): Promise<VendorTimelineChange[]> {
+    const vendor = await this.pool.query<{ id: string }>("SELECT id FROM registry_vendors WHERE id = $1", [vendorId]);
+    if (!vendor.rowCount) throw new RegistryNotFoundError(`Vendor ${vendorId} does not exist`);
+    const result = await this.pool.query<VendorTimelineChangeRow>(
+      `SELECT id::text, vendor_id, interaction_id, action, before_payload, after_payload, reason, actor, created_at
+       FROM registry_vendor_timeline_changes
+       WHERE vendor_id = $1
+       ORDER BY created_at, id`,
+      [vendorId],
+    );
+    return result.rows.map(vendorTimelineChangeFromRow);
+  }
+
+  async getVendorInteraction(interactionId: string): Promise<VendorInteraction | null> {
+    const result = await this.pool.query<VendorInteractionRow>(
+      `SELECT id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
+              occurred_at, source_event_ids, batch_ids, actor, payload_sha256, created_at, updated_at
+       FROM registry_vendor_interactions WHERE id = $1`,
+      [interactionId],
+    );
+    return result.rows[0] ? vendorInteractionFromRow(result.rows[0]) : null;
+  }
+
   async recordVendorInteraction(input: VendorInteractionInput): Promise<{ interactionId: string; created: boolean }> {
     const payloadSha256 = hashValue(input);
     const client = await this.pool.connect();
@@ -753,49 +845,193 @@ export class PostgresRegistry implements RegistryRepository {
       await client.query("BEGIN");
       const vendor = await client.query<{ id: string }>("SELECT id FROM registry_vendors WHERE id = $1", [input.vendorId]);
       if (!vendor.rowCount) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
+      await this.ensureVendorTimeline(client, input.vendorId, input.actor);
 
       const existing = await client.query<{ payload_sha256: string }>(
         "SELECT payload_sha256 FROM registry_vendor_interactions WHERE id = $1",
         [input.id],
       );
       if (existing.rows[0]?.payload_sha256 && existing.rows[0].payload_sha256 !== payloadSha256) {
-        throw new RegistryConflictError(`Vendor interaction ${input.id} already exists with different immutable contents`);
+        throw new RegistryConflictError(`Vendor interaction ${input.id} already exists with different contents; use update-vendor-interaction`);
       }
       if (existing.rowCount) {
         await client.query("COMMIT");
         return { interactionId: input.id, created: false };
       }
 
-      if (input.sourceEventIds.length) {
-        const sources = await client.query<{ id: string }>(
-          "SELECT id FROM registry_source_events WHERE vendor_id = $1 AND id = ANY($2::text[])",
-          [input.vendorId, input.sourceEventIds],
-        );
-        if (sources.rowCount !== input.sourceEventIds.length) {
-          throw new RegistryNotFoundError(`One or more source events do not belong to vendor ${input.vendorId}`);
-        }
-      }
-      if (input.submissionIds.length) {
-        const submissions = await client.query<{ id: string }>(
-          "SELECT id FROM registry_submission_batches WHERE vendor_id = $1 AND id = ANY($2::text[])",
-          [input.vendorId, input.submissionIds],
-        );
-        if (submissions.rowCount !== input.submissionIds.length) {
-          throw new RegistryNotFoundError(`One or more submissions do not belong to vendor ${input.vendorId}`);
-        }
-      }
-
-      await client.query(
+      await this.assertVendorInteractionReferences(client, input);
+      const inserted = await client.query<{ created_at: string | Date; updated_at: string | Date }>(
         `INSERT INTO registry_vendor_interactions(
            id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
            occurred_at, source_event_ids, batch_ids, actor, payload_sha256
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)
+         RETURNING created_at, updated_at`,
         [input.id, input.vendorId, input.kind, input.eventType, input.title, input.summary, input.channel,
           input.evidence, input.visibility, input.occurredAt, json(input.sourceEventIds), json(input.submissionIds),
           input.actor, payloadSha256],
       );
+      const insertedRow = inserted.rows[0]!;
+      await this.insertVendorTimelineChange(client, {
+        vendorId: input.vendorId,
+        interactionId: input.id,
+        action: "interaction_created",
+        before: null,
+        after: {
+          ...input,
+          createdAt: new Date(insertedRow.created_at).toISOString(),
+          updatedAt: new Date(insertedRow.updated_at).toISOString(),
+        },
+        reason: null,
+        actor: input.actor,
+      });
+      await client.query("UPDATE registry_vendor_timelines SET updated_at = now() WHERE vendor_id = $1", [input.vendorId]);
       await client.query("COMMIT");
       return { interactionId: input.id, created: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateVendorInteraction(input: VendorInteractionUpdateInput): Promise<{ interactionId: string; updated: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<VendorInteractionRow>(
+        `SELECT id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
+                occurred_at, source_event_ids, batch_ids, actor, payload_sha256, created_at, updated_at
+         FROM registry_vendor_interactions WHERE id = $1 FOR UPDATE`,
+        [input.id],
+      );
+      const row = result.rows[0];
+      if (!row) throw new RegistryNotFoundError(`Vendor interaction ${input.id} does not exist`);
+      const before = vendorInteractionFromRow(row);
+      const current = vendorInteractionInputFromRow(row);
+      const next: VendorInteractionInput = { ...current, ...input.changes, actor: input.actor };
+      if (hashValue(current) === hashValue(next)) {
+        await client.query("COMMIT");
+        return { interactionId: input.id, updated: false };
+      }
+      await this.assertVendorInteractionReferences(client, next);
+      const payloadSha256 = hashValue(next);
+      const updated = await client.query<VendorInteractionRow>(
+        `UPDATE registry_vendor_interactions SET
+           kind = $2, event_type = $3, title = $4, summary = $5, channel = $6, evidence = $7,
+           visibility = $8, occurred_at = $9, source_event_ids = $10::jsonb, batch_ids = $11::jsonb,
+           actor = $12, payload_sha256 = $13, updated_at = now()
+         WHERE id = $1
+         RETURNING id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
+                   occurred_at, source_event_ids, batch_ids, actor, payload_sha256, created_at, updated_at`,
+        [next.id, next.kind, next.eventType, next.title, next.summary, next.channel, next.evidence,
+          next.visibility, next.occurredAt, json(next.sourceEventIds), json(next.submissionIds), next.actor, payloadSha256],
+      );
+      await this.insertVendorTimelineChange(client, {
+        vendorId: next.vendorId,
+        interactionId: next.id,
+        action: "interaction_updated",
+        before,
+        after: vendorInteractionFromRow(updated.rows[0]!),
+        reason: input.reason,
+        actor: input.actor,
+      });
+      await client.query("UPDATE registry_vendor_timelines SET updated_at = now() WHERE vendor_id = $1", [next.vendorId]);
+      await client.query("COMMIT");
+      return { interactionId: input.id, updated: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteVendorInteraction(input: VendorInteractionDeleteInput): Promise<{ interactionId: string; deleted: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<VendorInteractionRow>(
+        `SELECT id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
+                occurred_at, source_event_ids, batch_ids, actor, payload_sha256, created_at, updated_at
+         FROM registry_vendor_interactions WHERE id = $1 FOR UPDATE`,
+        [input.id],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        const previousDeletion = await client.query<{ id: string }>(
+          `SELECT id::text FROM registry_vendor_timeline_changes
+           WHERE interaction_id = $1 AND action = 'interaction_deleted'
+           ORDER BY id DESC LIMIT 1`,
+          [input.id],
+        );
+        if (!previousDeletion.rowCount) throw new RegistryNotFoundError(`Vendor interaction ${input.id} does not exist`);
+        await client.query("COMMIT");
+        return { interactionId: input.id, deleted: false };
+      }
+      const current = vendorInteractionInputFromRow(row);
+      const before = vendorInteractionFromRow(row);
+      await this.insertVendorTimelineChange(client, {
+        vendorId: current.vendorId,
+        interactionId: current.id,
+        action: "interaction_deleted",
+        before,
+        after: null,
+        reason: input.reason,
+        actor: input.actor,
+      });
+      await client.query("DELETE FROM registry_vendor_interactions WHERE id = $1", [input.id]);
+      await client.query("UPDATE registry_vendor_timelines SET updated_at = now() WHERE vendor_id = $1", [current.vendorId]);
+      await client.query("COMMIT");
+      return { interactionId: input.id, deleted: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteVendorTimeline(input: VendorTimelineDeleteInput): Promise<VendorTimelineDeleteResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const vendor = await client.query<{ id: string }>("SELECT id FROM registry_vendors WHERE id = $1", [input.vendorId]);
+      if (!vendor.rowCount) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
+      const timeline = await client.query<VendorTimelineRow>(
+        `SELECT vendor_id, created_by, created_at, updated_at
+         FROM registry_vendor_timelines WHERE vendor_id = $1 FOR UPDATE`,
+        [input.vendorId],
+      );
+      const timelineRow = timeline.rows[0];
+      if (!timelineRow) {
+        await client.query("COMMIT");
+        return { vendorId: input.vendorId, deleted: false, interactionCount: 0 };
+      }
+      const interactions = await client.query<VendorInteractionRow>(
+        `SELECT id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
+                occurred_at, source_event_ids, batch_ids, actor, payload_sha256, created_at, updated_at
+         FROM registry_vendor_interactions WHERE vendor_id = $1 ORDER BY occurred_at, created_at, id`,
+        [input.vendorId],
+      );
+      await this.insertVendorTimelineChange(client, {
+        vendorId: input.vendorId,
+        interactionId: null,
+        action: "timeline_deleted",
+        before: {
+          vendorId: timelineRow.vendor_id,
+          createdBy: timelineRow.created_by,
+          createdAt: new Date(timelineRow.created_at).toISOString(),
+          updatedAt: new Date(timelineRow.updated_at).toISOString(),
+          interactions: interactions.rows.map(vendorInteractionFromRow),
+        },
+        after: null,
+        reason: input.reason,
+        actor: input.actor,
+      });
+      await client.query("DELETE FROM registry_vendor_timelines WHERE vendor_id = $1", [input.vendorId]);
+      await client.query("COMMIT");
+      return { vendorId: input.vendorId, deleted: true, interactionCount: interactions.rowCount ?? interactions.rows.length };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -4163,6 +4399,67 @@ export class PostgresRegistry implements RegistryRepository {
     );
   }
 
+  private async ensureVendorTimeline(client: PoolClient, vendorId: string, actor: string): Promise<boolean> {
+    const created = await client.query<{ vendor_id: string }>(
+      `INSERT INTO registry_vendor_timelines(vendor_id, created_by)
+       VALUES ($1, $2)
+       ON CONFLICT(vendor_id) DO NOTHING
+       RETURNING vendor_id`,
+      [vendorId, actor],
+    );
+    if (!created.rowCount) return false;
+    await this.insertVendorTimelineChange(client, {
+      vendorId,
+      interactionId: null,
+      action: "timeline_created",
+      before: null,
+      after: { vendorId },
+      reason: null,
+      actor,
+    });
+    return true;
+  }
+
+  private async assertVendorInteractionReferences(client: PoolClient, input: VendorInteractionInput): Promise<void> {
+    if (input.sourceEventIds.length) {
+      const sources = await client.query<{ id: string }>(
+        "SELECT id FROM registry_source_events WHERE vendor_id = $1 AND id = ANY($2::text[])",
+        [input.vendorId, input.sourceEventIds],
+      );
+      if (sources.rowCount !== input.sourceEventIds.length) {
+        throw new RegistryNotFoundError(`One or more source events do not belong to vendor ${input.vendorId}`);
+      }
+    }
+    if (input.submissionIds.length) {
+      const submissions = await client.query<{ id: string }>(
+        "SELECT id FROM registry_submission_batches WHERE vendor_id = $1 AND id = ANY($2::text[])",
+        [input.vendorId, input.submissionIds],
+      );
+      if (submissions.rowCount !== input.submissionIds.length) {
+        throw new RegistryNotFoundError(`One or more submissions do not belong to vendor ${input.vendorId}`);
+      }
+    }
+  }
+
+  private async insertVendorTimelineChange(client: PoolClient, change: {
+    vendorId: string;
+    interactionId: string | null;
+    action: VendorTimelineChange["action"];
+    before: unknown;
+    after: unknown;
+    reason: string | null;
+    actor: string;
+  }): Promise<void> {
+    await client.query(
+      `INSERT INTO registry_vendor_timeline_changes(
+         vendor_id, interaction_id, action, before_payload, after_payload, reason, actor
+       ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7)`,
+      [change.vendorId, change.interactionId, change.action,
+        change.before === null ? null : json(change.before), change.after === null ? null : json(change.after),
+        change.reason, change.actor],
+    );
+  }
+
   private async upsertVendor(client: PoolClient, vendor: SubmissionManifest["vendor"]): Promise<void> {
     await client.query(
       `INSERT INTO registry_vendors(id, name, short, description, aliases)
@@ -4494,6 +4791,46 @@ function vendorEventFromRow(row: VendorEventRow): VendorEvent {
     sourceEventIds: row.source_event_ids,
     submissionIds: row.batch_ids,
     metadata: row.metadata,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}
+
+function vendorInteractionInputFromRow(row: VendorInteractionRow): VendorInteractionInput {
+  return {
+    id: row.id,
+    vendorId: row.vendor_id,
+    kind: row.kind,
+    eventType: row.event_type,
+    title: row.title,
+    summary: row.summary,
+    channel: row.channel,
+    evidence: row.evidence,
+    visibility: row.visibility,
+    occurredAt: new Date(row.occurred_at).toISOString(),
+    sourceEventIds: row.source_event_ids,
+    submissionIds: row.batch_ids,
+    actor: row.actor,
+  };
+}
+
+function vendorInteractionFromRow(row: VendorInteractionRow): VendorInteraction {
+  return {
+    ...vendorInteractionInputFromRow(row),
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+function vendorTimelineChangeFromRow(row: VendorTimelineChangeRow): VendorTimelineChange {
+  return {
+    id: row.id,
+    vendorId: row.vendor_id,
+    interactionId: row.interaction_id,
+    action: row.action,
+    before: row.before_payload,
+    after: row.after_payload,
+    reason: row.reason,
+    actor: row.actor,
     createdAt: new Date(row.created_at).toISOString(),
   };
 }

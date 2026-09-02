@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseVendorInteraction, ValidationError } from "../src/registry/validation.js";
+import {
+  parseVendorInteraction,
+  parseVendorInteractionDelete,
+  parseVendorInteractionUpdate,
+  parseVendorTimelineCreate,
+  parseVendorTimelineDelete,
+  ValidationError,
+} from "../src/registry/validation.js";
 
 const fixture = {
   id: "interaction:vendor-one:delivery:2026-08-01",
@@ -33,4 +40,40 @@ test("rejects unsupported interaction fields and classifications", () => {
   assert.throws(() => parseVendorInteraction({ ...fixture, channel: "discord" }), ValidationError);
   assert.throws(() => parseVendorInteraction({ ...fixture, evidence: "rumor" }), ValidationError);
   assert.throws(() => parseVendorInteraction({ ...fixture, visibility: "public" }), ValidationError);
+});
+
+test("validates explicit vendor timeline creation and deletion", () => {
+  assert.deepEqual(parseVendorTimelineCreate({ vendorId: "vendor-one", actor: "TARS" }), {
+    vendorId: "vendor-one",
+    actor: "TARS",
+  });
+  assert.deepEqual(parseVendorTimelineDelete({ vendorId: "vendor-one", reason: "Created in error.", actor: "TARS" }), {
+    vendorId: "vendor-one",
+    reason: "Created in error.",
+    actor: "TARS",
+  });
+  assert.throws(() => parseVendorTimelineCreate({ vendorId: "vendor-one", actor: "" }), ValidationError);
+  assert.throws(() => parseVendorTimelineDelete({ vendorId: "vendor-one", reason: "", actor: "TARS" }), ValidationError);
+});
+
+test("validates partial interaction updates and audited deletions", () => {
+  assert.deepEqual(parseVendorInteractionUpdate({
+    id: fixture.id,
+    changes: { title: "Corrected title", visibility: "internal", submissionIds: ["submission-one"] },
+    reason: "Correct the active record.",
+    actor: "TARS",
+  }), {
+    id: fixture.id,
+    changes: { title: "Corrected title", visibility: "internal", submissionIds: ["submission-one"] },
+    reason: "Correct the active record.",
+    actor: "TARS",
+  });
+  assert.deepEqual(parseVendorInteractionDelete({ id: fixture.id, reason: "Duplicate entry.", actor: "TARS" }), {
+    id: fixture.id,
+    reason: "Duplicate entry.",
+    actor: "TARS",
+  });
+  assert.throws(() => parseVendorInteractionUpdate({ id: fixture.id, changes: {}, reason: "No change.", actor: "TARS" }), ValidationError);
+  assert.throws(() => parseVendorInteractionUpdate({ id: fixture.id, changes: { vendorId: "other" }, reason: "Move it.", actor: "TARS" }), ValidationError);
+  assert.throws(() => parseVendorInteractionDelete({ id: fixture.id, reason: "", actor: "TARS" }), ValidationError);
 });

@@ -23,6 +23,11 @@ test("casectl dispatches registry and task-package operations", () => {
   assert.equal(registry.status, 0, registry.stderr);
   const operations = JSON.parse(registry.stdout) as { commands?: Record<string, unknown> };
   assert.ok(operations.commands?.["append-tasks"]);
+  assert.ok(operations.commands?.["create-vendor-timeline"]);
+  assert.ok(operations.commands?.["vendor-interaction"]);
+  assert.ok(operations.commands?.["update-vendor-interaction"]);
+  assert.ok(operations.commands?.["delete-vendor-interaction"]);
+  assert.ok(operations.commands?.["delete-vendor-timeline"]);
 
   const taskPackage = run("task-package", "--help");
   assert.equal(taskPackage.status, 0, taskPackage.stderr);

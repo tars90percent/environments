@@ -31,11 +31,16 @@ import type {
   TaskFindingUpdateInput,
   TaskSourceLinksInput,
   VendorArchiveInput,
+  VendorEventKind,
   VendorEventInput,
   VendorInteractionChannel,
+  VendorInteractionDeleteInput,
   VendorInteractionEvidence,
   VendorInteractionInput,
+  VendorInteractionUpdateInput,
   VendorInteractionVisibility,
+  VendorTimelineCreateInput,
+  VendorTimelineDeleteInput,
   WorkCompletionInput,
 } from "./types.js";
 
@@ -59,7 +64,7 @@ const SOURCE_ITEM_KINDS = new Set([
 const SOURCE_FETCH_STATUSES = new Set(["not_requested", "queued", "fetching", "snapshotted", "external_only", "blocked", "failed"]);
 const SOURCE_PARSE_STATUSES = new Set(["not_requested", "queued", "parsing", "parsed", "partial", "blocked", "failed"]);
 const SOURCE_RELATIONS = new Set(["contains", "links_to", "derived_from", "describes", "mirrors", "supersedes"]);
-const VENDOR_EVENT_KINDS = new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]);
+const VENDOR_EVENT_KINDS = new Set<VendorEventKind>(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]);
 const VENDOR_INTERACTION_CHANNELS = new Set<VendorInteractionChannel>(["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"]);
 const VENDOR_INTERACTION_EVIDENCE = new Set<VendorInteractionEvidence>(["direct", "relayed", "automated", "internal"]);
 const VENDOR_INTERACTION_VISIBILITIES = new Set<VendorInteractionVisibility>(["portal", "internal"]);
@@ -686,6 +691,63 @@ export function parseVendorInteraction(value: unknown): VendorInteractionInput {
     submissionIds: uniqueIdentifiers(input.submissionIds, "submissionIds"),
     actor: boundedString(input.actor, "actor", 500),
   } as VendorInteractionInput;
+}
+
+export function parseVendorTimelineCreate(value: unknown): VendorTimelineCreateInput {
+  const input = object(value, "vendor timeline creation");
+  onlyKeys(input, new Set(["vendorId", "actor"]), "vendor timeline creation");
+  return {
+    vendorId: identifier(input.vendorId, "vendorId"),
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseVendorTimelineDelete(value: unknown): VendorTimelineDeleteInput {
+  const input = object(value, "vendor timeline deletion");
+  onlyKeys(input, new Set(["vendorId", "reason", "actor"]), "vendor timeline deletion");
+  return {
+    vendorId: identifier(input.vendorId, "vendorId"),
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseVendorInteractionUpdate(value: unknown): VendorInteractionUpdateInput {
+  const input = object(value, "vendor interaction update");
+  onlyKeys(input, new Set(["id", "changes", "reason", "actor"]), "vendor interaction update");
+  const rawChanges = object(input.changes, "changes");
+  onlyKeys(rawChanges, new Set([
+    "kind", "eventType", "title", "summary", "channel", "evidence", "visibility", "occurredAt",
+    "sourceEventIds", "submissionIds",
+  ]), "changes");
+  const changes: VendorInteractionUpdateInput["changes"] = {};
+  if (rawChanges.kind !== undefined) changes.kind = enumValue(rawChanges.kind, VENDOR_EVENT_KINDS, "changes.kind");
+  if (rawChanges.eventType !== undefined) changes.eventType = identifier(rawChanges.eventType, "changes.eventType");
+  if (rawChanges.title !== undefined) changes.title = boundedString(rawChanges.title, "changes.title", 300);
+  if (rawChanges.summary !== undefined) changes.summary = boundedString(rawChanges.summary, "changes.summary", 5_000);
+  if (rawChanges.channel !== undefined) changes.channel = enumValue(rawChanges.channel, VENDOR_INTERACTION_CHANNELS, "changes.channel");
+  if (rawChanges.evidence !== undefined) changes.evidence = enumValue(rawChanges.evidence, VENDOR_INTERACTION_EVIDENCE, "changes.evidence");
+  if (rawChanges.visibility !== undefined) changes.visibility = enumValue(rawChanges.visibility, VENDOR_INTERACTION_VISIBILITIES, "changes.visibility");
+  if (rawChanges.occurredAt !== undefined) changes.occurredAt = timestamp(rawChanges.occurredAt, "changes.occurredAt");
+  if (rawChanges.sourceEventIds !== undefined) changes.sourceEventIds = uniqueIdentifiers(rawChanges.sourceEventIds, "changes.sourceEventIds");
+  if (rawChanges.submissionIds !== undefined) changes.submissionIds = uniqueIdentifiers(rawChanges.submissionIds, "changes.submissionIds");
+  if (!Object.keys(changes).length) throw new ValidationError("changes must include at least one editable field");
+  return {
+    id: identifier(input.id, "id"),
+    changes,
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseVendorInteractionDelete(value: unknown): VendorInteractionDeleteInput {
+  const input = object(value, "vendor interaction deletion");
+  onlyKeys(input, new Set(["id", "reason", "actor"]), "vendor interaction deletion");
+  return {
+    id: identifier(input.id, "id"),
+    reason: boundedString(input.reason, "reason", 5_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
 }
 
 export function parseVendorArchive(value: unknown): VendorArchiveInput {

@@ -36,7 +36,11 @@ import {
   parseSubmissionManifest,
   parseSubmissionRemoval,
   parseVendorArchive,
+  parseVendorInteractionDelete,
   parseVendorInteraction,
+  parseVendorInteractionUpdate,
+  parseVendorTimelineCreate,
+  parseVendorTimelineDelete,
   parseWorkCompletion,
 } from "./registry/validation.js";
 
@@ -59,8 +63,37 @@ if (command === "operations") {
         if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: casectl registry vendors [--all]");
         output(await repository.vendorDirectory(argument === "--all"));
         break;
+      case "create-vendor-timeline":
+        output(await repository.createVendorTimeline(parseVendorTimelineCreate(await jsonFile(argument))));
+        break;
+      case "vendor-timeline": {
+        const vendorId = required(argument, "vendor id");
+        const timeline = await repository.getVendorTimeline(vendorId);
+        if (!timeline) fail(`Vendor timeline not found: ${vendorId}`);
+        output(timeline);
+        break;
+      }
+      case "vendor-timeline-history":
+        output(await repository.getVendorTimelineHistory(required(argument, "vendor id")));
+        break;
+      case "vendor-interaction": {
+        const interactionId = required(argument, "vendor interaction id");
+        const interaction = await repository.getVendorInteraction(interactionId);
+        if (!interaction) fail(`Vendor interaction not found: ${interactionId}`);
+        output(interaction);
+        break;
+      }
       case "record-vendor-interaction":
         output(await repository.recordVendorInteraction(parseVendorInteraction(await jsonFile(argument))));
+        break;
+      case "update-vendor-interaction":
+        output(await repository.updateVendorInteraction(parseVendorInteractionUpdate(await jsonFile(argument))));
+        break;
+      case "delete-vendor-interaction":
+        output(await repository.deleteVendorInteraction(parseVendorInteractionDelete(await jsonFile(argument))));
+        break;
+      case "delete-vendor-timeline":
+        output(await repository.deleteVendorTimeline(parseVendorTimelineDelete(await jsonFile(argument))));
         break;
       case "vendor": {
         const vendorId = required(argument, "vendor id");
@@ -189,7 +222,7 @@ if (command === "operations") {
         output(await repository.reconcileHarborWorkItems(parseReconcileHarborWorkItems(await jsonFile(argument))));
         break;
       default:
-        fail("Usage: casectl registry operations|summary|catalog|vendors|vendor|submission|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
+        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|benchmarks|register-benchmark|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
     }
   } finally {
     await repository.close();
@@ -296,12 +329,37 @@ function operationSchemas() {
     summary: { arguments: [], result: "registry counts" },
     catalog: { arguments: [], result: "researcher-facing sample catalog" },
     vendors: { arguments: ["[--all]"], result: "vendor directory" },
+    "create-vendor-timeline": {
+      arguments: ["<timeline.json>"],
+      fields: ["vendorId", "actor"],
+      note: "Creates an explicit empty timeline for an existing vendor. Recording the first interaction also creates one automatically.",
+    },
+    "vendor-timeline": { arguments: ["<vendor-id>"], result: "active timeline, entries, and audit history" },
+    "vendor-timeline-history": { arguments: ["<vendor-id>"], result: "timeline audit history, including deleted timelines and entries" },
+    "vendor-interaction": { arguments: ["<interaction-id>"], result: "one active timeline entry" },
     "record-vendor-interaction": {
       arguments: ["<interaction.json>"],
       fields: ["id", "vendorId", "kind", "eventType", "title", "summary", "channel", "evidence", "visibility", "occurredAt", "sourceEventIds", "submissionIds", "actor"],
+      kinds: ["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"],
       channels: ["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"],
       evidence: ["direct", "relayed", "automated", "internal"],
-      note: "Appends one immutable vendor interaction. Portal entries expose only the curated title, summary, date, channel, and evidence class; source locators and internal actor data remain private.",
+      visibility: ["portal", "internal"],
+      note: "Creates an active timeline entry and creates the vendor timeline automatically when needed.",
+    },
+    "update-vendor-interaction": {
+      arguments: ["<update.json>"],
+      fields: ["id", "changes{kind?,eventType?,title?,summary?,channel?,evidence?,visibility?,occurredAt?,sourceEventIds?,submissionIds?}", "reason", "actor"],
+      note: "Updates the active entry and retains its before/after values in the timeline audit history.",
+    },
+    "delete-vendor-interaction": {
+      arguments: ["<deletion.json>"],
+      fields: ["id", "reason", "actor"],
+      note: "Removes the entry from the active timeline and retains the deleted value in audit history.",
+    },
+    "delete-vendor-timeline": {
+      arguments: ["<deletion.json>"],
+      fields: ["vendorId", "reason", "actor"],
+      note: "Deletes the active timeline and its entries while retaining a complete audit snapshot. The vendor record is not deleted.",
     },
     vendor: { arguments: ["<vendor-id>"] },
     submission: { arguments: ["<submission-id>"] },
