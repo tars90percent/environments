@@ -54,7 +54,7 @@ COPY apps/case/scripts ./scripts
 RUN npm run build \
     && npm prune --omit=dev \
     && chmod 0755 /app/scripts/case-task-package.py /app/scripts/case-harbor-format.py \
-    && python3 /app/scripts/case-harbor-format.py --version \
+    && /opt/uv/tools/harbor/bin/python /app/scripts/case-harbor-format.py --version \
     && chmod 0755 /app/dist/case-cli.js /app/dist/harbor-cli.js \
     && ln -sfn /app/dist/case-cli.js /usr/local/bin/casectl \
     && ln -sfn /app/dist/harbor-cli.js /usr/local/bin/harbor \
