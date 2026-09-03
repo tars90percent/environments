@@ -25,12 +25,23 @@ function harborEntryRole(path: string): UpstreamTaskFilesystemEntry["role"] {
   if (path === "task.toml") return "task-config";
   if (path === "README.md") return "documentation";
   if (path === "solution" || path.startsWith("solution/")) return "reference-solution";
-  if (path === "tests" || path.startsWith("tests/") || path.startsWith("environment/hidden") || path.startsWith("environment/golden-generation")) return "verifier";
+  if (
+    path === "tests"
+    || path.startsWith("tests/")
+    || path === "preflight"
+    || path.startsWith("preflight/")
+    || path === "environment/tests"
+    || path.startsWith("environment/tests/")
+    || path.startsWith("environment/hidden")
+    || path.startsWith("environment/golden-generation")
+  ) return "verifier";
   if (
     path.startsWith("environment/benchmarks")
     || path.startsWith("environment/starter")
     || path.startsWith("environment/data/")
     || path.startsWith("environment/spec/")
+    || path === "environment/workspace"
+    || path.startsWith("environment/workspace/")
     || path === "environment/mysql/datadir.tar.zst"
   ) return "input-artifact";
   if (path === "environment/Dockerfile" || path === "environment") return "environment";
@@ -204,6 +215,103 @@ const frontierSweCraneliftFiles: HarborFileSpec[] = [
   ["tests/compute_reward.py", 1597],
   ["tests/test.sh", 2425],
   ["tests/tests-bundle.tar.gz", 2360032],
+];
+
+const frontierSweV2SnookerFiles: HarborFileSpec[] = [
+  ["environment/.dockerignore", 29],
+  ["environment/Dockerfile", 1142],
+  ["environment/entrypoint.sh", 307],
+  ["environment/sandbox_timer.sh", 2443],
+  ["environment/setup/install_packages.sh", 788],
+  ["environment/setup/packages.txt", 385],
+  ["environment/setup/setup_python.py", 1446],
+  ["environment/setup/setup_user.sh", 235],
+  ["environment/tests/check_split.py", 3257],
+  ["environment/tests/compute_reward.py", 17029],
+  ["environment/tests/dataset_split.json", 24712],
+  ["environment/tests/private_annotations.csv", 137805],
+  ["environment/tests/test.sh", 45],
+  ["environment/tests/verify.py", 5329],
+  ["environment/workspace/data/README.md", 1099],
+  ["environment/workspace/data/example_annotations.csv", 62559],
+  ["environment/workspace/data/example_target_times.csv", 4239],
+  ["environment/workspace/data/target_times.csv", 9343],
+  ["environment/workspace/data/videos/clip_000_observe_0_3.mp4", 473742],
+  ["environment/workspace/data/videos/clip_001_observe_0_3.mp4", 365370],
+  ["environment/workspace/data/videos/clip_002_observe_0_3.mp4", 606041],
+  ["environment/workspace/data/videos/clip_003_observe_0_3.mp4", 308904],
+  ["environment/workspace/data/videos/clip_004_observe_0_3.mp4", 471314],
+  ["environment/workspace/data/videos/clip_005_observe_0_3.mp4", 300546],
+  ["environment/workspace/data/videos/clip_006_observe_0_3.mp4", 406966],
+  ["environment/workspace/data/videos/clip_007_observe_0_3.mp4", 388504],
+  ["environment/workspace/data/videos/clip_008_observe_0_3.mp4", 495923],
+  ["environment/workspace/data/videos/clip_009_observe_0_3.mp4", 277140],
+  ["environment/workspace/data/videos/clip_010_observe_0_3.mp4", 473636],
+  ["environment/workspace/data/videos/clip_011_observe_0_3.mp4", 369867],
+  ["environment/workspace/data/videos/clip_012_observe_0_3.mp4", 496675],
+  ["environment/workspace/data/videos/clip_013_observe_0_3.mp4", 515549],
+  ["environment/workspace/data/videos/clip_014_observe_0_3.mp4", 406067],
+  ["environment/workspace/data/videos/clip_015_observe_0_3.mp4", 636804],
+  ["environment/workspace/data/videos/clip_016_observe_0_3.mp4", 420793],
+  ["environment/workspace/data/videos/clip_017_observe_0_3.mp4", 499855],
+  ["environment/workspace/data/videos/clip_018_observe_0_3.mp4", 499193],
+  ["environment/workspace/data/videos/clip_019_observe_0_3.mp4", 459732],
+  ["environment/workspace/data/videos/clip_020_observe_0_3.mp4", 468725],
+  ["environment/workspace/data/videos/clip_021_observe_0_3.mp4", 426220],
+  ["environment/workspace/data/videos/clip_022_observe_0_3.mp4", 440140],
+  ["environment/workspace/data/videos/clip_023_observe_0_3.mp4", 394870],
+  ["environment/workspace/data/videos/clip_024_observe_0_3.mp4", 370830],
+  ["environment/workspace/data/videos/clip_025_observe_0_3.mp4", 296662],
+  ["environment/workspace/data/videos/clip_027_observe_0_3.mp4", 265103],
+  ["environment/workspace/data/videos/clip_028_observe_0_3.mp4", 434806],
+  ["environment/workspace/data/videos/clip_029_observe_0_3.mp4", 384531],
+  ["environment/workspace/evaluate_predictions.py", 6223],
+  ["environment/workspace/predict.py", 577],
+  ["instruction.md", 707],
+  ["preflight/preflight_checks.sh", 7498],
+  ["solution/solve.md", 338],
+  ["solution/solve.sh", 83],
+  ["task.toml", 1017],
+];
+
+const frontierSweV2AstronomyFiles: HarborFileSpec[] = [
+  ["environment/.dockerignore", 604],
+  ["environment/Dockerfile", 1960],
+  ["environment/datasets.lock.json", 32073],
+  ["environment/entrypoint.sh", 489],
+  ["environment/sandbox_timer.sh", 2904],
+  ["environment/setup/install_packages.sh", 357],
+  ["environment/setup/install_task_assets.sh", 453],
+  ["environment/setup/packages.txt", 532],
+  ["environment/setup/setup_python.py", 1026],
+  ["environment/setup/setup_runtime.sh", 247],
+  ["environment/setup/setup_user.sh", 239],
+  ["environment/setup/task_asset_manifest.json", 2237],
+  ["environment/setup/validate_image.sh", 1017],
+  ["environment/setup/verify_task_assets.py", 7422],
+  ["environment/tests/astrometry_benchmark.py", 43582],
+  ["environment/tests/compute_reward.py", 10251],
+  ["environment/tests/metamorphic_campaigns.py", 7337],
+  ["environment/tests/reward_io.py", 3457],
+  ["environment/tests/runner.py", 21332],
+  ["environment/tests/strace_audit.py", 1904],
+  ["environment/tests/submission_contract.py", 6545],
+  ["environment/tests/test.sh", 87],
+  ["environment/tests/verify.py", 6960],
+  ["environment/workspace/README.md", 6003],
+  ["environment/workspace/astrometry/localize.py", 480],
+  ["environment/workspace/astrometry/validate_outputs.py", 6465],
+  ["environment/workspace/pyproject.toml", 330],
+  ["environment/workspace/requirements.txt", 127],
+  ["environment/workspace/uv.lock", 25704],
+  ["instruction.md", 753],
+  ["preflight/image_integration.sh", 4705],
+  ["preflight/oracle_structural_probe.sh", 1775],
+  ["preflight/preflight_checks.sh", 8602],
+  ["preflight/test_source_consistency.py", 2661],
+  ["solution/oracle_localizer.py", 57933],
+  ["solution/solve.sh", 481],
+  ["task.toml", 1565],
 ];
 
 const sweMarathonBiofabricFiles: HarborFileSpec[] = [
@@ -543,6 +651,22 @@ export const modelBenchmarkTaskFilesystems: Record<string, UpstreamTaskFilesyste
     treeSha: "422b9bb95deb8efe436becb0ed3c44be23611e10",
     verifiedAt: "2026-09-01",
     entries: harborTaskEntries(frontierSweCraneliftFiles),
+  },
+  "frontierswe-v2-snooker-prediction": {
+    repository: "Proximal-Labs/frontier-swe-v2",
+    repositoryPath: "tasks/snooker-prediction",
+    rootUrl: "https://github.com/Proximal-Labs/frontier-swe-v2/tree/9e3f71cac38ef3d7e14a41b361c7b2b54c59899b/tasks/snooker-prediction",
+    treeSha: "9e3f71cac38ef3d7e14a41b361c7b2b54c59899b",
+    verifiedAt: "2026-09-03",
+    entries: harborTaskEntries(frontierSweV2SnookerFiles),
+  },
+  "frontierswe-v2-astronomy-toolkit": {
+    repository: "Proximal-Labs/frontier-swe-v2",
+    repositoryPath: "tasks/astronomy-toolkit",
+    rootUrl: "https://github.com/Proximal-Labs/frontier-swe-v2/tree/9e3f71cac38ef3d7e14a41b361c7b2b54c59899b/tasks/astronomy-toolkit",
+    treeSha: "9e3f71cac38ef3d7e14a41b361c7b2b54c59899b",
+    verifiedAt: "2026-09-03",
+    entries: harborTaskEntries(frontierSweV2AstronomyFiles),
   },
   "swe-marathon-biofabric-rust": {
     repository: "abundant-ai/swe-marathon",

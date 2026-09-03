@@ -142,7 +142,7 @@ test("records standalone benchmark families separately from aggregate indexes", 
   assert.equal(artificialAnalysisIndex.components.reduce((total, component) => total + component.weight, 0), 100);
   assert.ok(artificialAnalysisIndex.links.every((link) => link.url.startsWith("https://artificialanalysis.ai/")));
 
-  assert.equal(modelBenchmarks.length, 41);
+  assert.equal(modelBenchmarks.length, 42);
   assert.equal(benchmarkReferenceCategories.length, 8);
   const ids = modelBenchmarks.map((benchmark) => benchmark.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -150,7 +150,7 @@ test("records standalone benchmark families separately from aggregate indexes", 
     "professional-work": 3,
     "tools-computer-use": 7,
     "web-research": 2,
-    "software-engineering": 11,
+    "software-engineering": 12,
     "model-training": 1,
     "science-knowledge": 6,
     "documents-vision": 8,
@@ -165,6 +165,10 @@ test("records standalone benchmark families separately from aggregate indexes", 
   });
   assert.deepEqual(modelBenchmarks.filter((benchmark) => ["gdpval-aa-v2", "terminal-bench-2-1", "hle", "gpqa-diamond"].includes(benchmark.id)).map((benchmark) => benchmark.name), [
     "GDPval", "Terminal-Bench", "Humanity's Last Exam", "GPQA",
+  ]);
+  assert.deepEqual(modelBenchmarks.filter((benchmark) => ["frontierswe", "frontierswe-v2"].includes(benchmark.id)).map((benchmark) => [benchmark.name, benchmark.questionCount.en]), [
+    ["FrontierSWE", "17 tasks"],
+    ["FrontierSWE v2", "34 tasks"],
   ]);
   assert.ok(artificialAnalysisIndex.components.every((component) => ids.includes(component.benchmarkId)));
 
@@ -218,8 +222,8 @@ test("retains public-task profiles for every open family and format archetypes f
 
   assert.deepEqual(Object.keys(modelBenchmarkSampleContext).sort(), benchmarkIds.toSorted());
   assert.ok(benchmarkIds.every((id) => modelBenchmarks.some((benchmark) => benchmark.id === id)));
-  assert.equal(benchmarkIds.length, 38);
-  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 50);
+  assert.equal(benchmarkIds.length, 39);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 52);
 
   const profileIds = [];
   for (const benchmarkId of benchmarkIds) {
@@ -236,10 +240,10 @@ test("retains public-task profiles for every open family and format archetypes f
     }
   }
   assert.equal(new Set(profileIds).size, profileIds.length);
-  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 2).length, 12);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 2).length, 13);
   assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 1).length, 26);
-  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].some((profile) => profile.sourceKind === "public-task")).length, 36);
-  assert.equal(Object.values(modelBenchmarkSamples).flat().filter((profile) => profile.sourceKind === "public-task").length, 46);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].some((profile) => profile.sourceKind === "public-task")).length, 37);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().filter((profile) => profile.sourceKind === "public-task").length, 48);
 
   for (const benchmarkId of ["hle", "gpqa-diamond"]) {
     assert.ok(modelBenchmarkSamples[benchmarkId].every((profile) => profile.sourceKind === "format-archetype" && profile.sourceId === null));
@@ -250,6 +254,7 @@ test("retains public-task profiles for every open family and format archetypes f
   assert.deepEqual(benchmarkIds.filter((id) => modelBenchmarkSampleContext[id].format === "harbor").sort(), [
     "deepswe",
     "frontierswe",
+    "frontierswe-v2",
     "swe-marathon",
     "terminal-bench-2-1",
     "terminal-bench-3",
@@ -263,6 +268,8 @@ test("records complete upstream filesystem metadata for Harbor sample tasks", as
   assert.deepEqual(Object.keys(modelBenchmarkTaskFilesystems).sort(), [
     "deepswe-abs-module-cache",
     "frontierswe-cranelift-codegen",
+    "frontierswe-v2-astronomy-toolkit",
+    "frontierswe-v2-snooker-prediction",
     "swe-marathon-biofabric-rust",
     "tb-science-cell-lineage",
     "tb-science-reactor-control",
@@ -276,6 +283,8 @@ test("records complete upstream filesystem metadata for Harbor sample tasks", as
 
   const deepSwe = modelBenchmarkTaskFilesystems["deepswe-abs-module-cache"];
   const frontierSwe = modelBenchmarkTaskFilesystems["frontierswe-cranelift-codegen"];
+  const frontierSweV2Astronomy = modelBenchmarkTaskFilesystems["frontierswe-v2-astronomy-toolkit"];
+  const frontierSweV2Snooker = modelBenchmarkTaskFilesystems["frontierswe-v2-snooker-prediction"];
   const financial = modelBenchmarkTaskFilesystems["terminal-financial-documents"];
   const sweMarathon = modelBenchmarkTaskFilesystems["swe-marathon-biofabric-rust"];
   const tb3Biped = modelBenchmarkTaskFilesystems["tb3-biped-contact-dynamics"];
@@ -299,6 +308,22 @@ test("records complete upstream filesystem metadata for Harbor sample tasks", as
   assert.equal(frontierSwe.entries.filter((entry) => entry.kind === "directory").length, 63);
   assert.equal(frontierSwe.entries.find((entry) => entry.path === "instruction.md")?.sizeBytes, 470);
   assert.equal(frontierSwe.entries.find((entry) => entry.path === "task.toml")?.sizeBytes, 48);
+  assert.equal(frontierSweV2Astronomy.treeSha, "9e3f71cac38ef3d7e14a41b361c7b2b54c59899b");
+  assert.equal(frontierSweV2Astronomy.verifiedAt, "2026-09-03");
+  assert.equal(frontierSweV2Astronomy.entries.filter((entry) => entry.kind === "file").length, 37);
+  assert.equal(frontierSweV2Astronomy.entries.filter((entry) => entry.kind === "directory").length, 7);
+  assert.equal(frontierSweV2Astronomy.entries.find((entry) => entry.path === "instruction.md")?.sizeBytes, 753);
+  assert.equal(frontierSweV2Astronomy.entries.find((entry) => entry.path === "environment/workspace/README.md")?.role, "input-artifact");
+  assert.equal(frontierSweV2Astronomy.entries.find((entry) => entry.path === "environment/tests/test.sh")?.role, "verifier");
+  assert.equal(frontierSweV2Astronomy.entries.find((entry) => entry.path === "solution/oracle_localizer.py")?.role, "reference-solution");
+  assert.equal(frontierSweV2Snooker.treeSha, "9e3f71cac38ef3d7e14a41b361c7b2b54c59899b");
+  assert.equal(frontierSweV2Snooker.verifiedAt, "2026-09-03");
+  assert.equal(frontierSweV2Snooker.entries.filter((entry) => entry.kind === "file").length, 54);
+  assert.equal(frontierSweV2Snooker.entries.filter((entry) => entry.kind === "directory").length, 8);
+  assert.equal(frontierSweV2Snooker.entries.find((entry) => entry.path === "instruction.md")?.sizeBytes, 707);
+  assert.equal(frontierSweV2Snooker.entries.find((entry) => entry.path === "environment/workspace/data/videos/clip_000_observe_0_3.mp4")?.sizeBytes, 473742);
+  assert.equal(frontierSweV2Snooker.entries.find((entry) => entry.path === "environment/workspace/data/videos/clip_000_observe_0_3.mp4")?.role, "input-artifact");
+  assert.equal(frontierSweV2Snooker.entries.find((entry) => entry.path === "environment/tests/private_annotations.csv")?.role, "verifier");
   assert.equal(sweMarathon.treeSha, "b71463259da6968db14383abb6ec646ead170185");
   assert.equal(sweMarathon.entries.filter((entry) => entry.kind === "file").length, 126);
   assert.equal(sweMarathon.entries.filter((entry) => entry.kind === "directory").length, 37);

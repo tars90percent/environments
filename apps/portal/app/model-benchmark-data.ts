@@ -65,7 +65,7 @@ export type AggregateBenchmarkReference = {
   }>;
 };
 
-export const benchmarkReferenceVerifiedAt = "2026-09-02";
+export const benchmarkReferenceVerifiedAt = "2026-09-03";
 
 export const benchmarkReferenceCategories = [
   {
@@ -720,6 +720,29 @@ export const modelBenchmarks = [
       links: [
         { label: { en: "Leaderboard", zh: "排行榜" }, url: "https://www.frontierswe.com/" },
         { label: { en: "Repository", zh: "代码仓库" }, url: "https://github.com/Proximal-Labs/frontier-swe" },
+      ],
+    },
+    {
+      id: "frontierswe-v2",
+      name: "FrontierSWE v2",
+      aliases: ["Frontier SWE v2"],
+      creators: { en: "Rishyanth Kondra, Sanket Mhatre, Akshit Kumar, Evan Chu, Bilal Bakht Ahmad et al.", zh: "Rishyanth Kondra、Sanket Mhatre、Akshit Kumar、Evan Chu、Bilal Bakht Ahmad 等人" },
+      publisher: "Proximal",
+      categoryId: "software-engineering",
+      version: "v2",
+      versionNote: {
+        en: "The September 2026 release adds 21 challenges and retires four v1 tasks, expanding the benchmark to 34 tasks with 20-hour agent budgets.",
+        zh: "2026 年 9 月版本新增 21 项挑战并移除 4 项 v1 任务，将基准扩展至 34 项任务，每次智能体运行时限为 20 小时。",
+      },
+      summary: { en: "Ultra-long-horizon system implementation, scientific computing, performance-optimization, visual-reasoning, and AI-research tasks.", zh: "覆盖系统实现、科学计算、性能优化、视觉推理与 AI 研究的超长时程任务。" },
+      questionCount: { en: "34 tasks", zh: "34 项任务" },
+      responseType: { en: "Repository changes and technical artifacts", zh: "代码库修改与技术产物" },
+      scoring: { en: "Continuous 0–1 task scores with aggregate normalized reporting", zh: "任务连续得分范围为 0–1，并汇总为归一化结果" },
+      access: "public",
+      links: [
+        { label: { en: "V2 blog post", zh: "V2 博客" }, url: "https://www.frontierswe.com/blog/v2" },
+        { label: { en: "Task catalog", zh: "任务目录" }, url: "https://www.frontierswe.com/tasks" },
+        { label: { en: "Repository", zh: "代码仓库" }, url: "https://github.com/Proximal-Labs/frontier-swe-v2" },
       ],
     },
     {
