@@ -67,6 +67,17 @@ async function modelBenchmarkSamplesModule() {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
 }
 
+async function modelBenchmarkExplanationsModule() {
+  const result = await buildModule({
+    entryPoints: [new URL("../app/model-benchmark-explanations.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+}
+
 async function modelBenchmarkFilesystemsModule() {
   const result = await buildModule({
     entryPoints: [new URL("../app/model-benchmark-filesystems.ts", import.meta.url).pathname],
@@ -129,6 +140,14 @@ test("requires an authenticated researcher session", async () => {
   );
   assert.equal(modelTaskResponse.status, 307);
   assert.equal(new URL(modelTaskResponse.headers.get("location"), "http://localhost").pathname, "/auth/login");
+
+  const modelExplanationResponse = await app.fetch(
+    new Request("http://localhost/model-benchmarks/frontierswe", { headers: { accept: "text/html" } }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(modelExplanationResponse.status, 307);
+  assert.equal(new URL(modelExplanationResponse.headers.get("location"), "http://localhost").pathname, "/auth/login");
 });
 
 test("records standalone benchmark families separately from aggregate indexes", async () => {
@@ -171,6 +190,7 @@ test("records standalone benchmark families separately from aggregate indexes", 
   ]);
   assert.deepEqual(modelBenchmarks.find((benchmark) => benchmark.id === "terminal-bench")?.versions.map((version) => version.id), ["v4.0.0", "v3.0.0", "v2.1", "v2.0", "v1.0"]);
   assert.deepEqual(modelBenchmarks.find((benchmark) => benchmark.id === "frontierswe")?.versions.map((version) => version.id), ["v2", "v1"]);
+  assert.deepEqual(modelBenchmarks.find((benchmark) => benchmark.id === "omnidocbench")?.versions.map((version) => version.id), ["v1.7", "v1.6", "v1.5", "v1.0"]);
   assert.equal(modelBenchmarks.find((benchmark) => benchmark.id === "terminal-bench-science")?.name, "Terminal-Bench-Science");
   assert.equal(findModelBenchmark("terminal-bench-3")?.id, "terminal-bench");
   assert.equal(findModelBenchmark("frontierswe-v2")?.id, "frontierswe");
@@ -222,6 +242,33 @@ test("ships attributed official leaderboard snapshots for selected benchmark det
     assert.deepEqual([...image.subarray(0, 3)], [255, 216, 255]);
     assert.ok(image.length > 40_000);
   }
+});
+
+test("provides a bilingual source-grounded explanation for every benchmark family", async () => {
+  const { modelBenchmarks } = await modelBenchmarkDataModule();
+  const { modelBenchmarkExplanations, modelBenchmarkExplanationVerifiedAt } = await modelBenchmarkExplanationsModule();
+
+  assert.equal(modelBenchmarkExplanationVerifiedAt, "2026-09-03");
+  assert.deepEqual(Object.keys(modelBenchmarkExplanations).sort(), modelBenchmarks.map((benchmark) => benchmark.id).sort());
+
+  for (const benchmark of modelBenchmarks) {
+    const explanation = modelBenchmarkExplanations[benchmark.id];
+    for (const field of ["orientation", "distribution", "difficulty", "time", "interpretation"]) {
+      assert.ok(explanation[field].en.length >= 80, `${benchmark.id} ${field} needs a substantive English explanation`);
+      assert.ok(explanation[field].zh.length >= 30, `${benchmark.id} ${field} needs a substantive Chinese explanation`);
+    }
+    assert.equal(explanation.failureModes.en.length, 3);
+    assert.equal(explanation.failureModes.zh.length, 3);
+    assert.ok(explanation.failureModes.en.every((entry) => entry.length >= 30));
+    assert.ok(explanation.failureModes.zh.every((entry) => entry.length >= 12));
+    assert.ok(explanation.sourceUrls.length >= 2);
+    assert.ok(explanation.sourceUrls.every((url) => url.startsWith("https://")));
+  }
+
+  assert.match(modelBenchmarkExplanations.frontierswe.time.en, /twenty hours/i);
+  assert.match(modelBenchmarkExplanations["gdpval-aa-v2"].time.en, /seven hours/i);
+  assert.match(modelBenchmarkExplanations.browsecomp.time.en, /two hours/i);
+  assert.match(modelBenchmarkExplanations.exploitgym.interpretation.en, /dual-use/i);
 });
 
 test("retains version-scoped public-task profiles for benchmark families", async () => {
@@ -534,6 +581,22 @@ test("opens benchmark task profiles directly instead of expanding an inline anal
   assert.match(detailSource, /aria-current=\{entry\.id === sample\.id \? "page" : undefined\}/);
 });
 
+test("opens one source-grounded explanation page per benchmark family", async () => {
+  const catalogSource = await readFile(new URL("../app/model-benchmark-reference.tsx", import.meta.url), "utf8");
+  const explanationSource = await readFile(new URL("../app/model-benchmark-explanation.tsx", import.meta.url), "utf8");
+  const routeSource = await readFile(new URL("../app/model-benchmarks/[benchmarkId]/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(catalogSource, /className="benchmark-explanation-link"/);
+  assert.match(catalogSource, /\/model-benchmarks\/\$\{benchmark\.id\}`/);
+  assert.match(explanationSource, /explanation\.distribution\[language\]/);
+  assert.match(explanationSource, /explanation\.failureModes\[language\]/);
+  assert.match(explanationSource, /explanation\.sourceUrls\.map/);
+  assert.match(explanationSource, /modelBenchmarkExplanationVerifiedAt/);
+  assert.match(routeSource, /initialView="model-explanation"/);
+  assert.match(styles, /\.model-explanation-body \{[^}]*grid-template-columns:/);
+});
+
 test("keeps the benchmark catalog heading and cards minimal", async () => {
   const source = await readFile(new URL("../app/model-benchmark-reference.tsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -552,13 +615,14 @@ test("keeps the benchmark catalog heading and cards minimal", async () => {
 test("uses the site soundwave and name in browser metadata", async () => {
   const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
   const catalogPage = await readFile(new URL("../app/model-benchmarks/page.tsx", import.meta.url), "utf8");
+  const explanationPage = await readFile(new URL("../app/model-benchmarks/[benchmarkId]/page.tsx", import.meta.url), "utf8");
   const taskPage = await readFile(new URL("../app/model-benchmarks/[benchmarkId]/tasks/[sampleId]/page.tsx", import.meta.url), "utf8");
   const soundwaveSvg = await readFile(new URL("../public/soundwave-icon.svg", import.meta.url), "utf8");
   const favicon = await readFile(new URL("../public/favicon.png", import.meta.url));
   const appleIcon = await readFile(new URL("../public/apple-touch-icon.png", import.meta.url));
   const soundwaveIcon = await readFile(new URL("../public/soundwave-icon.png", import.meta.url));
 
-  for (const source of [layout, catalogPage, taskPage]) assert.match(source, /title: "Environment Resource Management"/);
+  for (const source of [layout, catalogPage, explanationPage, taskPage]) assert.match(source, /title: "Environment Resource Management"/);
   assert.match(layout, /soundwave-icon\.svg/);
   assert.match(layout, /soundwave-icon\.png/);
   assert.doesNotMatch(layout, /octopus-icon/);

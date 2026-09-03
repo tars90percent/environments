@@ -21,13 +21,15 @@ import {
 } from "./benchmark-landscape";
 import { groupSubmissionTasks, type SubmissionTaskGroup } from "./task-groups";
 import { findModelBenchmark } from "./model-benchmark-data";
+import type { ModelBenchmarkExplanation } from "./model-benchmark-explanations";
+import { ModelBenchmarkExplanationPage } from "./model-benchmark-explanation";
 import { modelBenchmarkSamples } from "./model-benchmark-samples";
 import { ModelBenchmarkReferencePage } from "./model-benchmark-reference";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
 import { MiniMaxMark } from "./minimax-mark";
 
 type Language = "zh" | "en";
-type PortalView = "benchmarks" | "vendors" | "model-benchmarks" | "model-task";
+type PortalView = "benchmarks" | "vendors" | "model-benchmarks" | "model-explanation" | "model-task";
 
 export type PortalUser = {
   name: string;
@@ -186,15 +188,17 @@ const phaseLabels: Record<HarborCheckPhase, string> = {
 const TASK_GROUP_THRESHOLD = 100;
 const TASK_BATCH_SIZE = 50;
 
-export default function PortalClient({ user, initialCatalog, localPreview = false, initialView = "benchmarks", initialModelTask }: {
+export default function PortalClient({ user, initialCatalog, localPreview = false, initialView = "benchmarks", initialModelBenchmarkId, initialModelExplanation, initialModelTask }: {
   user: PortalUser;
   initialCatalog?: CatalogSnapshot;
   localPreview?: boolean;
   initialView?: PortalView;
+  initialModelBenchmarkId?: string;
+  initialModelExplanation?: ModelBenchmarkExplanation;
   initialModelTask?: { benchmarkId: string; sampleId: string };
 }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(initialCatalog ?? null);
-  const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog || initialView === "model-benchmarks" || initialView === "model-task" ? "ready" : "loading");
+  const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog || initialView === "model-benchmarks" || initialView === "model-explanation" || initialView === "model-task" ? "ready" : "loading");
   const [language, setLanguage] = useState<Language>("zh");
   const [view, setView] = useState<PortalView>(initialView);
   const [query, setQuery] = useState("");
@@ -207,7 +211,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   }, [language]);
 
   useEffect(() => {
-    if (initialCatalog || catalog || view === "model-benchmarks" || view === "model-task") return;
+    if (initialCatalog || catalog || view === "model-benchmarks" || view === "model-explanation" || view === "model-task") return;
     let active = true;
     void fetch("/api/catalog", { cache: "no-store", headers: { accept: "application/json" } })
       .then(async (response) => {
@@ -261,7 +265,9 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   }, [query, vendors]);
   const selectedVendor = matchingVendors.find((vendor) => vendor.id === selectedVendorId) ?? matchingVendors[0];
   const selectedBenchmarkCategory = landscape?.categories.find((category) => category.id === selectedBenchmark?.categoryId);
-  const initialModelBenchmark = initialModelTask ? findModelBenchmark(initialModelTask.benchmarkId) : undefined;
+  const initialModelBenchmark = initialModelTask
+    ? findModelBenchmark(initialModelTask.benchmarkId)
+    : initialModelBenchmarkId ? findModelBenchmark(initialModelBenchmarkId) : undefined;
   const initialModelSample = initialModelTask && initialModelBenchmark ? modelBenchmarkSamples[initialModelBenchmark.id]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
   const headerTitle = view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
   const headerIntro = view === "model-benchmarks" ? null : view === "benchmarks" ? selectedBenchmark
@@ -303,17 +309,17 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
         <button className={view === "benchmarks" ? "active" : ""} onClick={showBenchmarks} type="button">{t.benchmarks}</button>
         <button className={view === "vendors" ? "active" : ""} onClick={() => showVendors()} type="button">{t.byVendor}</button>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a className={view === "model-benchmarks" || view === "model-task" ? "active" : ""} href="/model-benchmarks" onClick={(event) => { event.preventDefault(); showModelBenchmarks(); }}>{t.modelBenchmarks}</a>
+        <a className={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? "active" : ""} href="/model-benchmarks" onClick={(event) => { event.preventDefault(); showModelBenchmarks(); }}>{t.modelBenchmarks}</a>
       </nav>
       <div className="header-tools">
-        <label className={`global-search${view === "model-task" ? " model-task-search" : ""}`}><span aria-hidden>⌕</span><input aria-label={view === "model-benchmarks" || view === "model-task" ? t.searchModelBenchmarks : t.search} disabled={view === "model-task"} onChange={(event) => setQuery(event.target.value)} placeholder={view === "model-benchmarks" || view === "model-task" ? t.searchModelBenchmarks : t.search} value={query} /></label>
+        <label className={`global-search${view === "model-explanation" || view === "model-task" ? " model-task-search" : ""}`}><span aria-hidden>⌕</span><input aria-label={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? t.searchModelBenchmarks : t.search} disabled={view === "model-explanation" || view === "model-task"} onChange={(event) => setQuery(event.target.value)} placeholder={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? t.searchModelBenchmarks : t.search} value={query} /></label>
         <button className="language-switch" onClick={() => setLanguage(language === "zh" ? "en" : "zh")} type="button">{language === "zh" ? "EN" : "中"}</button>
         <details className="account-menu"><summary className="avatar">{user.avatarUrl ? <Image alt="" height={38} src={user.avatarUrl} unoptimized width={38} /> : user.name.slice(0, 1).toUpperCase()}</summary><div className="account-popover"><strong>{user.name}</strong><a href="/auth/logout">{t.signOut}</a></div></details>
       </div>
     </header>
 
     <main id="top">
-    {view !== "model-task" && <section className={`registry-header${view === "model-benchmarks" ? " model-benchmark-header" : ""}`}>
+    {view !== "model-task" && view !== "model-explanation" && <section className={`registry-header${view === "model-benchmarks" ? " model-benchmark-header" : ""}`}>
       {view === "benchmarks" && selectedBenchmark && <button className="landscape-back registry-back" onClick={showBenchmarks} type="button"><span aria-hidden>←</span>{t.backToLandscape}</button>}
       {view !== "model-benchmarks" && <div className="eyebrow">{view === "benchmarks" && selectedBenchmarkCategory ? selectedBenchmarkCategory.label[language] : t.eyebrow}</div>}
       <h1>{headerTitle}</h1>
@@ -331,9 +337,10 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     </section>}
 
     <div className="page-body">
-    {view !== "model-benchmarks" && view !== "model-task" && state === "loading" && <StateCard>{t.loading}</StateCard>}
-    {view !== "model-benchmarks" && view !== "model-task" && state === "unavailable" && <StateCard>{t.unavailable}</StateCard>}
+    {view !== "model-benchmarks" && view !== "model-explanation" && view !== "model-task" && state === "loading" && <StateCard>{t.loading}</StateCard>}
+    {view !== "model-benchmarks" && view !== "model-explanation" && view !== "model-task" && state === "unavailable" && <StateCard>{t.unavailable}</StateCard>}
     {view === "model-benchmarks" && <ModelBenchmarkReferencePage language={language} localPreview={localPreview} query={query} />}
+    {view === "model-explanation" && initialModelBenchmark && initialModelExplanation && <ModelBenchmarkExplanationPage benchmark={initialModelBenchmark} explanation={initialModelExplanation} language={language} localPreview={localPreview} />}
     {view === "model-task" && initialModelBenchmark && initialModelSample && <ModelBenchmarkTaskDetail benchmark={initialModelBenchmark} language={language} localPreview={localPreview} sample={initialModelSample} />}
     {state === "ready" && view === "benchmarks" && landscape && !selectedBenchmark && <BenchmarkOverview categories={matchingBenchmarkCategories} language={language} onSelect={(benchmarkId) => { setSelectedBenchmarkId(benchmarkId); setQuery(""); scrollToTop(); }} totalTasks={landscape.taskCount} />}
     {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}

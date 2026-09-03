@@ -40,6 +40,8 @@ Represent one benchmark family as one catalog entry and show its current release
 
 Associate sample profiles and aggregate-index components with the exact benchmark version they represent. Feature samples from the current release when public evidence supports them; retain older samples as clearly labeled history rather than presenting them as current.
 
+Give each benchmark family one current, source-grounded explanation page. Synthesize the domain, task distribution, difficulty, reported human or agent time, recurring failure modes, and the limits of score interpretation from primary papers, repositories, and release notes. Say when a useful time baseline is not published, keep version-dependent claims explicit, link the sources and verification date, and paraphrase rather than reproducing protected benchmark material.
+
 CASE lives in `apps/case` and the portal in `apps/portal`. They share this repository but have independent deployments and secrets. Never expose production credentials to vendor material or external evaluation systems.
 
 This root `AGENTS.md` is the only source-controlled agent policy and is packaged into CASE. Do not add application-level copies. Verify affected deployments before calling a change live, and deploy CASE first when the portal depends on a CASE change.

@@ -31,6 +31,7 @@ const copy = {
     toolUse: "Tool use",
     noToolUse: "No external tools",
     currentVersion: "Version / release",
+    understandBenchmark: "Understand this benchmark",
     releaseHistory: "Release history",
     currentRelease: "Current",
     scoresNotComparable: "Not directly comparable",
@@ -87,6 +88,7 @@ const copy = {
     toolUse: "使用工具",
     noToolUse: "不使用外部工具",
     currentVersion: "版本 / 发布",
+    understandBenchmark: "了解这个 Benchmark",
     releaseHistory: "版本历史",
     currentRelease: "当前版本",
     scoresNotComparable: "分数不可直接比较",
@@ -213,6 +215,9 @@ function ModelBenchmarkCard({ benchmark, language, localPreview }: {
       <div><dt>{t.items}</dt><dd><strong>{benchmark.questionCount[language]}</strong>{benchmark.responseType ? <span>{benchmark.responseType[language]}</span> : null}</dd></div>
       {benchmark.repeats !== undefined ? <div><dt>{t.runs}</dt><dd><strong>{benchmark.repeats} {benchmark.repeats === 1 ? t.oneRepeat : t.repeats}</strong>{benchmark.scoring ? <span>{benchmark.scoring[language]}</span> : null}</dd></div> : null}
     </dl>
+    <a className="benchmark-explanation-link" href={`${localPreview ? "/local-preview" : ""}/model-benchmarks/${benchmark.id}`}>
+      <span><small>{t.currentVersion}</small><strong>{t.understandBenchmark}</strong></span><i aria-hidden>→</i>
+    </a>
     {samples.length > 0 ? <a
       className="benchmark-sample-trigger"
       href={`${localPreview ? "/local-preview" : ""}/model-benchmarks/${benchmark.id}/tasks/${samples[0].id}`}
