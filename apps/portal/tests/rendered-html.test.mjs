@@ -132,7 +132,7 @@ test("requires an authenticated researcher session", async () => {
 });
 
 test("records standalone benchmark families separately from aggregate indexes", async () => {
-  const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, modelBenchmarks } = await modelBenchmarkDataModule();
+  const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, findModelBenchmark, modelBenchmarks } = await modelBenchmarkDataModule();
 
   assert.equal(artificialAnalysisIndex.version, "4.1.1");
   assert.equal(artificialAnalysisIndex.releasedAt, "2026-08-06");
@@ -142,7 +142,7 @@ test("records standalone benchmark families separately from aggregate indexes", 
   assert.equal(artificialAnalysisIndex.components.reduce((total, component) => total + component.weight, 0), 100);
   assert.ok(artificialAnalysisIndex.links.every((link) => link.url.startsWith("https://artificialanalysis.ai/")));
 
-  assert.equal(modelBenchmarks.length, 42);
+  assert.equal(modelBenchmarks.length, 39);
   assert.equal(benchmarkReferenceCategories.length, 8);
   const ids = modelBenchmarks.map((benchmark) => benchmark.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -150,26 +150,30 @@ test("records standalone benchmark families separately from aggregate indexes", 
     "professional-work": 3,
     "tools-computer-use": 7,
     "web-research": 2,
-    "software-engineering": 12,
+    "software-engineering": 9,
     "model-training": 1,
     "science-knowledge": 6,
     "documents-vision": 8,
     cybersecurity: 3,
   });
-  assert.deepEqual(Object.fromEntries(modelBenchmarks.filter((benchmark) => ["spreadsheetbench", "posttrainbench", "cursorbench", "terminal-bench-2-1", "officeqa-pro"].includes(benchmark.id)).map((benchmark) => [benchmark.id, benchmark.categoryId])), {
+  assert.deepEqual(Object.fromEntries(modelBenchmarks.filter((benchmark) => ["spreadsheetbench", "posttrainbench", "cursorbench", "terminal-bench", "officeqa-pro"].includes(benchmark.id)).map((benchmark) => [benchmark.id, benchmark.categoryId])), {
     spreadsheetbench: "professional-work",
     posttrainbench: "model-training",
     cursorbench: "software-engineering",
-    "terminal-bench-2-1": "software-engineering",
+    "terminal-bench": "software-engineering",
     "officeqa-pro": "documents-vision",
   });
-  assert.deepEqual(modelBenchmarks.filter((benchmark) => ["gdpval-aa-v2", "terminal-bench-2-1", "hle", "gpqa-diamond"].includes(benchmark.id)).map((benchmark) => benchmark.name), [
+  assert.deepEqual(modelBenchmarks.filter((benchmark) => ["gdpval-aa-v2", "terminal-bench", "hle", "gpqa-diamond"].includes(benchmark.id)).map((benchmark) => benchmark.name), [
     "GDPval", "Terminal-Bench", "Humanity's Last Exam", "GPQA",
   ]);
-  assert.deepEqual(modelBenchmarks.filter((benchmark) => ["frontierswe", "frontierswe-v2"].includes(benchmark.id)).map((benchmark) => [benchmark.name, benchmark.questionCount.en]), [
-    ["FrontierSWE", "17 tasks"],
-    ["FrontierSWE v2", "34 tasks"],
+  assert.deepEqual(modelBenchmarks.filter((benchmark) => benchmark.id === "frontierswe").map((benchmark) => [benchmark.name, benchmark.version, benchmark.questionCount.en]), [
+    ["FrontierSWE", "v2", "34 tasks"],
   ]);
+  assert.deepEqual(modelBenchmarks.find((benchmark) => benchmark.id === "terminal-bench")?.versions.map((version) => version.id), ["v4.0.0", "v3.0.0", "v2.1", "v2.0", "v1.0"]);
+  assert.deepEqual(modelBenchmarks.find((benchmark) => benchmark.id === "frontierswe")?.versions.map((version) => version.id), ["v2", "v1"]);
+  assert.equal(modelBenchmarks.find((benchmark) => benchmark.id === "terminal-bench-science")?.name, "Terminal-Bench-Science");
+  assert.equal(findModelBenchmark("terminal-bench-3")?.id, "terminal-bench");
+  assert.equal(findModelBenchmark("frontierswe-v2")?.id, "frontierswe");
   assert.ok(artificialAnalysisIndex.components.every((component) => ids.includes(component.benchmarkId)));
 
   for (const benchmark of modelBenchmarks) {
@@ -179,6 +183,11 @@ test("records standalone benchmark families separately from aggregate indexes", 
     assert.ok(benchmark.summary.en.length > 0 && benchmark.summary.zh.length > 0);
     assert.ok(benchmark.questionCount.en.length > 0 && benchmark.questionCount.zh.length > 0);
     assert.ok(!Object.hasOwn(benchmark, "weight"));
+    if (benchmark.versions) {
+      assert.ok(benchmark.versions.length > 1);
+      assert.ok(benchmark.versions.some((version) => version.id === benchmark.currentVersionId));
+      assert.ok(benchmark.versions.every((version) => version.sourceUrl.startsWith("https://")));
+    }
   }
 });
 
@@ -187,7 +196,7 @@ test("ships attributed official leaderboard snapshots for selected benchmark det
   const benchmarksWithSnapshots = modelBenchmarks.filter((benchmark) => benchmark.leaderboardSnapshots?.length);
 
   assert.deepEqual(benchmarksWithSnapshots.map((benchmark) => benchmark.id), [
-    "terminal-bench-2-1",
+    "terminal-bench",
     "hle",
     "critpt",
     "agents-last-exam",
@@ -215,35 +224,48 @@ test("ships attributed official leaderboard snapshots for selected benchmark det
   }
 });
 
-test("retains public-task profiles for every open family and format archetypes for gated families", async () => {
+test("retains version-scoped public-task profiles for benchmark families", async () => {
   const { modelBenchmarks } = await modelBenchmarkDataModule();
-  const { modelBenchmarkSamples, modelBenchmarkSampleContext } = await modelBenchmarkSamplesModule();
+  const { featuredModelBenchmarkSamples, modelBenchmarkSamples, modelBenchmarkSampleContext } = await modelBenchmarkSamplesModule();
   const benchmarkIds = Object.keys(modelBenchmarkSamples);
 
   assert.deepEqual(Object.keys(modelBenchmarkSampleContext).sort(), benchmarkIds.toSorted());
   assert.ok(benchmarkIds.every((id) => modelBenchmarks.some((benchmark) => benchmark.id === id)));
-  assert.equal(benchmarkIds.length, 39);
-  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 52);
+  assert.equal(benchmarkIds.length, 36);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().length, 53);
 
   const profileIds = [];
   for (const benchmarkId of benchmarkIds) {
     const profiles = modelBenchmarkSamples[benchmarkId];
-    assert.ok([1, 2].includes(profiles.length), `${benchmarkId} should have one or two profiles`);
+    assert.ok([1, 2, 3, 6].includes(profiles.length), `${benchmarkId} should have version-scoped profiles`);
     for (const profile of profiles) {
       profileIds.push(profile.id);
       assert.ok(profile.sourceUrl.startsWith("https://"));
       assert.equal(profile.capabilities.en.length, 3);
       assert.equal(profile.capabilities.zh.length, 3);
-      assert.deepEqual(Object.keys(profile).sort(), [
+      assert.deepEqual(Object.keys(profile).filter((key) => !["lineage", "versionId"].includes(key)).sort(), [
         "capabilities", "evaluation", "expectedOutput", "id", "inputs", "objective", "sourceId", "sourceKind", "sourceLabel", "sourceUrl", "title",
       ].sort());
+      if (profile.versionId) assert.ok(modelBenchmarks.find((benchmark) => benchmark.id === benchmarkId)?.versions?.some((version) => version.id === profile.versionId));
     }
   }
   assert.equal(new Set(profileIds).size, profileIds.length);
-  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 2).length, 13);
-  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 1).length, 26);
-  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].some((profile) => profile.sourceKind === "public-task")).length, 37);
-  assert.equal(Object.values(modelBenchmarkSamples).flat().filter((profile) => profile.sourceKind === "public-task").length, 48);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 2).length, 10);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].length === 1).length, 24);
+  assert.equal(benchmarkIds.filter((id) => modelBenchmarkSamples[id].some((profile) => profile.sourceKind === "public-task")).length, 34);
+  assert.equal(Object.values(modelBenchmarkSamples).flat().filter((profile) => profile.sourceKind === "public-task").length, 49);
+  assert.deepEqual(featuredModelBenchmarkSamples(modelBenchmarks.find((benchmark) => benchmark.id === "frontierswe")).map((profile) => profile.id), [
+    "frontierswe-v2-snooker-prediction",
+    "frontierswe-v2-astronomy-toolkit",
+  ]);
+  assert.deepEqual(featuredModelBenchmarkSamples(modelBenchmarks.find((benchmark) => benchmark.id === "terminal-bench")).map((profile) => profile.id), [
+    "tb4-freecad-impeller",
+    "tb4-formal-crypto",
+  ]);
+  assert.deepEqual(featuredModelBenchmarkSamples(modelBenchmarks.find((benchmark) => benchmark.id === "spreadsheetbench")).map((profile) => profile.id), [
+    "spreadsheetbench-v2-pepsico-valuation",
+  ]);
+  assert.deepEqual(featuredModelBenchmarkSamples(modelBenchmarks.find((benchmark) => benchmark.id === "osworld")), []);
 
   for (const benchmarkId of ["hle", "gpqa-diamond"]) {
     assert.ok(modelBenchmarkSamples[benchmarkId].every((profile) => profile.sourceKind === "format-archetype" && profile.sourceId === null));
@@ -254,11 +276,8 @@ test("retains public-task profiles for every open family and format archetypes f
   assert.deepEqual(benchmarkIds.filter((id) => modelBenchmarkSampleContext[id].format === "harbor").sort(), [
     "deepswe",
     "frontierswe",
-    "frontierswe-v2",
     "swe-marathon",
-    "terminal-bench-2-1",
-    "terminal-bench-3",
-    "terminal-bench-4",
+    "terminal-bench",
     "terminal-bench-science",
   ]);
 });
@@ -381,7 +400,7 @@ test("maps every non-Harbor task to an agent-input view", async () => {
   const { modelBenchmarkNativeTaskRecords } = await modelBenchmarkNativeRecordsModule();
 
   assert.deepEqual(Object.keys(modelBenchmarkAgentViews).sort(), Object.keys(modelBenchmarkNativeTaskRecords).sort());
-  assert.equal(Object.keys(modelBenchmarkAgentViews).length, 39);
+  assert.equal(Object.keys(modelBenchmarkAgentViews).length, 40);
 
   const tauViews = Object.entries(modelBenchmarkAgentViews).filter(([, view]) => view.kind === "tau-runtime");
   assert.deepEqual(tauViews.map(([sampleId]) => sampleId).sort(), ["tau-banking-card-selection", "tau-banking-credit-limit"]);
@@ -509,7 +528,7 @@ test("opens benchmark task profiles directly instead of expanding an inline anal
   assert.match(source, /href=\{`\$\{localPreview \? "\/local-preview" : ""\}\/model-benchmarks\/\$\{benchmark\.id\}\/tasks\/\$\{samples\[0\]\.id\}`\}/);
   assert.doesNotMatch(source, /expandedBenchmarkId|scrollIntoView|BenchmarkTaskAnalysis/);
   assert.match(styles, /\.benchmark-sample-trigger \{[^}]*text-decoration: none;/);
-  assert.match(detailSource, /const siblingSamples = modelBenchmarkSamples\[benchmark\.id\] \?\? \[sample\]/);
+  assert.match(detailSource, /const siblingSamples = siblingModelBenchmarkSamples\(benchmark, sample\)/);
   assert.match(detailSource, /siblingSamples\.length > 1/);
   assert.match(detailSource, /siblingSamples\.map\(\(entry, index\)/);
   assert.match(detailSource, /aria-current=\{entry\.id === sample\.id \? "page" : undefined\}/);

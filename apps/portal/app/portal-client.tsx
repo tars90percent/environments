@@ -20,7 +20,7 @@ import {
   type HarborTaskContext,
 } from "./benchmark-landscape";
 import { groupSubmissionTasks, type SubmissionTaskGroup } from "./task-groups";
-import { modelBenchmarks } from "./model-benchmark-data";
+import { findModelBenchmark } from "./model-benchmark-data";
 import { modelBenchmarkSamples } from "./model-benchmark-samples";
 import { ModelBenchmarkReferencePage } from "./model-benchmark-reference";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
@@ -261,8 +261,8 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   }, [query, vendors]);
   const selectedVendor = matchingVendors.find((vendor) => vendor.id === selectedVendorId) ?? matchingVendors[0];
   const selectedBenchmarkCategory = landscape?.categories.find((category) => category.id === selectedBenchmark?.categoryId);
-  const initialModelBenchmark = modelBenchmarks.find((benchmark) => benchmark.id === initialModelTask?.benchmarkId);
-  const initialModelSample = initialModelTask ? modelBenchmarkSamples[initialModelTask.benchmarkId]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
+  const initialModelBenchmark = initialModelTask ? findModelBenchmark(initialModelTask.benchmarkId) : undefined;
+  const initialModelSample = initialModelTask && initialModelBenchmark ? modelBenchmarkSamples[initialModelBenchmark.id]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
   const headerTitle = view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
   const headerIntro = view === "model-benchmarks" ? null : view === "benchmarks" ? selectedBenchmark
     ? `${selectedBenchmark.taskCount} ${t.taskRecords} · ${selectedBenchmark.vendorCount} ${t.vendors.toLowerCase()}`

@@ -132,6 +132,19 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .model-benchmark-creators p, .model-benchmark-version p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .model-benchmark-version strong { color: var(--ink); font-size: 10px; font-weight: 640; }
 .model-benchmark-version p { grid-column: 2; }
+.model-benchmark-history { margin-top: 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.model-benchmark-history summary { padding: 9px 0; display: flex; align-items: center; gap: 8px; color: var(--burgundy); cursor: pointer; font-size: 9px; font-weight: 640; list-style-position: inside; }
+.model-benchmark-history summary strong { min-width: 18px; padding: 2px 5px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 8px; text-align: center; }
+.model-benchmark-history ol { margin: 0; padding: 0 0 11px; display: grid; gap: 8px; list-style: none; }
+.model-benchmark-history li { padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.model-benchmark-history li.current { border-color: rgba(126,31,74,.22); background: rgba(189,46,112,.045); }
+.model-benchmark-history li > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.model-benchmark-history li > div strong { color: var(--ink); font-size: 9px; }
+.model-benchmark-history li > div span, .model-benchmark-history li > div em { padding: 2px 5px; border-radius: 999px; background: var(--card); color: var(--faint); font-size: 7px; font-style: normal; font-weight: 620; }
+.model-benchmark-history li > div em { background: var(--burgundy); color: var(--ivory); }
+.model-benchmark-history li p { margin: 6px 0 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.model-benchmark-history li footer { margin-top: 7px; display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--faint); font-size: 7px; }
+.model-benchmark-history li footer a { margin-left: auto; color: var(--burgundy); font-weight: 620; text-decoration: none; }
 .model-benchmark-facts { margin: 18px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .model-benchmark-facts > div { min-width: 0; padding: 13px 10px; border-left: 1px solid var(--line); }
 .model-benchmark-facts > div:first-child { padding-left: 0; border-left: 0; }

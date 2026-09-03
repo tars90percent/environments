@@ -661,6 +661,12 @@ const publisherMaterialManifests: Record<string, PublisherAgentMaterial[]> = {
       zh: "任务 59196 随附的工作簿，其中包含智能体需要写入公式的目标工作表及单元格。",
     }),
   ],
+  "spreadsheetbench-v2-pepsico-valuation": [
+    publisherMaterial("spreadsheetbench-v2-pepsico-valuation", "Financial_Model / 09_01 / PepsiCo workbook", "publisher-file", {
+      en: "The public v2 example workbook containing the source tabs and incomplete valuation worksheet.",
+      zh: "公开 v2 样例工作簿，包含源数据工作表及未完成的估值页。",
+    }),
+  ],
   "swe-bench-pro-nodebb-email-validation": [
     publisherMaterial("swe-bench-pro-nodebb-email-validation", "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan", "publisher-record", {
       en: "The exact public instance row that pins the issue statement, repository revision, and test selection.",

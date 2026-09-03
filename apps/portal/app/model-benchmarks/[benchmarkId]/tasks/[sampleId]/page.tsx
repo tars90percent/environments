@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { modelBenchmarks } from "../../../../model-benchmark-data";
+import { findModelBenchmark } from "../../../../model-benchmark-data";
 import { modelBenchmarkSamples } from "../../../../model-benchmark-samples";
 import PortalClient from "../../../../portal-client";
 import { getPortalSession } from "../../../../feishu-auth";
@@ -14,11 +14,11 @@ export const metadata: Metadata = {
 
 export default async function ModelBenchmarkTaskPage({ params }: { params: Promise<{ benchmarkId: string; sampleId: string }> }) {
   const { benchmarkId, sampleId } = await params;
-  const benchmark = modelBenchmarks.find((entry) => entry.id === benchmarkId);
-  const sample = modelBenchmarkSamples[benchmarkId]?.find((entry) => entry.id === sampleId);
+  const benchmark = findModelBenchmark(benchmarkId);
+  const sample = benchmark ? modelBenchmarkSamples[benchmark.id]?.find((entry) => entry.id === sampleId) : undefined;
   if (!benchmark || !sample) notFound();
 
   const user = await getPortalSession();
   if (!user) redirect("/auth/login");
-  return <PortalClient initialModelTask={{ benchmarkId, sampleId }} initialView="model-task" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
+  return <PortalClient initialModelTask={{ benchmarkId: benchmark.id, sampleId }} initialView="model-task" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
 }

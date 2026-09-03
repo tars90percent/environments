@@ -1,9 +1,11 @@
-import type { BenchmarkReferenceLanguage } from "./model-benchmark-data";
+import type { BenchmarkReferenceLanguage, ModelBenchmarkReference } from "./model-benchmark-data";
 
 type LocalizedText = Record<BenchmarkReferenceLanguage, string>;
 
 export type BenchmarkSampleTask = {
   id: string;
+  versionId?: string;
+  lineage?: "initial" | "added" | "retained" | "revised";
   sourceId: string | null;
   sourceKind: "public-task" | "format-archetype";
   title: LocalizedText;
@@ -38,9 +40,7 @@ export type BenchmarkSampleTaskFormat =
 export const modelBenchmarkSampleContext: Record<string, { format: BenchmarkSampleTaskFormat; originalLanguage: "English" }> = {
   "gdpval-aa-v2": { format: "file-deliverable", originalLanguage: "English" },
   "tau3-banking": { format: "agent-simulation", originalLanguage: "English" },
-  "terminal-bench-2-1": { format: "harbor", originalLanguage: "English" },
-  "terminal-bench-3": { format: "harbor", originalLanguage: "English" },
-  "terminal-bench-4": { format: "harbor", originalLanguage: "English" },
+  "terminal-bench": { format: "harbor", originalLanguage: "English" },
   "terminal-bench-science": { format: "harbor", originalLanguage: "English" },
   scicode: { format: "scientific-code", originalLanguage: "English" },
   "aa-lcr": { format: "long-context-qa", originalLanguage: "English" },
@@ -60,7 +60,6 @@ export const modelBenchmarkSampleContext: Record<string, { format: BenchmarkSamp
   deepswe: { format: "harbor", originalLanguage: "English" },
   "nl2repo-bench": { format: "repository-engineering", originalLanguage: "English" },
   frontierswe: { format: "harbor", originalLanguage: "English" },
-  "frontierswe-v2": { format: "harbor", originalLanguage: "English" },
   programbench: { format: "program-reconstruction", originalLanguage: "English" },
   posttrainbench: { format: "model-training", originalLanguage: "English" },
   spreadsheetbench: { format: "spreadsheet", originalLanguage: "English" },
@@ -79,6 +78,8 @@ export const modelBenchmarkSampleContext: Record<string, { format: BenchmarkSamp
 
 function publicTaskProfile(input: {
   id: string;
+  versionId?: string;
+  lineage?: BenchmarkSampleTask["lineage"];
   sourceId: string;
   title: [string, string];
   objective: [string, string];
@@ -91,6 +92,8 @@ function publicTaskProfile(input: {
 }): BenchmarkSampleTask {
   return {
     id: input.id,
+    ...(input.versionId ? { versionId: input.versionId } : {}),
+    ...(input.lineage ? { lineage: input.lineage } : {}),
     sourceId: input.sourceId,
     sourceKind: "public-task",
     title: { en: input.title[0], zh: input.title[1] },
@@ -224,9 +227,11 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
       sourceUrl: "https://github.com/sierra-research/tau2-bench/blob/main/data/tau2/domains/banking_knowledge/tasks/task_050.json",
     },
   ],
-  "terminal-bench-2-1": [
+  "terminal-bench": [
     {
       id: "terminal-financial-documents",
+      versionId: "v2.1",
+      lineage: "retained",
       sourceId: "financial-document-processor",
       sourceKind: "public-task",
       title: { en: "Financial document processor", zh: "财务文档处理器" },
@@ -255,6 +260,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
     },
     {
       id: "terminal-wal-recovery",
+      versionId: "v2.1",
+      lineage: "retained",
       sourceId: "db-wal-recovery",
       sourceKind: "public-task",
       title: { en: "Recover a database from an encrypted WAL", zh: "从加密 WAL 恢复数据库" },
@@ -281,10 +288,10 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
       sourceLabel: { en: "Official task package", zh: "官方任务包" },
       sourceUrl: "https://github.com/harbor-framework/terminal-bench-2-1/tree/main/tasks/db-wal-recovery",
     },
-  ],
-  "terminal-bench-3": [
     publicTaskProfile({
       id: "tb3-live-database-cutover",
+      versionId: "v3.0.0",
+      lineage: "added",
       sourceId: "live-database-cutover",
       title: ["Zero-downtime live database cutover", "零停机在线数据库切换"],
       objective: ["Migrate a live e-commerce API from MySQL to PostgreSQL without failed requests, stale reads, behavioral drift, or a material latency regression.", "在不中断请求、不产生陈旧读取、不改变外部行为且不显著增加延迟的前提下，将在线电商 API 从 MySQL 迁移到 PostgreSQL。"],
@@ -297,6 +304,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
     }),
     publicTaskProfile({
       id: "tb3-biped-contact-dynamics",
+      versionId: "v3.0.0",
+      lineage: "added",
       sourceId: "biped-contact-dynamics",
       title: ["Generate dynamically consistent biped motions", "生成动力学一致的双足运动"],
       objective: ["Implement a PyDrake trajectory generator that produces walking, jumping, and running motions under visible and hidden physical configurations.", "实现一个 PyDrake 轨迹生成器，在可见与隐藏物理配置下生成行走、跳跃和奔跑动作。"],
@@ -307,10 +316,10 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
       sourceLabel: ["Official TB3 task package", "官方 TB3 任务包"],
       sourceUrl: "https://github.com/harbor-framework/terminal-bench/tree/v3.0.0/tasks/biped-contact-dynamics",
     }),
-  ],
-  "terminal-bench-4": [
     publicTaskProfile({
       id: "tb4-freecad-impeller",
+      versionId: "v4.0.0",
+      lineage: "retained",
       sourceId: "freecad-impeller",
       title: ["Build and edit a parametric impeller", "构建并修改参数化叶轮"],
       objective: ["Create a fully parametric semi-open impeller in FreeCAD, then change only its blade count from twelve to six while preserving the remaining design.", "在 FreeCAD 中创建完整参数化的半开式叶轮，再仅将叶片数量从 12 改为 6，并保持其余设计不变。"],
@@ -323,6 +332,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
     }),
     publicTaskProfile({
       id: "tb4-formal-crypto",
+      versionId: "v4.0.0",
+      lineage: "retained",
       sourceId: "formal-crypto",
       title: ["Reconstruct plaintext for a synthetic academic cipher", "重建合成学术密码的明文"],
       objective: ["Write a general SageMath reconstruction algorithm that uses one synthetic plaintext-ciphertext pair to recover a second sample encrypted under the same hidden key.", "编写通用 SageMath 重建算法，利用一组合成明文—密文样本恢复由同一隐藏密钥加密的第二份样本。"],
@@ -758,6 +769,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
   })],
   osworld: [publicTaskProfile({
     id: "osworld-fill-down-calc",
+    versionId: "v1.0",
+    lineage: "initial",
     sourceId: "01b269ae-2111-4a07-81fd-3fcd711993b0",
     title: ["Fill blank spreadsheet cells in LibreOffice", "在 LibreOffice 中向下填充空白单元格"],
     objective: ["Use the desktop interface to fill a specified rectangular range so every blank cell inherits the value immediately above it, without altering unrelated cells.", "使用桌面界面填充指定矩形区域，使每个空白单元格继承其正上方数值，同时不改动无关区域。"],
@@ -818,6 +831,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
   })],
   deepswe: [publicTaskProfile({
     id: "deepswe-abs-module-cache",
+    versionId: "v1.1",
+    lineage: "retained",
     sourceId: "abs-module-cache-flags",
     title: ["Deterministic ABS module loading", "确定性的 ABS 模块加载"],
     objective: ["Extend the ABS language runtime with deterministic module discovery and caching, cycle detection, debug tracing, and script-mode CLI flags.", "扩展 ABS 语言运行时，实现确定性模块发现与缓存、循环依赖检测、调试追踪及脚本模式命令行参数。"],
@@ -842,6 +857,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
   })],
   frontierswe: [publicTaskProfile({
     id: "frontierswe-cranelift-codegen",
+    versionId: "v1",
+    lineage: "initial",
     sourceId: "cranelift-codegen-opt",
     title: ["Optimize Cranelift-generated WebAssembly code", "优化 Cranelift 生成的 WebAssembly 代码"],
     objective: ["Improve Cranelift code generation on a broad WebAssembly benchmark suite while preserving correctness across the supplied programs and inputs.", "在广泛的 WebAssembly Benchmark 套件上改进 Cranelift 代码生成，同时保持所有给定程序与输入的正确性。"],
@@ -851,10 +868,11 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
     capabilities: [["Compiler optimization", "编译器优化"], ["Performance engineering", "性能工程"], ["Long-horizon coding", "长时程编程"]],
     sourceLabel: ["Official task package", "官方任务包"],
     sourceUrl: "https://github.com/Proximal-Labs/frontier-swe/tree/main/tasks/cranelift-codegen-opt",
-  })],
-  "frontierswe-v2": [
+  }),
     publicTaskProfile({
       id: "frontierswe-v2-snooker-prediction",
+      versionId: "v2",
+      lineage: "added",
       sourceId: "snooker-prediction",
       title: ["Predict snooker-ball trajectories from video", "根据视频预测斯诺克球轨迹"],
       objective: ["Build an offline program that observes short rendered snooker clips and predicts every ball's table position at requested future timestamps.", "构建一个离线程序，观察短时渲染的斯诺克视频，并预测每颗球在指定未来时刻的球桌坐标。"],
@@ -867,6 +885,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
     }),
     publicTaskProfile({
       id: "frontierswe-v2-astronomy-toolkit",
+      versionId: "v2",
+      lineage: "added",
       sourceId: "astronomy-toolkit",
       title: ["Build an offline astronomy toolkit", "构建离线天文定位工具包"],
       objective: ["Implement a general-purpose offline astrometry pipeline that localizes FITS images, recovers celestial WCS metadata, registers overlapping observations, and produces a sky mosaic.", "实现一套通用离线天文定位流程，完成 FITS 图像定位、天球 WCS 元数据恢复、重叠观测配准及星空马赛克生成。"],
@@ -892,6 +912,8 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
   })],
   posttrainbench: [publicTaskProfile({
     id: "posttrainbench-aime2025",
+    versionId: "v1.1",
+    lineage: "retained",
     sourceId: "AIME 2025 target configuration",
     title: ["Post-train a small model for AIME 2025", "为 AIME 2025 后训练小型模型"],
     objective: ["Autonomously research, train, and select a post-training approach that maximizes a specified base model's score on the AIME 2025 evaluation.", "自主研究、训练并选择后训练方案，使指定基础模型在 AIME 2025 评测上的得分最大化。"],
@@ -902,18 +924,36 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
     sourceLabel: ["Official task harness", "官方任务框架"],
     sourceUrl: "https://github.com/aisa-group/PostTrainBench/tree/main/src/eval/tasks/aime2025",
   })],
-  spreadsheetbench: [publicTaskProfile({
-    id: "spreadsheetbench-heading-of-max",
-    sourceId: "59196",
-    title: ["Return the heading of each row maximum", "返回每行最大值对应的列标题"],
-    objective: ["Add formulas that locate the largest value in each row and return the heading of the column containing that value.", "添加公式，找出每行最大值并返回该数值所在列的标题。"],
-    inputs: ["An attached example workbook, a cell-level manipulation instruction, and the target answer range H3:H5.", "一份示例工作簿、单元格级操作指令，以及目标答案区域 H3:H5。"],
-    expectedOutput: ["The original workbook with working formulas or values inserted into the specified cells while preserving the rest of the sheet.", "在指定单元格插入可用公式或数值后的原始工作簿，且其余工作表保持不变。"],
-    evaluation: ["The evaluator recalculates the workbook and compares the designated answer cells with the reference result using spreadsheet-aware matching.", "评测器重算工作簿，并使用电子表格感知的匹配方式将指定答案单元格与参考结果比较。"],
-    capabilities: [["Formula synthesis", "公式合成"], ["Workbook editing", "工作簿编辑"], ["Cell-range precision", "单元格区域精度"]],
-    sourceLabel: ["Official sample archive", "官方样例归档"],
-    sourceUrl: "https://github.com/RUCKBReasoning/SpreadsheetBench/tree/main/data",
-  })],
+  spreadsheetbench: [
+    publicTaskProfile({
+      id: "spreadsheetbench-v2-pepsico-valuation",
+      versionId: "v2",
+      lineage: "added",
+      sourceId: "09_01",
+      title: ["Complete a PepsiCo valuation model", "完成百事公司估值模型"],
+      objective: ["Complete the valuation worksheet from the supplied assumptions and supporting tabs, including DCF and comparable-company upside or downside calculations.", "依据给定假设及配套工作表完成估值页，包括 DCF、可比公司估值及上涨或下跌空间计算。"],
+      inputs: ["A complex multi-sheet investment workbook with financials, assumptions, ratios, market data, and an incomplete valuation tab.", "一个复杂的多工作表投资模型，包含财务数据、假设、比率、市场数据及未完成的估值页。"],
+      expectedOutput: ["The completed workbook with the existing structure and formatting preserved and the required valuation range populated correctly.", "完成后的工作簿，保持原有结构与格式，并正确填充规定的估值区域。"],
+      evaluation: ["The v2 evaluator recalculates the workbook and compares the designated answer ranges with the publisher's golden workbook.", "v2 评测器重新计算工作簿，并将指定答案区域与发布方标准工作簿比较。"],
+      capabilities: [["Financial modeling", "财务建模"], ["Cross-sheet reasoning", "跨工作表推理"], ["Workbook preservation", "工作簿结构保持"]],
+      sourceLabel: ["Official v2 sample archive", "官方 v2 样例归档"],
+      sourceUrl: "https://huggingface.co/datasets/KAKA22/SpreadsheetBench-v2/blob/main/data_example_05_11.zip",
+    }),
+    publicTaskProfile({
+      id: "spreadsheetbench-heading-of-max",
+      versionId: "v1",
+      lineage: "initial",
+      sourceId: "59196",
+      title: ["Return the heading of each row maximum", "返回每行最大值对应的列标题"],
+      objective: ["Add formulas that locate the largest value in each row and return the heading of the column containing that value.", "添加公式，找出每行最大值并返回该数值所在列的标题。"],
+      inputs: ["An attached example workbook, a cell-level manipulation instruction, and the target answer range H3:H5.", "一份示例工作簿、单元格级操作指令，以及目标答案区域 H3:H5。"],
+      expectedOutput: ["The original workbook with working formulas or values inserted into the specified cells while preserving the rest of the sheet.", "在指定单元格插入可用公式或数值后的原始工作簿，且其余工作表保持不变。"],
+      evaluation: ["The evaluator recalculates the workbook and compares the designated answer cells with the reference result using spreadsheet-aware matching.", "评测器重算工作簿，并使用电子表格感知的匹配方式将指定答案单元格与参考结果比较。"],
+      capabilities: [["Formula synthesis", "公式合成"], ["Workbook editing", "工作簿编辑"], ["Cell-range precision", "单元格区域精度"]],
+      sourceLabel: ["Official v1 sample archive", "官方 v1 样例归档"],
+      sourceUrl: "https://github.com/RUCKBReasoning/SpreadsheetBench/tree/main/data",
+    }),
+  ],
   "swe-bench-pro": [publicTaskProfile({
     id: "swe-bench-pro-nodebb-email-validation",
     sourceId: "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan",
@@ -1064,4 +1104,20 @@ export function modelBenchmarkSampleSearchText(benchmarkId: string): string {
     ...sample.capabilities.en,
     ...sample.capabilities.zh,
   ]).join(" ").toLowerCase();
+}
+
+export function modelBenchmarkSamplesForVersion(benchmark: ModelBenchmarkReference, versionId?: string): BenchmarkSampleTask[] {
+  const samples = modelBenchmarkSamples[benchmark.id] ?? [];
+  if (!versionId) return samples;
+  return samples.filter((sample) => sample.versionId === versionId);
+}
+
+export function featuredModelBenchmarkSamples(benchmark: ModelBenchmarkReference): BenchmarkSampleTask[] {
+  if (benchmark.currentVersionId) return modelBenchmarkSamplesForVersion(benchmark, benchmark.currentVersionId);
+  return modelBenchmarkSamples[benchmark.id] ?? [];
+}
+
+export function siblingModelBenchmarkSamples(benchmark: ModelBenchmarkReference, sample: BenchmarkSampleTask): BenchmarkSampleTask[] {
+  const versionSamples = modelBenchmarkSamplesForVersion(benchmark, sample.versionId);
+  return versionSamples.length > 0 ? versionSamples : [sample];
 }

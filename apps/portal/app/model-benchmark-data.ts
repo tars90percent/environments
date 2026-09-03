@@ -15,7 +15,21 @@ export type BenchmarkReferenceLink = {
   url: string;
 };
 
+export type BenchmarkVersionChange = "initial" | "maintenance" | "expansion" | "major-revision" | "replacement" | "pruning";
+
+export type BenchmarkVersionReference = {
+  id: string;
+  label: string;
+  releasedAt?: string;
+  change: BenchmarkVersionChange;
+  questionCount: { en: string; zh: string };
+  note: { en: string; zh: string };
+  comparableToPrevious?: boolean;
+  sourceUrl: string;
+};
+
 export type BenchmarkLeaderboardSnapshot = {
+  benchmarkVersion?: string;
   imagePath: string;
   sourceUrl: string;
   capturedAt: string;
@@ -25,6 +39,7 @@ export type BenchmarkLeaderboardSnapshot = {
 
 export type ModelBenchmarkReference = {
   id: string;
+  legacyIds?: string[];
   name: string;
   aliases?: string[];
   creators: { en: string; zh: string };
@@ -32,6 +47,8 @@ export type ModelBenchmarkReference = {
   categoryId: BenchmarkReferenceCategoryId;
   version?: string;
   versionNote?: { en: string; zh: string };
+  currentVersionId?: string;
+  versions?: BenchmarkVersionReference[];
   summary: { en: string; zh: string };
   questionCount: { en: string; zh: string };
   repeats?: number;
@@ -60,6 +77,7 @@ export type AggregateBenchmarkReference = {
   links: BenchmarkReferenceLink[];
   components: Array<{
     benchmarkId: string;
+    benchmarkVersion?: string;
     evaluationName: string;
     weight: number;
   }>;
@@ -129,7 +147,7 @@ export const artificialAnalysisIndex: AggregateBenchmarkReference = {
   components: [
     { benchmarkId: "gdpval-aa-v2", evaluationName: "GDPval-AA v2", weight: 20 },
     { benchmarkId: "tau3-banking", evaluationName: "𝜏³-Banking", weight: 14 },
-    { benchmarkId: "terminal-bench-2-1", evaluationName: "Terminal-Bench v2.1", weight: 16 },
+    { benchmarkId: "terminal-bench", benchmarkVersion: "v2.1", evaluationName: "Terminal-Bench v2.1", weight: 16 },
     { benchmarkId: "scicode", evaluationName: "SciCode", weight: 8 },
     { benchmarkId: "aa-lcr", evaluationName: "AA-LCR", weight: 6 },
     { benchmarkId: "aa-omniscience", evaluationName: "AA-Omniscience", weight: 12 },
@@ -198,80 +216,65 @@ export const modelBenchmarks = [
       ],
     },
     {
-      id: "terminal-bench-2-1",
+      id: "terminal-bench",
+      legacyIds: ["terminal-bench-2-1", "terminal-bench-3", "terminal-bench-4"],
       name: "Terminal-Bench",
-      aliases: ["Terminal-Bench 2.0", "Terminal-Bench 2.1"],
-      creators: { en: "Mike A. Merrill, Alexander G. Shaw, Nicholas Carlini et al., with community contributors", zh: "Mike A. Merrill、Alexander G. Shaw、Nicholas Carlini 等人与社区贡献者" },
-      publisher: "Harbor Framework · Laude Institute",
-      categoryId: "software-engineering",
-      version: "2.0 / 2.1",
-      versionNote: {
-        en: "The verified refresh of Terminal-Bench 2.0 corrected environment, resource, and task-specification issues.",
-        zh: "Terminal-Bench 2.0 的验证版更新修复了环境、资源及任务规范问题。",
-      },
-      summary: {
-        en: "Agents complete realistic software, systems, data, training, and security work in terminal environments.",
-        zh: "智能体在终端环境中完成真实的软件、系统、数据、训练及安全工作。",
-      },
-      questionCount: { en: "89 tasks", zh: "89 项任务" },
-      repeats: 3,
-      responseType: { en: "Terminal task execution", zh: "终端任务执行" },
-      scoring: { en: "Full verification suite, pass@1", zh: "完整验证套件，pass@1" },
-      toolUse: false,
-      access: "public",
-      leaderboardSnapshots: [{
-        imagePath: "/benchmark-leaderboards/terminal-bench-2-1.jpg",
-        sourceUrl: "https://www.tbench.ai/?version=2.1",
-        capturedAt: "2026-08-31",
-        alt: { en: "Official Terminal-Bench 2.1 leaderboard with ranked agent resolution rates", zh: "Terminal-Bench 2.1 官方排行榜，展示智能体排名与任务解决率" },
-        caption: { en: "The official 2.1 view pairs resolution rate with the agent scaffold, release date, token use, and cost.", zh: "官方 2.1 视图同时展示解决率、智能体框架、发布日期、Token 用量与成本。" },
-      }],
-      links: [
-        { label: { en: "Release notes", zh: "发布说明" }, url: "https://www.tbench.ai/news/terminal-bench-2-1" },
-        { label: { en: "Dataset repository", zh: "数据集仓库" }, url: "https://github.com/harbor-framework/terminal-bench-2-1" },
-        { label: { en: "Harbor Hub", zh: "Harbor Hub" }, url: "https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2-1/latest" },
-      ],
-    },
-    {
-      id: "terminal-bench-3",
-      name: "Terminal-Bench 3",
-      aliases: ["Frontier-Bench", "FrontierBench", "TB3"],
-      creators: { en: "Ryan Marten, Alex Shaw, Andy Konwinski, Ludwig Schmidt et al., with domain contributors and reviewers", zh: "Ryan Marten、Alex Shaw、Andy Konwinski、Ludwig Schmidt 等人与各领域贡献者及评审者" },
-      publisher: "Harbor Framework · Laude Institute",
-      categoryId: "software-engineering",
-      version: "3.0.0",
-      versionNote: {
-        en: "Released as Frontier-Bench, this 74-task successor to Terminal-Bench 2 was subsequently renamed Terminal-Bench 3. The median expert estimate is 4 hours; four tasks require a GPU.",
-        zh: "该版本最初以 Frontier-Bench 发布，是 Terminal-Bench 2 的 74 题后续版本，之后更名为 Terminal-Bench 3。专家工时估计中位数为 4 小时，其中 4 题需要 GPU。",
-      },
-      summary: {
-        en: "Long-horizon terminal work across hardware, machine learning, media, operations, science, security, and software, with task-specific executable verification.",
-        zh: "覆盖硬件、机器学习、媒体、运营、科学、安全与软件的长时程终端工作，并使用任务专属的可执行验证器。",
-      },
-      questionCount: { en: "74 tasks · Software 20, Science 15, ML 13, Operations 10, Security 7, Hardware 5, Media 4", zh: "74 项任务 · 软件 20、科学 15、机器学习 13、运营 10、安全 7、硬件 5、媒体 4" },
-      repeats: 5,
-      responseType: { en: "Terminal task execution and file artifacts", zh: "终端任务执行与文件产物" },
-      scoring: { en: "Task-specific executable verifiers, mean reward", zh: "任务专属可执行验证器，平均奖励" },
-      toolUse: false,
-      access: "public",
-      links: [
-        { label: { en: "3.0.0 release", zh: "3.0.0 版本" }, url: "https://github.com/harbor-framework/terminal-bench/releases/tag/v3.0.0" },
-        { label: { en: "Tagged task set", zh: "固定版本任务集" }, url: "https://github.com/harbor-framework/terminal-bench/tree/v3.0.0/tasks" },
-        { label: { en: "Task proposal rubric", zh: "任务提案细则" }, url: "https://github.com/harbor-framework/terminal-bench/blob/v3.0.0/rubrics/task-proposal.md" },
-      ],
-    },
-    {
-      id: "terminal-bench-4",
-      name: "Terminal-Bench 4",
-      aliases: ["TB4"],
+      aliases: ["Terminal-Bench 1.0", "Terminal-Bench 2.0", "Terminal-Bench 2.1", "Terminal-Bench 3", "Terminal-Bench 4", "Frontier-Bench", "FrontierBench", "TB1", "TB2", "TB3", "TB4"],
       creators: { en: "Ryan Marten, Alex Shaw, Andy Konwinski, Ludwig Schmidt et al., with domain contributors and reviewers", zh: "Ryan Marten、Alex Shaw、Andy Konwinski、Ludwig Schmidt 等人与各领域贡献者及评审者" },
       publisher: "Harbor Framework · Laude Institute",
       categoryId: "software-engineering",
       version: "4.0.0",
+      currentVersionId: "v4.0.0",
       versionNote: {
         en: "A curated 66-task revision of the TB3 set: all 66 tasks carry forward from 3.0.0, while eight TB3 tasks were removed. Every agent run has an eight-hour limit; three tasks require a GPU.",
         zh: "这是 TB3 任务集的 66 题精编版：66 题均沿用自 3.0.0，并移除了 8 道 TB3 任务。所有智能体运行时限均为 8 小时，其中 3 题需要 GPU。",
       },
+      versions: [
+        {
+          id: "v4.0.0",
+          label: "4.0.0",
+          change: "pruning",
+          questionCount: { en: "66 tasks", zh: "66 项任务" },
+          note: { en: "Carries forward all 66 surviving TB3 tasks, removes eight, repairs 19, and standardizes eight-hour runs.", zh: "沿用 TB3 中保留的全部 66 项任务，移除 8 项、修复 19 项，并统一采用 8 小时运行时限。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://www.tbench.ai/news/terminal-bench-4-0",
+        },
+        {
+          id: "v3.0.0",
+          label: "3.0.0",
+          change: "replacement",
+          questionCount: { en: "74 tasks", zh: "74 项任务" },
+          note: { en: "A near-wholesale new generation first released as Frontier-Bench; only one public task ID overlaps with 2.1.", zh: "几乎全新的任务世代，最初以 Frontier-Bench 发布；公开任务 ID 中仅 1 项与 2.1 重合。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://github.com/harbor-framework/terminal-bench/releases/tag/v3.0.0",
+        },
+        {
+          id: "v2.1",
+          label: "2.1",
+          change: "maintenance",
+          questionCount: { en: "89 tasks", zh: "89 项任务" },
+          note: { en: "Keeps the 2.0 task set while repairing 28 environment, resource, and specification issues.", zh: "保留 2.0 的任务集，同时修复 28 项环境、资源与任务规范问题。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://www.tbench.ai/news/terminal-bench-2-1",
+        },
+        {
+          id: "v2.0",
+          label: "2.0",
+          change: "major-revision",
+          questionCount: { en: "89 tasks", zh: "89 项任务" },
+          note: { en: "A harder, reverified major refresh of the original benchmark.", zh: "相较原始基准更困难、并经过重新验证的重大更新。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://www.tbench.ai/news/announcement-2-0",
+        },
+        {
+          id: "v1.0",
+          label: "1.0",
+          change: "initial",
+          questionCount: { en: "80 tasks", zh: "80 项任务" },
+          note: { en: "The original Terminal-Bench task set for terminal-operating agents.", zh: "面向终端操作智能体的首代 Terminal-Bench 任务集。" },
+          sourceUrl: "https://www.tbench.ai/benchmarks",
+        },
+      ],
       summary: {
         en: "The current continuous Terminal-Bench release preserves TB3's seven-domain mix while tightening the task set and standardizing long agent budgets.",
         zh: "当前持续演进的 Terminal-Bench 版本保留 TB3 的七领域构成，同时收紧任务集并统一长时程智能体预算。",
@@ -282,6 +285,14 @@ export const modelBenchmarks = [
       scoring: { en: "Task-specific executable verifiers, mean reward", zh: "任务专属可执行验证器，平均奖励" },
       toolUse: false,
       access: "public",
+      leaderboardSnapshots: [{
+        benchmarkVersion: "v2.1",
+        imagePath: "/benchmark-leaderboards/terminal-bench-2-1.jpg",
+        sourceUrl: "https://www.tbench.ai/?version=2.1",
+        capturedAt: "2026-08-31",
+        alt: { en: "Official Terminal-Bench 2.1 leaderboard with ranked agent resolution rates", zh: "Terminal-Bench 2.1 官方排行榜，展示智能体排名与任务解决率" },
+        caption: { en: "A version-specific historical snapshot; the catalog card otherwise presents current Terminal-Bench 4 information.", zh: "这是特定版本的历史截图；目录卡片中的其他信息以当前 Terminal-Bench 4 为准。" },
+      }],
       links: [
         { label: { en: "4.0.0 release", zh: "4.0.0 版本" }, url: "https://github.com/harbor-framework/terminal-bench/releases/tag/v4.0.0" },
         { label: { en: "Tagged task set", zh: "固定版本任务集" }, url: "https://github.com/harbor-framework/terminal-bench/tree/v4.0.0/tasks" },
@@ -573,17 +584,47 @@ export const modelBenchmarks = [
     {
       id: "osworld",
       name: "OSWorld",
-      aliases: ["OSWorld Verified", "OSWorld 2.0"],
+      aliases: ["OSWorld 1.0", "OSWorld Verified", "OSWorld 2.0"],
       creators: { en: "Tianbao Xie, Danyang Zhang, Jixuan Chen et al.; OSWorld 2.0 by Mengqi Yuan, Zilong Zhou, Xinzhuang Xiong et al.", zh: "Tianbao Xie、Danyang Zhang、Jixuan Chen 等人；OSWorld 2.0 由 Mengqi Yuan、Zilong Zhou、Xinzhuang Xiong 等人创建" },
       publisher: "XLANG",
       categoryId: "tools-computer-use",
-      version: "OSWorld 1.0 / Verified / 2.0",
-      versionNote: { en: "Verified reviews the original task set; 2.0 adds newly constructed long-horizon workflows.", zh: "Verified 是对原任务集的审核版本；2.0 新增长时程工作流。" },
-      summary: { en: "Computer-use tasks and long-horizon workflows in realistic desktop environments.", zh: "在真实桌面环境中执行的计算机操作任务与长时程工作流。" },
-      questionCount: { en: "369 original tasks · 108 new tasks in 2.0", zh: "原版 369 项任务 · 2.0 新增 108 项" },
-      access: "public",
+      version: "2.0",
+      currentVersionId: "v2.0",
+      versionNote: { en: "The current release is a newly constructed set of 108 long-horizon workflows rather than an append-only extension of v1. Official task classes and complete assets require accepting the publisher's gated datasets.", zh: "当前版本由 108 项全新构建的长时程工作流组成，并非仅在 v1 上追加任务。官方任务类与完整资源需接受发布方的受控数据集条款后获取。" },
+      versions: [
+        {
+          id: "v2.0",
+          label: "2.0",
+          change: "replacement",
+          questionCount: { en: "108 tasks", zh: "108 项任务" },
+          note: { en: "A new long-horizon task set with a separately released environment, task repository, and evaluation protocol.", zh: "全新的长时程任务集，配套独立发布的环境、任务仓库与评测协议。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://github.com/xlang-ai/OSWorld-V2",
+        },
+        {
+          id: "verified",
+          label: "Verified",
+          change: "maintenance",
+          questionCount: { en: "Reviewed v1 task set", zh: "经审核的 v1 任务集" },
+          note: { en: "A human-reviewed correction of the original task collection.", zh: "对原始任务集进行人工审核与修正的版本。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://os-world.github.io/",
+        },
+        {
+          id: "v1.0",
+          label: "1.0",
+          change: "initial",
+          questionCount: { en: "369 tasks", zh: "369 项任务" },
+          note: { en: "The original cross-application desktop computer-use benchmark.", zh: "最初的跨应用桌面计算机操作基准。" },
+          sourceUrl: "https://arxiv.org/abs/2404.07972",
+        },
+      ],
+      summary: { en: "Long-horizon computer-use workflows in realistic desktop environments.", zh: "在真实桌面环境中执行的长时程计算机操作工作流。" },
+      questionCount: { en: "108 tasks", zh: "108 项任务" },
+      access: "gated",
       links: [
         { label: { en: "Repository", zh: "代码仓库" }, url: "https://github.com/xlang-ai/OSWorld-V2" },
+        { label: { en: "Gated task classes", zh: "受控任务类" }, url: "https://huggingface.co/datasets/xlangai/osworld_v2_tasks" },
         { label: { en: "Original paper", zh: "原版论文" }, url: "https://arxiv.org/abs/2404.07972" },
         { label: { en: "2.0 paper", zh: "2.0 论文" }, url: "https://arxiv.org/abs/2606.29537" },
       ],
@@ -619,9 +660,41 @@ export const modelBenchmarks = [
     {
       id: "cursorbench",
       name: "CursorBench",
+      aliases: ["CursorBench 3.0", "CursorBench 3.1", "CursorBench 3.2"],
       creators: { en: "Cursor's internal evaluation team", zh: "Cursor 内部评测团队" },
       publisher: "Cursor · Anysphere",
       categoryId: "software-engineering",
+      version: "3.2",
+      currentVersionId: "v3.2",
+      versionNote: { en: "The current private suite adds instruction-following and advanced tool-use problems to the earlier edit, review, planning, and codebase-understanding mix.", zh: "当前私有任务集在早期编辑、审查、规划与代码库理解任务基础上，新增指令遵循和高级工具使用问题。" },
+      versions: [
+        {
+          id: "v3.2",
+          label: "3.2",
+          change: "expansion",
+          questionCount: { en: "Private task suite", zh: "私有任务集" },
+          note: { en: "Adds instruction-following and advanced tool-use problems; exact task retention is not disclosed.", zh: "新增指令遵循与高级工具使用问题；未披露具体任务沿用情况。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://cursor.com/cursorbench",
+        },
+        {
+          id: "v3.1",
+          label: "3.1",
+          change: "expansion",
+          questionCount: { en: "Private task suite", zh: "私有任务集" },
+          note: { en: "Introduces codebase-understanding, bug-finding, planning, and code-review problems and improves some edit-task graders.", zh: "引入代码库理解、缺陷发现、规划与代码审查问题，并改进部分编辑任务的评分器。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://cursor.com/cursorbench",
+        },
+        {
+          id: "v3.0",
+          label: "3.0",
+          change: "initial",
+          questionCount: { en: "Private task suite", zh: "私有任务集" },
+          note: { en: "The initial documented suite of editing, refactoring, and bug-fix tasks.", zh: "首个有公开说明的编辑、重构与缺陷修复任务集。" },
+          sourceUrl: "https://cursor.com/cursorbench",
+        },
+      ],
       summary: { en: "Ambiguous, multi-file coding tasks derived from real Cursor engineering sessions.", zh: "源自真实 Cursor 工程会话、具有歧义且涉及多文件的编程任务。" },
       questionCount: { en: "Private task suite", zh: "私有任务集" },
       access: "private",
@@ -668,13 +741,37 @@ export const modelBenchmarks = [
     {
       id: "deepswe",
       name: "DeepSWE",
+      aliases: ["DeepSWE v1", "DeepSWE v1.1"],
       creators: { en: "Wenqi Huang, Charley Lee, Leonard Tng, and Serena Ge at Datacurve", zh: "Datacurve 的 Wenqi Huang、Charley Lee、Leonard Tng 与 Serena Ge" },
       publisher: "Datacurve",
       categoryId: "software-engineering",
+      version: "v1.1",
+      currentVersionId: "v1.1",
+      versionNote: { en: "The current release keeps the same 113 tasks while isolating verification, repairing dependency drift, and removing flaky tests.", zh: "当前版本保留相同的 113 项任务，同时隔离验证环境、修复依赖漂移并移除不稳定测试。" },
+      versions: [
+        {
+          id: "v1.1",
+          label: "v1.1",
+          change: "maintenance",
+          questionCount: { en: "113 tasks · 91 repositories", zh: "113 项任务 · 91 个代码库" },
+          note: { en: "The same task set with updated execution and grading, including an isolated verifier environment.", zh: "保留相同任务集，更新执行与评分方式，包括独立的验证环境。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://deepswe.datacurve.ai/blog/deepswe-v1-1",
+        },
+        {
+          id: "v1",
+          label: "v1",
+          change: "initial",
+          questionCount: { en: "113 tasks · 91 repositories", zh: "113 项任务 · 91 个代码库" },
+          note: { en: "The original long-horizon software-engineering task release.", zh: "最初的长时程软件工程任务版本。" },
+          sourceUrl: "https://deepswe.datacurve.ai/",
+        },
+      ],
       summary: { en: "Original software-engineering tasks written across active repositories.", zh: "围绕活跃代码库从零编写的软件工程任务。" },
       questionCount: { en: "113 tasks · 91 repositories", zh: "113 项任务 · 91 个代码库" },
       access: "public",
       leaderboardSnapshots: [{
+        benchmarkVersion: "v1.1",
         imagePath: "/benchmark-leaderboards/deepswe.jpg",
         sourceUrl: "https://deepswe.datacurve.ai/",
         capturedAt: "2026-08-31",
@@ -703,42 +800,50 @@ export const modelBenchmarks = [
     },
     {
       id: "frontierswe",
+      legacyIds: ["frontierswe-v2"],
       name: "FrontierSWE",
-      creators: { en: "Evan Chu, Rajan Agarwal, Abishek Thangamuthu, Brendan Graham, Justus Mattern et al.", zh: "Evan Chu、Rajan Agarwal、Abishek Thangamuthu、Brendan Graham、Justus Mattern 等人" },
-      publisher: "Proximal Labs",
-      categoryId: "software-engineering",
-      summary: { en: "Ultra-long-horizon implementation, performance-engineering, and ML-research tasks.", zh: "超长时程实现、性能工程与机器学习研究任务。" },
-      questionCount: { en: "17 tasks", zh: "17 项任务" },
-      access: "public",
-      leaderboardSnapshots: [{
-        imagePath: "/benchmark-leaderboards/frontierswe.jpg",
-        sourceUrl: "https://www.frontierswe.com/",
-        capturedAt: "2026-08-31",
-        alt: { en: "Official FrontierSWE leaderboard ranking models across implementation, performance, and research tasks", zh: "FrontierSWE 官方排行榜，按实现、性能与研究任务对模型进行排名" },
-        caption: { en: "Proximal's official dashboard compares Mean@5 and Best@5 rankings, harnesses, dominance, and performance across the three task categories.", zh: "Proximal 的官方仪表板比较 Mean@5 与 Best@5 排名、智能体框架、优势率及三类任务的表现。" },
-      }],
-      links: [
-        { label: { en: "Leaderboard", zh: "排行榜" }, url: "https://www.frontierswe.com/" },
-        { label: { en: "Repository", zh: "代码仓库" }, url: "https://github.com/Proximal-Labs/frontier-swe" },
-      ],
-    },
-    {
-      id: "frontierswe-v2",
-      name: "FrontierSWE v2",
-      aliases: ["Frontier SWE v2"],
+      aliases: ["Frontier SWE", "FrontierSWE v1", "Frontier SWE v2", "FrontierSWE v2"],
       creators: { en: "Rishyanth Kondra, Sanket Mhatre, Akshit Kumar, Evan Chu, Bilal Bakht Ahmad et al.", zh: "Rishyanth Kondra、Sanket Mhatre、Akshit Kumar、Evan Chu、Bilal Bakht Ahmad 等人" },
       publisher: "Proximal",
       categoryId: "software-engineering",
       version: "v2",
+      currentVersionId: "v2",
       versionNote: {
-        en: "The September 2026 release adds 21 challenges and retires four v1 tasks, expanding the benchmark to 34 tasks with 20-hour agent budgets.",
-        zh: "2026 年 9 月版本新增 21 项挑战并移除 4 项 v1 任务，将基准扩展至 34 项任务，每次智能体运行时限为 20 小时。",
+        en: "The current release retains 13 v1 task concepts, adds 21 challenges, and retires four, expanding the benchmark to 34 tasks with 20-hour agent budgets.",
+        zh: "当前版本沿用 13 项 v1 任务概念，新增 21 项挑战并移除 4 项，将基准扩展至 34 项任务，每次智能体运行时限为 20 小时。",
       },
+      versions: [
+        {
+          id: "v2",
+          label: "v2",
+          change: "expansion",
+          questionCount: { en: "34 tasks", zh: "34 项任务" },
+          note: { en: "Retains 13 v1 task concepts, adds 21 new challenges, retires four, and changes the execution and scoring methodology.", zh: "沿用 13 项 v1 任务概念，新增 21 项挑战、移除 4 项，并调整执行与评分方法。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://www.frontierswe.com/blog/v2",
+        },
+        {
+          id: "v1",
+          label: "v1",
+          change: "initial",
+          questionCount: { en: "17 tasks", zh: "17 项任务" },
+          note: { en: "The original implementation, performance-engineering, and ML-research task collection.", zh: "最初的系统实现、性能工程与机器学习研究任务集。" },
+          sourceUrl: "https://github.com/Proximal-Labs/frontier-swe",
+        },
+      ],
       summary: { en: "Ultra-long-horizon system implementation, scientific computing, performance-optimization, visual-reasoning, and AI-research tasks.", zh: "覆盖系统实现、科学计算、性能优化、视觉推理与 AI 研究的超长时程任务。" },
       questionCount: { en: "34 tasks", zh: "34 项任务" },
       responseType: { en: "Repository changes and technical artifacts", zh: "代码库修改与技术产物" },
       scoring: { en: "Continuous 0–1 task scores with aggregate normalized reporting", zh: "任务连续得分范围为 0–1，并汇总为归一化结果" },
       access: "public",
+      leaderboardSnapshots: [{
+        benchmarkVersion: "v1",
+        imagePath: "/benchmark-leaderboards/frontierswe.jpg",
+        sourceUrl: "https://www.frontierswe.com/",
+        capturedAt: "2026-08-31",
+        alt: { en: "Official FrontierSWE leaderboard ranking models across implementation, performance, and research tasks", zh: "FrontierSWE 官方排行榜，按实现、性能与研究任务对模型进行排名" },
+        caption: { en: "A pre-v2 official leaderboard snapshot retained as historical provenance; live links lead to the current release.", zh: "作为历史来源保留的 v2 前官方排行榜截图；实时链接指向当前版本。" },
+      }],
       links: [
         { label: { en: "V2 blog post", zh: "V2 博客" }, url: "https://www.frontierswe.com/blog/v2" },
         { label: { en: "Task catalog", zh: "任务目录" }, url: "https://www.frontierswe.com/tasks" },
@@ -762,13 +867,37 @@ export const modelBenchmarks = [
     {
       id: "posttrainbench",
       name: "PostTrainBench",
+      aliases: ["PostTrainBench v1", "PostTrainBench v1.1"],
       creators: { en: "Ben Rank, Hardik Bhatnagar, Ameya Prabhu, Shira Eisenberg et al.", zh: "Ben Rank、Hardik Bhatnagar、Ameya Prabhu、Shira Eisenberg 等人" },
       publisher: "AISA Group · author team",
       categoryId: "model-training",
+      version: "v1.1",
+      currentVersionId: "v1.1",
+      versionNote: { en: "The current release keeps the same 28 model-target configurations while strengthening contamination, API-use, benchmark-lookup, and model-identity checks.", zh: "当前版本保留相同的 28 种模型—目标配置，同时加强污染、API 使用、基准查找及模型身份检查。" },
+      versions: [
+        {
+          id: "v1.1",
+          label: "v1.1",
+          change: "maintenance",
+          questionCount: { en: "28 model-target configurations", zh: "28 种模型—目标配置" },
+          note: { en: "Keeps the original evaluation matrix but adds independent integrity judges and reruns or omits affected results.", zh: "保留原评测矩阵，但新增独立完整性评审，并重跑或移除受影响结果。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://posttrainbench.com/",
+        },
+        {
+          id: "v1",
+          label: "v1",
+          change: "initial",
+          questionCount: { en: "28 model-target configurations", zh: "28 种模型—目标配置" },
+          note: { en: "The original four-base-model by seven-target-benchmark evaluation matrix.", zh: "最初由 4 个基础模型与 7 个目标基准组成的评测矩阵。" },
+          sourceUrl: "https://posttrainbench.com/?version=v1",
+        },
+      ],
       summary: { en: "Autonomous model post-training assignments under a ten-hour, one-H100 budget.", zh: "在十小时、单张 H100 预算内完成的自主模型后训练任务。" },
       questionCount: { en: "28 model-target configurations", zh: "28 种模型—目标配置" },
       access: "public",
       leaderboardSnapshots: [{
+        benchmarkVersion: "v1",
         imagePath: "/benchmark-leaderboards/posttrainbench.jpg",
         sourceUrl: "https://posttrainbench.com/?version=v1",
         capturedAt: "2026-08-31",
@@ -788,12 +917,33 @@ export const modelBenchmarks = [
       creators: { en: "V1 by Zeyao Ma, Bohan Zhang, Jing Zhang et al.; V2 by Jian Zhu, Yuzheng Zhang, Zeyao Ma et al.", zh: "V1 由 Zeyao Ma、Bohan Zhang、Jing Zhang 等人创建；V2 由 Jian Zhu、Yuzheng Zhang、Zeyao Ma 等人创建" },
       publisher: "SpreadsheetBench · RUCKBReasoning",
       categoryId: "professional-work",
-      version: "v1 / v2",
-      versionNote: { en: "V1 uses forum-derived spreadsheet problems; V2 uses expert-curated business workflows.", zh: "V1 使用来自论坛的电子表格问题；V2 使用专家整理的商业工作流。" },
-      summary: { en: "Realistic spreadsheet problems and expert-curated business workflows.", zh: "真实电子表格问题与专家整理的商业工作流。" },
-      questionCount: { en: "v1: 912 problems · v2: 321 workflows", zh: "v1：912 道问题 · v2：321 项工作流" },
+      version: "v2",
+      currentVersionId: "v2",
+      versionNote: { en: "The current release replaces v1's isolated, forum-derived edits with 321 expert-curated, end-to-end business workflows.", zh: "当前版本以 321 项专家整理的端到端商业工作流，取代 v1 中来自论坛的孤立编辑问题。" },
+      versions: [
+        {
+          id: "v2",
+          label: "v2",
+          change: "replacement",
+          questionCount: { en: "321 workflows", zh: "321 项工作流" },
+          note: { en: "A new task set covering debugging, financial modeling, templates, and visualization across complex workbooks.", zh: "全新任务集，覆盖复杂工作簿中的调试、财务建模、模板与可视化工作流。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://github.com/RUCKBReasoning/SpreadsheetBench-2",
+        },
+        {
+          id: "v1",
+          label: "v1",
+          change: "initial",
+          questionCount: { en: "912 problems", zh: "912 道问题" },
+          note: { en: "Forum-derived spreadsheet manipulation problems focused on individual edits.", zh: "源自论坛、聚焦单项编辑的电子表格操作问题。" },
+          sourceUrl: "https://arxiv.org/abs/2406.14991",
+        },
+      ],
+      summary: { en: "Expert-curated, end-to-end business workflows across complex multi-sheet workbooks.", zh: "围绕复杂多工作表工作簿、由专家整理的端到端商业工作流。" },
+      questionCount: { en: "321 workflows", zh: "321 项工作流" },
       access: "public",
       leaderboardSnapshots: [{
+        benchmarkVersion: "v2",
         imagePath: "/benchmark-leaderboards/spreadsheetbench.jpg",
         sourceUrl: "https://spreadsheetbench.github.io/",
         capturedAt: "2026-08-31",
@@ -844,13 +994,37 @@ export const modelBenchmarks = [
     {
       id: "frontiercode",
       name: "FrontierCode",
+      aliases: ["FrontierCode 1.0", "FrontierCode 1.1"],
       creators: { en: "Eric Lu, Ben Pan, Deniz Birlikci, Sam Lee et al. at Cognition, with open-source maintainers", zh: "Cognition 的 Eric Lu、Ben Pan、Deniz Birlikci、Sam Lee 等人与开源维护者" },
       publisher: "Cognition",
       categoryId: "software-engineering",
+      version: "1.1",
+      currentVersionId: "v1.1",
+      versionNote: { en: "The current release keeps the 150-task collection while refining internet-use policy, relaxing 75 overly strict blocker criteria, and replacing Diamond reporting with Main and Extended subsets.", zh: "当前版本保留 150 项任务，同时完善联网政策、放宽 75 项过严的阻断标准，并以 Main 与 Extended 子集取代 Diamond 报告。" },
+      versions: [
+        {
+          id: "v1.1",
+          label: "1.1",
+          change: "maintenance",
+          questionCount: { en: "150 tasks · 36 repositories", zh: "150 项任务 · 36 个代码库" },
+          note: { en: "Keeps the task collection while revising grading criteria, internet-use methodology, and reported subsets.", zh: "保留任务集，同时修订评分标准、联网方法与报告子集。" },
+          comparableToPrevious: false,
+          sourceUrl: "https://cognition.ai/blog/frontier-code-1.1",
+        },
+        {
+          id: "v1.0",
+          label: "1.0",
+          change: "initial",
+          questionCount: { en: "150 tasks · 36 repositories", zh: "150 项任务 · 36 个代码库" },
+          note: { en: "The original private, maintainer-authored coding-task release.", zh: "最初的私有维护者编写编程任务版本。" },
+          sourceUrl: "https://cognition.ai/blog/frontier-code",
+        },
+      ],
       summary: { en: "Private, maintainer-authored coding tasks with repository-specific quality rubrics.", zh: "由维护者编写、带代码库特定质量细则的私有编程任务。" },
       questionCount: { en: "150 tasks · 36 repositories", zh: "150 项任务 · 36 个代码库" },
       access: "private",
       leaderboardSnapshots: [{
+        benchmarkVersion: "v1.1",
         imagePath: "/benchmark-leaderboards/frontiercode.jpg",
         sourceUrl: "https://cognition.ai/frontiercode",
         capturedAt: "2026-08-31",
@@ -993,6 +1167,7 @@ export const modelBenchmarks = [
 export function modelBenchmarkSearchText(benchmark: ModelBenchmarkReference): string {
   return [
     benchmark.id,
+    ...(benchmark.legacyIds ?? []),
     benchmark.name,
     ...(benchmark.aliases ?? []),
     benchmark.creators.en,
@@ -1009,5 +1184,17 @@ export function modelBenchmarkSearchText(benchmark: ModelBenchmarkReference): st
     benchmark.responseType?.zh ?? "",
     benchmark.scoring?.en ?? "",
     benchmark.scoring?.zh ?? "",
+    ...(benchmark.versions ?? []).flatMap((version) => [
+      version.id,
+      version.label,
+      version.questionCount.en,
+      version.questionCount.zh,
+      version.note.en,
+      version.note.zh,
+    ]),
   ].join(" ").toLowerCase();
+}
+
+export function findModelBenchmark(benchmarkId: string): ModelBenchmarkReference | undefined {
+  return modelBenchmarks.find((benchmark) => benchmark.id === benchmarkId || benchmark.legacyIds?.includes(benchmarkId));
 }

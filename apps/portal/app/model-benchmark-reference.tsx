@@ -11,7 +11,7 @@ import {
   type ModelBenchmarkReference,
 } from "./model-benchmark-data";
 import {
-  modelBenchmarkSamples,
+  featuredModelBenchmarkSamples,
   modelBenchmarkSampleSearchText,
 } from "./model-benchmark-samples";
 
@@ -31,6 +31,18 @@ const copy = {
     toolUse: "Tool use",
     noToolUse: "No external tools",
     currentVersion: "Version / release",
+    releaseHistory: "Release history",
+    currentRelease: "Current",
+    scoresNotComparable: "Not directly comparable",
+    releaseSource: "Source",
+    versionChanges: {
+      initial: "Initial set",
+      maintenance: "Maintenance",
+      expansion: "Expansion",
+      "major-revision": "Major revision",
+      replacement: "New task set",
+      pruning: "Pruned revision",
+    },
     noMatch: "No benchmark metadata matches this search.",
     sampleProfiles: "Sample task profiles",
     exploreSamples: "Explore task profiles",
@@ -75,6 +87,18 @@ const copy = {
     toolUse: "使用工具",
     noToolUse: "不使用外部工具",
     currentVersion: "版本 / 发布",
+    releaseHistory: "版本历史",
+    currentRelease: "当前版本",
+    scoresNotComparable: "分数不可直接比较",
+    releaseSource: "来源",
+    versionChanges: {
+      initial: "首个版本",
+      maintenance: "维护更新",
+      expansion: "扩展更新",
+      "major-revision": "重大更新",
+      replacement: "全新任务集",
+      pruning: "精编修订",
+    },
     noMatch: "没有匹配搜索条件的基准元数据。",
     sampleProfiles: "样例任务画像",
     exploreSamples: "查看任务画像",
@@ -169,7 +193,7 @@ function ModelBenchmarkCard({ benchmark, language, localPreview }: {
   localPreview: boolean;
 }) {
   const t = copy[language];
-  const samples = modelBenchmarkSamples[benchmark.id] ?? [];
+  const samples = featuredModelBenchmarkSamples(benchmark);
   return <article className="model-benchmark-card" id={`benchmark-${benchmark.id}`}>
     <div className="model-benchmark-card-head">
       {benchmark.access ? <AccessBadge access={benchmark.access} language={language} /> : null}
@@ -177,6 +201,14 @@ function ModelBenchmarkCard({ benchmark, language, localPreview }: {
     <div className="model-benchmark-identity"><span>{benchmark.publisher}</span><h3>{benchmark.name}</h3><p>{benchmark.summary[language]}</p></div>
     <div className="model-benchmark-creators"><span>{t.creators}</span><p>{benchmark.publisher}</p></div>
     {benchmark.version ? <div className="model-benchmark-version"><span>{t.currentVersion}</span><strong>{benchmark.version}</strong>{benchmark.versionNote ? <p>{benchmark.versionNote[language]}</p> : null}</div> : null}
+    {benchmark.versions && benchmark.versions.length > 1 ? <details className="model-benchmark-history">
+      <summary><span>{t.releaseHistory}</span><strong>{benchmark.versions.length}</strong></summary>
+      <ol>{benchmark.versions.map((version) => <li className={version.id === benchmark.currentVersionId ? "current" : ""} key={version.id}>
+        <div><strong>{version.label}</strong><span>{t.versionChanges[version.change]}</span>{version.id === benchmark.currentVersionId ? <em>{t.currentRelease}</em> : null}</div>
+        <p>{version.note[language]}</p>
+        <footer><span>{version.questionCount[language]}</span>{version.comparableToPrevious === false ? <span>{t.scoresNotComparable}</span> : null}<a href={version.sourceUrl} rel="noreferrer" target="_blank">{t.releaseSource} ↗</a></footer>
+      </li>)}</ol>
+    </details> : null}
     <dl className="model-benchmark-facts">
       <div><dt>{t.items}</dt><dd><strong>{benchmark.questionCount[language]}</strong>{benchmark.responseType ? <span>{benchmark.responseType[language]}</span> : null}</dd></div>
       {benchmark.repeats !== undefined ? <div><dt>{t.runs}</dt><dd><strong>{benchmark.repeats} {benchmark.repeats === 1 ? t.oneRepeat : t.repeats}</strong>{benchmark.scoring ? <span>{benchmark.scoring[language]}</span> : null}</dd></div> : null}
@@ -186,7 +218,7 @@ function ModelBenchmarkCard({ benchmark, language, localPreview }: {
       href={`${localPreview ? "/local-preview" : ""}/model-benchmarks/${benchmark.id}/tasks/${samples[0].id}`}
     >
       <span className="benchmark-sample-trigger-mark" aria-hidden><i /><i /></span>
-      <span><small>{samples.length} {t.sampleProfiles}</small><strong>{t.exploreSamples}</strong></span>
+      <span><small>{samples[0].versionId ? `${samples[0].versionId} · ` : ""}{samples.length} {t.sampleProfiles}</small><strong>{t.exploreSamples}</strong></span>
       <span className="benchmark-sample-trigger-arrow" aria-hidden>→</span>
     </a> : null}
     <div className="model-benchmark-links">{benchmark.links.map((link) => <a href={link.url} key={link.url} rel="noreferrer" target="_blank">{link.label[language]}<span aria-hidden>↗</span></a>)}</div>
@@ -208,7 +240,7 @@ function AggregateBenchmarkCard({ aggregate, language }: {
     </div>
     <ol className="aggregate-components">
       {aggregate.components.map((component) => <li key={component.evaluationName}>
-        <a href={`#benchmark-${component.benchmarkId}`}><span>{component.evaluationName}</span><small>{modelBenchmarks.find((benchmark) => benchmark.id === component.benchmarkId)?.name}</small></a>
+        <a href={`#benchmark-${component.benchmarkId}`}><span>{component.evaluationName}</span><small>{modelBenchmarks.find((benchmark) => benchmark.id === component.benchmarkId)?.name}{component.benchmarkVersion ? ` · ${component.benchmarkVersion}` : ""}</small></a>
         <strong>{component.weight}%</strong>
       </li>)}
     </ol>

@@ -36,6 +36,10 @@ Purchased deliveries belong in the downstream delivery pipeline. CASE retains th
 
 The source-controlled public benchmark reference is separate from the vendor registry. It may describe and link to public benchmarks but must not copy third-party prompts, answers, rubrics, hidden tests, attachments, or task packages.
 
+Represent one benchmark family as one catalog entry and show its current release by default. Preserve material version history, task-set lineage, score comparability, and version-specific sources underneath that family even when a major release replaces most or all tasks. Create a separate entry only for an independently named benchmark with a distinct purpose or lineage, such as Terminal-Bench-Science rather than a numbered Terminal-Bench release.
+
+Associate sample profiles and aggregate-index components with the exact benchmark version they represent. Feature samples from the current release when public evidence supports them; retain older samples as clearly labeled history rather than presenting them as current.
+
 CASE lives in `apps/case` and the portal in `apps/portal`. They share this repository but have independent deployments and secrets. Never expose production credentials to vendor material or external evaluation systems.
 
 This root `AGENTS.md` is the only source-controlled agent policy and is packaged into CASE. Do not add application-level copies. Verify affected deployments before calling a change live, and deploy CASE first when the portal depends on a CASE change.

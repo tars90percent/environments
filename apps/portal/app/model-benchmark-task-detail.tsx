@@ -9,7 +9,7 @@ import {
   type TauAgentRuntimeView,
 } from "./model-benchmark-agent-views";
 import {
-  modelBenchmarkSamples,
+  siblingModelBenchmarkSamples,
   type BenchmarkSampleTask,
 } from "./model-benchmark-samples";
 import {
@@ -155,7 +155,7 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
   const filesystem = modelBenchmarkTaskFilesystems[sample.id];
   const nativeRecord = modelBenchmarkNativeTaskRecords[sample.id];
   const agentView = modelBenchmarkAgentViews[sample.id];
-  const siblingSamples = modelBenchmarkSamples[benchmark.id] ?? [sample];
+  const siblingSamples = siblingModelBenchmarkSamples(benchmark, sample);
   const backHref = localPreview ? "/local-preview/model-benchmarks" : "/model-benchmarks";
   const tabs: Array<{ id: TaskDetailTab; label: string }> = filesystem
     ? [{ id: "files", label: t.filesTab }]
@@ -171,7 +171,7 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
   return <article className="model-task-detail">
     <header className="model-task-browser-head">
       <a className="model-task-back" href={backHref}><span aria-hidden>←</span>{t.back}</a>
-      <div className="model-task-breadcrumb"><span>{benchmark.name}</span><span aria-hidden>/</span><code>{sample.sourceId ?? sample.id}</code></div>
+      <div className="model-task-breadcrumb"><span>{benchmark.name}</span>{sample.versionId ? <><span aria-hidden>/</span><span>{sample.versionId}</span></> : null}<span aria-hidden>/</span><code>{sample.sourceId ?? sample.id}</code></div>
       <div className="model-task-title-row">
         <div>
           <h1>{sample.title[language]}</h1>
