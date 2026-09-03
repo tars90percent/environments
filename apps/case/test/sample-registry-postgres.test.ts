@@ -155,6 +155,9 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       created: true,
     });
     assert.equal((await repository.createVendorTimeline({ vendorId: "vendor-one", actor: "TARS" })).created, false);
+    const emptyTimelineCatalog = await repository.sampleCatalogSnapshot();
+    assert.equal(emptyTimelineCatalog.vendors[0]?.hasTimeline, true);
+    assert.deepEqual(emptyTimelineCatalog.vendors[0]?.interactions, []);
     const interaction = {
       id: "interaction:vendor-one:starter-delivery",
       vendorId: "vendor-one",
@@ -448,6 +451,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
       actor: "TARS",
     }), { vendorId: "vendor-one", deleted: true, interactionCount: 1 });
     assert.equal(await repository.getVendorTimeline("vendor-one"), null);
+    assert.equal((await repository.sampleCatalogSnapshot()).vendors[0]?.hasTimeline, false);
     const deletedTimelineHistory = await repository.getVendorTimelineHistory("vendor-one");
     assert.equal(deletedTimelineHistory.at(-1)?.action, "timeline_deleted");
     assert.equal((deletedTimelineHistory.at(-1)?.before?.interactions as unknown[])?.length, 1);

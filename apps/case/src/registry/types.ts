@@ -1105,6 +1105,7 @@ export type SampleCatalogVendor = {
   id: string;
   name: string;
   short: string;
+  hasTimeline: boolean;
   interactions: Array<{
     id: string;
     kind: VendorEventKind;

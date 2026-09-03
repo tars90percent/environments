@@ -3943,11 +3943,15 @@ export class PostgresRegistry implements RegistryRepository {
 
   async sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot> {
     const [vendorsResult, interactionsResult, submissionsResult, tasksResult, checksResult, attemptsResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
-      this.pool.query<VendorRow>(
-        `SELECT id, name, short, description
-         FROM registry_vendors
-         WHERE archived_at IS NULL
-         ORDER BY name, id`,
+      this.pool.query<VendorRow & { has_timeline: boolean }>(
+        `SELECT v.id, v.name, v.short, v.description,
+                EXISTS (
+                  SELECT 1 FROM registry_vendor_timelines timeline
+                  WHERE timeline.vendor_id = v.id
+                ) AS has_timeline
+         FROM registry_vendors v
+         WHERE v.archived_at IS NULL
+         ORDER BY v.name, v.id`,
       ),
       this.pool.query<VendorInteractionRow>(
         `SELECT vi.id, vi.vendor_id, vi.kind, vi.event_type, vi.title, vi.summary, vi.channel,
@@ -4165,6 +4169,7 @@ export class PostgresRegistry implements RegistryRepository {
       id: row.id,
       name: row.name,
       short: row.short,
+      hasTimeline: row.has_timeline,
       interactions: (interactionsByVendor.get(row.id) ?? []).map((interaction) => ({
         id: interaction.id,
         kind: interaction.kind,

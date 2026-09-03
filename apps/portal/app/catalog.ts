@@ -107,6 +107,7 @@ export type CatalogVendor = {
   id: string;
   name: string;
   short: string;
+  hasTimeline: boolean;
   interactions: CatalogVendorInteraction[];
   submissions: CatalogSubmission[];
 };

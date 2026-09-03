@@ -6,6 +6,7 @@ const vendor: CatalogVendor = {
   id: "preview-vendor",
   name: "Example Vendor",
   short: "EV",
+  hasTimeline: false,
   interactions: [],
   submissions: [
     previewSubmission("preview-submission", "2026-08-20", "August sample", [

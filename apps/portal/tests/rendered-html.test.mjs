@@ -745,11 +745,12 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Show \$\{count\} more/);
   assert.match(source, /fetch\("\/api\/catalog"/);
   assert.match(source, /filter\(hasVendorRecord\)/);
-  assert.match(source, /vendor\.submissions\.length > 0 \|\| vendor\.interactions\.length > 0/);
+  assert.match(source, /vendor\.submissions\.length > 0 \|\| vendor\.hasTimeline \|\| vendor\.interactions\.length > 0/);
   assert.match(source, /Interaction timeline/);
   assert.doesNotMatch(source, /interaction\.externalRef|interaction\.sourceEventIds|interaction\.actor/);
-  assert.doesNotMatch(source, /value=\{catalog \? vendors\.length : undefined\}/);
-  assert.match(source, /<Stat label=\{t\.vendors\} value=\{landscape\?\.vendorCount\} \/>/);
+  assert.match(source, /const vendorRecordCount = catalog \? vendors\.length : undefined/);
+  assert.match(source, /<Stat label=\{t\.vendors\} value=\{vendorRecordCount\} \/>/);
+  assert.doesNotMatch(source, /<Stat label=\{t\.vendors\} value=\{landscape\?\.vendorCount\} \/>/);
   assert.doesNotMatch(source, /<Stat label=\{t\.benchmarkCategories\}/);
   assert.doesNotMatch(source, /catalog\?\.totals\.submissions/);
   assert.doesNotMatch(source, /selectedBenchmark \? 1 : landscape\?\.benchmarkCount/);
@@ -779,6 +780,7 @@ test("passes through the current CASE submission catalog", async () => {
         id: "vendor-1",
         name: "Vendor One",
         short: "V1",
+        hasTimeline: true,
         interactions: [],
         submissions: [{
           id: "submission-1",
@@ -828,6 +830,7 @@ test("passes through the current CASE submission catalog", async () => {
     assert.equal(response.status, 200);
     const catalog = await response.json();
     assert.deepEqual(catalog.totals, { vendors: 1, submissions: 1, tasks: 1, harborTasks: 1 });
+    assert.equal(catalog.vendors[0].hasTimeline, true);
     const submission = catalog.vendors[0].submissions[0];
     assert.deepEqual(submission.formats, ["harbor"]);
     assert.equal(submission.tasks[0].kind, "task");
@@ -890,6 +893,7 @@ test("projects vendor interactions without private source locators", async () =>
       evidence: "relayed",
       occurredAt: "2026-08-25T03:28:00.000Z",
     }]);
+    assert.equal(catalog.vendors[0].hasTimeline, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

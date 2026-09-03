@@ -25,11 +25,13 @@ export function normalizeCaseSubmission(value: unknown): DatasetSubmission {
 type JsonRecord = Record<string, unknown>;
 
 function normalizeVendor(value: JsonRecord): CatalogVendor {
+  const interactions = records(value.interactions).map(normalizeInteraction);
   return {
     id: text(value.id),
     name: text(value.name),
     short: text(value.short, text(value.name)),
-    interactions: records(value.interactions).map(normalizeInteraction),
+    hasTimeline: value.hasTimeline === true || interactions.length > 0,
+    interactions,
     submissions: Array.isArray(value.submissions) ? value.submissions as CatalogVendor["submissions"] : [],
   };
 }

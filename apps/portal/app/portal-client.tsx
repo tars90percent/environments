@@ -232,6 +232,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   }, [catalog, initialCatalog, view]);
 
   const vendors = useMemo(() => (catalog?.vendors ?? []).filter(hasVendorRecord), [catalog]);
+  const vendorRecordCount = catalog ? vendors.length : undefined;
   const landscape = useMemo(() => catalog ? buildBenchmarkLandscape(catalog) : null, [catalog]);
   const matchingBenchmarkGroups = useMemo(() => {
     if (!landscape) return [];
@@ -328,9 +329,9 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
         {view === "benchmarks" ? <>
           <Stat label={t.harbor} value={selectedBenchmark?.taskCount ?? landscape?.taskCount} />
           {!selectedBenchmark && <Stat label={t.benchmarkDirections} value={landscape?.benchmarkCount} />}
-          <Stat label={t.vendors} value={selectedBenchmark?.vendorCount ?? landscape?.vendorCount} />
+          <Stat label={t.vendors} value={selectedBenchmark?.vendorCount ?? vendorRecordCount} />
         </> : <>
-          <Stat label={t.vendors} value={landscape?.vendorCount} />
+          <Stat label={t.vendors} value={vendorRecordCount} />
           <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
         </>}
       </div>}
@@ -599,7 +600,7 @@ function HarborChecks({ task, language }: { task: CatalogTask; language: Languag
 }
 
 function hasVendorRecord(vendor: CatalogVendor): boolean {
-  return vendor.submissions.length > 0 || vendor.interactions.length > 0;
+  return vendor.submissions.length > 0 || vendor.hasTimeline || vendor.interactions.length > 0;
 }
 
 function vendorRecordSummary(vendor: CatalogVendor, language: Language): string {
@@ -857,9 +858,9 @@ export function LocalDownloadPreview() {
   const previewCatalog: CatalogSnapshot = {
     generatedAt: "2026-08-20T10:00:00.000Z",
     vendors: [
-      { id: "abundant", name: "Abundant", short: "AB", interactions: previewAbundantInteractions, submissions: [] },
-      { id: "preview-vendor", name: "Example Vendor", short: "EV", interactions: [], submissions: [previewSubmission] },
-      { id: "preview-vendor-two", name: "Second Vendor", short: "SV", interactions: [], submissions: [previewSecondSubmission] },
+      { id: "abundant", name: "Abundant", short: "AB", hasTimeline: true, interactions: previewAbundantInteractions, submissions: [] },
+      { id: "preview-vendor", name: "Example Vendor", short: "EV", hasTimeline: false, interactions: [], submissions: [previewSubmission] },
+      { id: "preview-vendor-two", name: "Second Vendor", short: "SV", hasTimeline: false, interactions: [], submissions: [previewSecondSubmission] },
     ],
     totals: { vendors: 3, submissions: 2, tasks: 10, harborTasks: 9 },
   };
