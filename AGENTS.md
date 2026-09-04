@@ -44,4 +44,6 @@ Give each benchmark family one current, source-grounded explanation page. Synthe
 
 CASE lives in `apps/case` and the portal in `apps/portal`. They share this repository but have independent deployments and secrets. Never expose production credentials to vendor material or external evaluation systems.
 
+Repository maintainers must deploy source changes through GitHub CI/CD: validate locally, commit and push to the intended branch, then let Railway deploy the connected commit. Do not use `railway up`, upload a local working tree, manually redeploy, or change Railway configuration unless the user explicitly requests a direct Railway operation. Verify the resulting deployment before calling the change live. This maintainer workflow does not apply to CASE while running as `feishu-codex-agent`; although CASE also receives this `AGENTS.md`, it has no write access to the source repository or Railway.
+
 This root `AGENTS.md` is the only source-controlled agent policy and is packaged into CASE. Do not add application-level copies. Verify affected deployments before calling a change live, and deploy CASE first when the portal depends on a CASE change.
