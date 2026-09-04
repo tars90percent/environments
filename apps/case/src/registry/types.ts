@@ -503,6 +503,29 @@ export type UpdateBenchmarkResult = {
   updated: boolean;
 };
 
+export type MergeBenchmarksInput = {
+  target: {
+    id: string;
+    displayName: string;
+    aliases?: string[];
+  };
+  sourceIds: string[];
+  reason: string;
+  actor: string;
+};
+
+export type MergeBenchmarksResult = {
+  benchmark: RegistryBenchmark;
+  targetCreated: boolean;
+  sourceBenchmarks: RegistryBenchmark[];
+  sourcesMerged: string[];
+  sourcesAlreadyMerged: string[];
+  currentRecordsCanonicalized: {
+    tasks: number;
+    traces: number;
+  };
+};
+
 export type RemoveUnusedBenchmarksInput = {
   benchmarkIds: string[];
 };

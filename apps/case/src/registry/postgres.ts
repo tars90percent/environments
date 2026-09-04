@@ -35,6 +35,8 @@ import type {
   HarborCheckPhase,
   HarborCheckResultInput,
   HarborFindingInput,
+  MergeBenchmarksInput,
+  MergeBenchmarksResult,
   OperationsSummary,
   ReconcileHarborWorkItemsInput,
   ReconcileHarborWorkItemsResult,
@@ -102,6 +104,10 @@ type BenchmarkRow = {
   display_name: string;
   aliases: string[];
   created_at: string | Date;
+  merged_into_id?: string | null;
+  merged_at?: string | Date | null;
+  merged_by?: string | null;
+  merge_reason?: string | null;
 };
 type CurrentTaskBenchmarkRow = {
   task_version_id: string;
@@ -1368,9 +1374,28 @@ export class PostgresRegistry implements RegistryRepository {
 
   async listBenchmarks(): Promise<RegistryBenchmark[]> {
     const result = await this.pool.query<BenchmarkRow>(
-      "SELECT id, display_name, aliases, created_at FROM registry_benchmarks ORDER BY display_name, id",
+      `SELECT id, display_name, aliases, created_at
+       FROM registry_benchmarks
+       WHERE merged_into_id IS NULL
+       ORDER BY display_name, id`,
     );
     return result.rows.map(benchmarkFromRow);
+  }
+
+  private async resolveBenchmarkIds(client: PoolClient, benchmarkIds: string[]): Promise<Map<string, string>> {
+    const result = await client.query<{ id: string; canonical_id: string }>(
+      `SELECT id, COALESCE(merged_into_id, id) AS canonical_id
+       FROM registry_benchmarks
+       WHERE id = ANY($1::text[])`,
+      [benchmarkIds],
+    );
+    const resolved = new Map(result.rows.map((row) => [row.id, row.canonical_id]));
+    for (const benchmarkId of benchmarkIds) {
+      if (!resolved.has(benchmarkId)) {
+        throw new RegistryNotFoundError(`Benchmark ${benchmarkId} is not registered`);
+      }
+    }
+    return resolved;
   }
 
   async registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult> {
@@ -1379,11 +1404,15 @@ export class PostgresRegistry implements RegistryRepository {
       await client.query("BEGIN");
       await client.query("LOCK TABLE registry_benchmarks IN SHARE ROW EXCLUSIVE MODE");
       const existingResult = await client.query<BenchmarkRow>(
-        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks WHERE id = $1",
+        `SELECT id, display_name, aliases, created_at, merged_into_id
+         FROM registry_benchmarks WHERE id = $1`,
         [input.id],
       );
       const existing = existingResult.rows[0];
       if (existing) {
+        if (existing.merged_into_id) {
+          throw new RegistryConflictError(`Benchmark ${input.id} was merged into ${existing.merged_into_id}`);
+        }
         if (existing.display_name !== input.displayName || hashValue(existing.aliases) !== hashValue(input.aliases ?? [])) {
           throw new RegistryConflictError(`Benchmark ${input.id} already exists with different contents`);
         }
@@ -1393,7 +1422,9 @@ export class PostgresRegistry implements RegistryRepository {
 
       const requestedLabels = new Set([input.id, input.displayName, ...(input.aliases ?? [])].map(normalizedBenchmarkLabel));
       const allBenchmarks = await client.query<BenchmarkRow>(
-        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks",
+        `SELECT id, display_name, aliases, created_at
+         FROM registry_benchmarks
+         WHERE merged_into_id IS NULL`,
       );
       for (const benchmark of allBenchmarks.rows) {
         const registeredLabels = [benchmark.id, benchmark.display_name, ...benchmark.aliases].map(normalizedBenchmarkLabel);
@@ -1428,15 +1459,21 @@ export class PostgresRegistry implements RegistryRepository {
       await client.query("BEGIN");
       await client.query("LOCK TABLE registry_benchmarks IN SHARE ROW EXCLUSIVE MODE");
       const existingResult = await client.query<BenchmarkRow>(
-        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks WHERE id = $1",
+        `SELECT id, display_name, aliases, created_at, merged_into_id
+         FROM registry_benchmarks WHERE id = $1`,
         [input.id],
       );
       const existing = existingResult.rows[0];
       if (!existing) throw new RegistryNotFoundError(`Benchmark ${input.id} does not exist`);
+      if (existing.merged_into_id) {
+        throw new RegistryConflictError(`Benchmark ${input.id} was merged into ${existing.merged_into_id}`);
+      }
 
       const requestedLabels = new Set([input.id, input.displayName, ...(input.aliases ?? [])].map(normalizedBenchmarkLabel));
       const otherBenchmarks = await client.query<BenchmarkRow>(
-        "SELECT id, display_name, aliases, created_at FROM registry_benchmarks WHERE id <> $1",
+        `SELECT id, display_name, aliases, created_at
+         FROM registry_benchmarks
+         WHERE id <> $1 AND merged_into_id IS NULL`,
         [input.id],
       );
       for (const benchmark of otherBenchmarks.rows) {
@@ -1467,6 +1504,162 @@ export class PostgresRegistry implements RegistryRepository {
       });
       await client.query("COMMIT");
       return { benchmark: benchmarkFromRow(result.rows[0]!), updated: true };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async mergeBenchmarks(input: MergeBenchmarksInput): Promise<MergeBenchmarksResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("LOCK TABLE registry_benchmarks IN SHARE ROW EXCLUSIVE MODE");
+      await client.query("LOCK TABLE registry_task_versions, registry_task_benchmark_assignments IN SHARE MODE");
+
+      const sourceResult = await client.query<BenchmarkRow>(
+        `SELECT id, display_name, aliases, created_at, merged_into_id, merged_at, merged_by, merge_reason
+         FROM registry_benchmarks
+         WHERE id = ANY($1::text[])
+         ORDER BY id`,
+        [input.sourceIds],
+      );
+      const foundSourceIds = new Set(sourceResult.rows.map((row) => row.id));
+      const missingSourceIds = input.sourceIds.filter((id) => !foundSourceIds.has(id));
+      if (missingSourceIds.length) {
+        throw new RegistryNotFoundError(`Benchmarks not found: ${missingSourceIds.join(", ")}`);
+      }
+
+      for (const source of sourceResult.rows) {
+        if (source.merged_into_id && source.merged_into_id !== input.target.id) {
+          throw new RegistryConflictError(`Benchmark ${source.id} was already merged into ${source.merged_into_id}`);
+        }
+      }
+      const chainedSourceResult = await client.query<{ id: string; merged_into_id: string }>(
+        `SELECT id, merged_into_id
+         FROM registry_benchmarks
+         WHERE merged_into_id = ANY($1::text[])
+         ORDER BY id`,
+        [input.sourceIds],
+      );
+      if (chainedSourceResult.rows.length) {
+        const redirects = chainedSourceResult.rows.map((row) => `${row.id} -> ${row.merged_into_id}`);
+        throw new RegistryConflictError(
+          `A benchmark that already receives merge redirects cannot be merged again: ${redirects.join(", ")}`,
+        );
+      }
+
+      const targetResult = await client.query<BenchmarkRow>(
+        `SELECT id, display_name, aliases, created_at, merged_into_id
+         FROM registry_benchmarks
+         WHERE id = $1`,
+        [input.target.id],
+      );
+      let target = targetResult.rows[0];
+      if (target?.merged_into_id) {
+        throw new RegistryConflictError(`Benchmark ${input.target.id} was merged into ${target.merged_into_id}`);
+      }
+      const aliases = input.target.aliases ?? [];
+      if (target && (target.display_name !== input.target.displayName || hashValue(target.aliases) !== hashValue(aliases))) {
+        throw new RegistryConflictError(`Benchmark ${input.target.id} already exists with different contents`);
+      }
+
+      const requestedLabels = new Set(
+        [input.target.id, input.target.displayName, ...aliases].map(normalizedBenchmarkLabel),
+      );
+      const excludedIds = [input.target.id, ...input.sourceIds];
+      const otherBenchmarks = await client.query<BenchmarkRow>(
+        `SELECT id, display_name, aliases, created_at
+         FROM registry_benchmarks
+         WHERE merged_into_id IS NULL AND NOT (id = ANY($1::text[]))`,
+        [excludedIds],
+      );
+      for (const benchmark of otherBenchmarks.rows) {
+        const registeredLabels = [benchmark.id, benchmark.display_name, ...benchmark.aliases]
+          .map(normalizedBenchmarkLabel);
+        if (registeredLabels.some((label) => requestedLabels.has(label))) {
+          throw new RegistryConflictError(
+            `Benchmark ${input.target.id} conflicts with registered benchmark ${benchmark.id}`,
+          );
+        }
+      }
+
+      let targetCreated = false;
+      if (!target) {
+        const inserted = await client.query<BenchmarkRow>(
+          `INSERT INTO registry_benchmarks(id, display_name, aliases)
+           VALUES ($1, $2, $3::jsonb)
+           RETURNING id, display_name, aliases, created_at`,
+          [input.target.id, input.target.displayName, json(aliases)],
+        );
+        target = inserted.rows[0]!;
+        targetCreated = true;
+        await this.insertStatusEvent(client, "benchmark", input.target.id, "benchmark.registered", input.actor, {
+          displayName: input.target.displayName,
+          aliases,
+          reason: input.reason,
+        });
+      }
+
+      const currentRecordResult = await client.query<{ task_kind: "task" | "trace"; count: string }>(
+        `WITH latest_assignments AS (
+           SELECT DISTINCT ON (assignment.task_version_id)
+                  assignment.task_version_id, assignment.benchmark_id
+           FROM registry_task_benchmark_assignments assignment
+           ORDER BY assignment.task_version_id, assignment.revision DESC
+         )
+         SELECT tv.task_kind, COUNT(*)::text AS count
+         FROM registry_task_versions tv
+         LEFT JOIN latest_assignments latest ON latest.task_version_id = tv.id
+         WHERE tv.superseded_at IS NULL
+           AND COALESCE(latest.benchmark_id, tv.benchmark_id) = ANY($1::text[])
+         GROUP BY tv.task_kind`,
+        [input.sourceIds],
+      );
+      const currentRecordsCanonicalized = { tasks: 0, traces: 0 };
+      for (const row of currentRecordResult.rows) {
+        if (row.task_kind === "task") currentRecordsCanonicalized.tasks = Number(row.count);
+        if (row.task_kind === "trace") currentRecordsCanonicalized.traces = Number(row.count);
+      }
+
+      const sourcesAlreadyMerged = sourceResult.rows
+        .filter((source) => source.merged_into_id === input.target.id)
+        .map((source) => source.id);
+      const sourcesMerged = sourceResult.rows
+        .filter((source) => !source.merged_into_id)
+        .map((source) => source.id);
+      if (sourcesMerged.length) {
+        await client.query(
+          `UPDATE registry_benchmarks
+           SET merged_into_id = $1, merged_at = now(), merged_by = $2, merge_reason = $3
+           WHERE id = ANY($4::text[]) AND merged_into_id IS NULL`,
+          [input.target.id, input.actor, input.reason, sourcesMerged],
+        );
+        for (const source of sourceResult.rows.filter((row) => sourcesMerged.includes(row.id))) {
+          await this.insertStatusEvent(client, "benchmark", source.id, "benchmark.merged_into", input.actor, {
+            targetId: input.target.id,
+            reason: input.reason,
+            before: { displayName: source.display_name, aliases: source.aliases },
+          });
+        }
+        await this.insertStatusEvent(client, "benchmark", input.target.id, "benchmark.sources_merged", input.actor, {
+          sourceIds: sourcesMerged,
+          reason: input.reason,
+          currentRecordsCanonicalized,
+        });
+      }
+
+      await client.query("COMMIT");
+      return {
+        benchmark: benchmarkFromRow(target),
+        targetCreated,
+        sourceBenchmarks: sourceResult.rows.map(benchmarkFromRow),
+        sourcesMerged,
+        sourcesAlreadyMerged,
+        currentRecordsCanonicalized,
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1632,7 +1825,6 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async assignTaskBenchmarks(input: AssignTaskBenchmarksInput): Promise<AssignTaskBenchmarksResult> {
-    const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1650,16 +1842,15 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       const benchmarkIds = [...new Set(input.assignments.map((assignment) => assignment.benchmarkId))];
-      const benchmarkResult = await client.query<{ id: string }>(
-        "SELECT id FROM registry_benchmarks WHERE id = ANY($1::text[])",
-        [benchmarkIds],
-      );
-      const registeredBenchmarkIds = new Set(benchmarkResult.rows.map((row) => row.id));
-      for (const benchmarkId of benchmarkIds) {
-        if (!registeredBenchmarkIds.has(benchmarkId)) {
-          throw new RegistryNotFoundError(`Benchmark ${benchmarkId} is not registered`);
-        }
-      }
+      const resolvedBenchmarkIds = await this.resolveBenchmarkIds(client, benchmarkIds);
+      input = {
+        ...input,
+        assignments: input.assignments.map((assignment) => ({
+          ...assignment,
+          benchmarkId: resolvedBenchmarkIds.get(assignment.benchmarkId)!,
+        })),
+      };
+      const requestSha256 = hashValue(input);
 
       const taskIds = input.assignments.map((assignment) => assignment.taskId);
       const currentResult = await client.query<CurrentTaskBenchmarkRow>(
@@ -1838,7 +2029,6 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async appendTasks(input: AppendTasksInput): Promise<AppendTasksResult> {
-    const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1897,16 +2087,15 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       const benchmarkIds = [...new Set(input.tasks.map((task) => task.benchmarkId))];
-      const benchmarkResult = await client.query<{ id: string }>(
-        "SELECT id FROM registry_benchmarks WHERE id = ANY($1::text[])",
-        [benchmarkIds],
-      );
-      const registeredBenchmarkIds = new Set(benchmarkResult.rows.map((row) => row.id));
-      for (const benchmarkId of benchmarkIds) {
-        if (!registeredBenchmarkIds.has(benchmarkId)) {
-          throw new RegistryNotFoundError(`Benchmark ${benchmarkId} is not registered`);
-        }
-      }
+      const resolvedBenchmarkIds = await this.resolveBenchmarkIds(client, benchmarkIds);
+      input = {
+        ...input,
+        tasks: input.tasks.map((task) => ({
+          ...task,
+          benchmarkId: resolvedBenchmarkIds.get(task.benchmarkId)!,
+        })),
+      };
+      const requestSha256 = hashValue(input);
 
       const compatibilityCategoryId = "case:tasks";
       await client.query(
@@ -2041,7 +2230,6 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async reconcileSubmissionTasks(input: ReconcileSubmissionTasksInput): Promise<ReconcileSubmissionTasksResult> {
-    const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -2100,16 +2288,15 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       const benchmarkIds = [...new Set(input.tasks.map((task) => task.benchmarkId))];
-      const benchmarkResult = await client.query<{ id: string }>(
-        "SELECT id FROM registry_benchmarks WHERE id = ANY($1::text[])",
-        [benchmarkIds],
-      );
-      const registeredBenchmarkIds = new Set(benchmarkResult.rows.map((row) => row.id));
-      for (const benchmarkId of benchmarkIds) {
-        if (!registeredBenchmarkIds.has(benchmarkId)) {
-          throw new RegistryNotFoundError(`Benchmark ${benchmarkId} is not registered`);
-        }
-      }
+      const resolvedBenchmarkIds = await this.resolveBenchmarkIds(client, benchmarkIds);
+      input = {
+        ...input,
+        tasks: input.tasks.map((task) => ({
+          ...task,
+          benchmarkId: resolvedBenchmarkIds.get(task.benchmarkId)!,
+        })),
+      };
+      const requestSha256 = hashValue(input);
 
       const compatibilityCategoryId = "case:tasks";
       await client.query(

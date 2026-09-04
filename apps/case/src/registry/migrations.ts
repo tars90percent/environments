@@ -1758,6 +1758,81 @@ const migrations: Migration[] = [
         'Current vendor timeline entries. Edits and deletions are retained in registry_vendor_timeline_changes.';
     `,
   },
+  {
+    id: "024_benchmark_direction_merges",
+    sql: `
+      ALTER TABLE registry_benchmarks
+        ADD COLUMN merged_into_id text REFERENCES registry_benchmarks(id),
+        ADD COLUMN merged_at timestamptz,
+        ADD COLUMN merged_by text,
+        ADD COLUMN merge_reason text,
+        ADD CONSTRAINT registry_benchmarks_not_self_merged
+          CHECK (merged_into_id IS NULL OR merged_into_id <> id),
+        ADD CONSTRAINT registry_benchmarks_merge_metadata_complete
+          CHECK (
+            (merged_into_id IS NULL AND merged_at IS NULL AND merged_by IS NULL AND merge_reason IS NULL)
+            OR
+            (merged_into_id IS NOT NULL AND merged_at IS NOT NULL AND merged_by IS NOT NULL AND merge_reason IS NOT NULL)
+          );
+
+      CREATE INDEX registry_benchmarks_merged_into_idx
+        ON registry_benchmarks(merged_into_id)
+        WHERE merged_into_id IS NOT NULL;
+
+      CREATE OR REPLACE VIEW registry_current_task_benchmarks AS
+      SELECT tv.id AS task_version_id,
+             COALESCE(assigned_benchmark.merged_into_id, assigned_benchmark.id) AS benchmark_id,
+             latest.id AS assignment_id,
+             latest.actor,
+             latest.reason,
+             latest.created_at AS assigned_at
+      FROM registry_task_versions tv
+      LEFT JOIN LATERAL (
+        SELECT assignment.id,
+               assignment.benchmark_id,
+               assignment.actor,
+               assignment.reason,
+               assignment.revision,
+               assignment.created_at
+        FROM registry_task_benchmark_assignments assignment
+        WHERE assignment.task_version_id = tv.id
+        ORDER BY assignment.revision DESC
+        LIMIT 1
+      ) latest ON true
+      JOIN registry_benchmarks assigned_benchmark
+        ON assigned_benchmark.id = COALESCE(latest.benchmark_id, tv.benchmark_id);
+
+      CREATE OR REPLACE VIEW registry_sample_tasks AS
+      SELECT tv.id,
+             tv.batch_id AS submission_id,
+             t.vendor_id,
+             tv.task_stable_key AS stable_key,
+             tv.task_title AS title,
+             tv.task_summary AS summary,
+             tv.task_kind,
+             tv.format_kind,
+             tv.source_path,
+             tv.artifact_id,
+             tv.content_sha256,
+             tv.created_at,
+             current_benchmark.benchmark_id,
+             benchmark.display_name AS benchmark_name,
+             current_gpu.gpu_required
+      FROM registry_task_versions tv
+      JOIN registry_tasks t ON t.id = tv.task_id
+      JOIN registry_current_task_benchmarks current_benchmark ON current_benchmark.task_version_id = tv.id
+      JOIN registry_benchmarks benchmark ON benchmark.id = current_benchmark.benchmark_id
+      JOIN registry_current_task_gpu_requirements current_gpu ON current_gpu.task_version_id = tv.id
+      WHERE tv.superseded_at IS NULL;
+
+      COMMENT ON COLUMN registry_benchmarks.merged_into_id IS
+        'Canonical active benchmark direction for a retained historical benchmark identity.';
+      COMMENT ON COLUMN registry_benchmarks.merge_reason IS
+        'Audited explanation for consolidating this historical direction into its canonical benchmark.';
+      COMMENT ON VIEW registry_current_task_benchmarks IS
+        'Current benchmark assignment per exact task version, resolved through one audited benchmark-direction merge.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

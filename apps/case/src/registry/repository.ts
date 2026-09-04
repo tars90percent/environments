@@ -13,6 +13,8 @@ import type {
   HarborCheckAttemptInput,
   HarborCheckResultInput,
   HarborFindingInput,
+  MergeBenchmarksInput,
+  MergeBenchmarksResult,
   OperationsSummary,
   ReconcileHarborWorkItemsInput,
   ReconcileHarborWorkItemsResult,
@@ -63,6 +65,7 @@ export interface RegistryRepository {
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
   updateBenchmark(input: UpdateBenchmarkInput): Promise<UpdateBenchmarkResult>;
+  mergeBenchmarks(input: MergeBenchmarksInput): Promise<MergeBenchmarksResult>;
   removeUnusedBenchmarks(input: RemoveUnusedBenchmarksInput): Promise<RemoveUnusedBenchmarksResult>;
   purgeErroneousBenchmarks(input: PurgeErroneousBenchmarksInput): Promise<PurgeErroneousBenchmarksResult>;
   assignTaskBenchmarks(input: AssignTaskBenchmarksInput): Promise<AssignTaskBenchmarksResult>;

@@ -10,6 +10,7 @@ import {
   parseHarborCheckAttempt,
   parseHarborCheckResult,
   parseHarborFinding,
+  parseMergeBenchmarks,
   parsePurgeErroneousBenchmarks,
   parseRegisterBenchmark,
   parseReconcileHarborWorkItems,
@@ -199,6 +200,27 @@ test("validates audited benchmark label updates", () => {
   assert.deepEqual(parsed.aliases, ["tb3", "FrontierBench"].sort((a, b) => a.localeCompare(b)));
   assert.throws(() => parseUpdateBenchmark({ ...parsed, reason: "" }), ValidationError);
   assert.throws(() => parseUpdateBenchmark({ ...parsed, aliases: ["Terminal Bench", "terminal_bench"] }), /unique ignoring case/);
+});
+
+test("validates audited benchmark direction merges", () => {
+  const parsed = parseMergeBenchmarks({
+    target: {
+      id: "terminal-bench-3-4",
+      displayName: "Terminal-Bench 3/4",
+      aliases: ["tb4", "tb3", "frontier-bench", "terminal-bench-4"],
+    },
+    sourceIds: ["terminal-bench-4", "frontier-bench"],
+    reason: "These releases use the same environment distribution and should share one task tag.",
+    actor: "Vincent Wu via Codex",
+  });
+  assert.deepEqual(parsed.sourceIds, ["frontier-bench", "terminal-bench-4"]);
+  assert.deepEqual(parsed.target.aliases, ["frontier-bench", "tb3", "tb4", "terminal-bench-4"]);
+  assert.throws(() => parseMergeBenchmarks({ ...parsed, sourceIds: [] }), /at least one/);
+  assert.throws(() => parseMergeBenchmarks({ ...parsed, sourceIds: [parsed.target.id] }), /cannot also be a source/);
+  assert.throws(
+    () => parseMergeBenchmarks({ ...parsed, target: { ...parsed.target, id: "terminal-bench/3-4" } }),
+    /unsupported characters/,
+  );
 });
 
 test("validates atomic unused benchmark removals", () => {

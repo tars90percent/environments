@@ -11,6 +11,7 @@ import type {
   HarborCheckAttemptInput,
   HarborCheckResultInput,
   HarborFindingInput,
+  MergeBenchmarksInput,
   PurgeErroneousBenchmarksInput,
   ReconcileHarborWorkItemsInput,
   RegisterBenchmarkInput,
@@ -402,6 +403,40 @@ export function parseUpdateBenchmark(value: unknown): UpdateBenchmarkInput {
     id: identifier(input.id, "id"),
     displayName: boundedString(input.displayName, "displayName", 300),
     aliases,
+    reason: boundedString(input.reason, "reason", 2_000),
+    actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
+export function parseMergeBenchmarks(value: unknown): MergeBenchmarksInput {
+  const input = object(value, "benchmark merge");
+  onlyKeys(input, new Set(["target", "sourceIds", "reason", "actor"]), "benchmark merge");
+  const target = object(input.target, "target");
+  onlyKeys(target, new Set(["id", "displayName", "aliases"]), "target");
+  const aliases = (optionalStringArray(target.aliases, "target.aliases") ?? [])
+    .map((alias) => boundedString(alias, "target.aliases[]", 300))
+    .sort((a, b) => a.localeCompare(b));
+  if (new Set(aliases.map(normalizedBenchmarkLabel)).size !== aliases.length) {
+    throw new ValidationError("target.aliases must be unique ignoring case");
+  }
+  const sourceIds = array(input.sourceIds, "sourceIds")
+    .map((value, index) => identifier(value, `sourceIds[${index}]`));
+  if (!sourceIds.length) throw new ValidationError("sourceIds must contain at least one benchmark id");
+  if (new Set(sourceIds).size !== sourceIds.length) {
+    throw new ValidationError("sourceIds must not contain duplicates");
+  }
+  const targetId = identifier(target.id, "target.id");
+  if (sourceIds.includes(targetId)) throw new ValidationError("target.id cannot also be a source benchmark");
+  if (sourceIds.includes("unspecified") || targetId === "unspecified") {
+    throw new ValidationError("The unspecified benchmark cannot participate in a merge");
+  }
+  return {
+    target: {
+      id: targetId,
+      displayName: boundedString(target.displayName, "target.displayName", 300),
+      aliases,
+    },
+    sourceIds: sourceIds.sort((a, b) => a.localeCompare(b)),
     reason: boundedString(input.reason, "reason", 2_000),
     actor: boundedString(input.actor, "actor", 500),
   };
@@ -1072,6 +1107,10 @@ function identifier(value: unknown, name: string): string {
     throw new ValidationError(`${name} contains unsupported characters`);
   }
   return parsed;
+}
+
+function normalizedBenchmarkLabel(value: string): string {
+  return value.normalize("NFKC").trim().toLowerCase().replace(/[\s_-]+/g, "-");
 }
 
 function uniqueIdentifiers(value: unknown, name: string): string[] {

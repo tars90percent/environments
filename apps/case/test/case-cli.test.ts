@@ -28,6 +28,7 @@ test("casectl dispatches registry and task-package operations", () => {
   assert.ok(operations.commands?.["update-vendor-interaction"]);
   assert.ok(operations.commands?.["delete-vendor-interaction"]);
   assert.ok(operations.commands?.["delete-vendor-timeline"]);
+  assert.ok(operations.commands?.["merge-benchmarks"]);
 
   const taskPackage = run("task-package", "--help");
   assert.equal(taskPackage.status, 0, taskPackage.stderr);

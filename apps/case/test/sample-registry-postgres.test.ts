@@ -445,6 +445,57 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.equal(correctedTask?.checks.environment?.outcome, "pass");
     assert.equal(correctedTask?.gpuRequired, true);
     assert.deepEqual(correctedTask?.findings, []);
+
+    await repository.registerBenchmark({
+      id: "terminal-bench-4",
+      displayName: "Terminal-Bench 4",
+      aliases: ["tb4"],
+      actor: "TARS",
+    });
+    await repository.assignTaskBenchmarks({
+      submissionId: "submission-one",
+      assignments: [{ taskId: "task-trace-v2", benchmarkId: "terminal-bench-4" }],
+      reason: "Prepare a second source direction for the merge fixture.",
+      actor: "TARS",
+    });
+    const benchmarkMerge = {
+      target: {
+        id: "terminal-bench-3-4",
+        displayName: "Terminal-Bench 3/4",
+        aliases: ["tb3", "tb4", "terminal-bench", "terminal-bench-4"],
+      },
+      sourceIds: ["terminal-bench", "terminal-bench-4"],
+      reason: "The two releases share one environment distribution and task-tagging direction.",
+      actor: "TARS",
+    };
+    const mergedBenchmarks = await repository.mergeBenchmarks(benchmarkMerge);
+    assert.equal(mergedBenchmarks.targetCreated, true);
+    assert.deepEqual(mergedBenchmarks.sourcesMerged, ["terminal-bench", "terminal-bench-4"]);
+    assert.deepEqual(mergedBenchmarks.currentRecordsCanonicalized, { tasks: 1, traces: 1 });
+    assert.deepEqual(
+      (await repository.getSampleSubmission("submission-one"))?.tasks.map((task) => task.benchmark),
+      [
+        { id: "terminal-bench-3-4", displayName: "Terminal-Bench 3/4" },
+        { id: "terminal-bench-3-4", displayName: "Terminal-Bench 3/4" },
+      ],
+    );
+    const activeBenchmarkIds = (await repository.listBenchmarks()).map((benchmark) => benchmark.id);
+    assert.ok(activeBenchmarkIds.includes("terminal-bench-3-4"));
+    assert.ok(!activeBenchmarkIds.includes("terminal-bench"));
+    assert.ok(!activeBenchmarkIds.includes("terminal-bench-4"));
+    const repeatedMerge = await repository.mergeBenchmarks(benchmarkMerge);
+    assert.equal(repeatedMerge.targetCreated, false);
+    assert.deepEqual(repeatedMerge.sourcesMerged, []);
+    assert.deepEqual(repeatedMerge.sourcesAlreadyMerged, ["terminal-bench", "terminal-bench-4"]);
+    const redirectedAssignment = await repository.assignTaskBenchmarks({
+      submissionId: "submission-one",
+      assignments: [{ taskId: "task-one", benchmarkId: "terminal-bench" }],
+      reason: "A historical benchmark id should resolve to its canonical direction.",
+      actor: "TARS",
+    });
+    assert.equal(redirectedAssignment.assignmentsAdded, 0);
+    assert.equal(redirectedAssignment.assignmentsUnchanged, 1);
+
     assert.deepEqual(await repository.deleteVendorTimeline({
       vendorId: "vendor-one",
       reason: "Exercise audited timeline deletion.",
