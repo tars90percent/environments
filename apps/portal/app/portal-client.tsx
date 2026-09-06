@@ -88,6 +88,7 @@ const text = {
     directCaseImport: "Direct CASE import",
     dataset: "Download tasks",
     downloadAllHarbor: "Download all Harbor tasks",
+    benchmarkDownloadNote: "Includes all vendors and submissions for this benchmark, regardless of search.",
     preparingHarborDownload: "Preparing ZIP…",
     retryHarborDownload: "Retry download",
     harborDownloadFailed: "Couldn’t prepare the ZIP.",
@@ -158,6 +159,7 @@ const text = {
     directCaseImport: "直接导入 CASE",
     dataset: "下载任务",
     downloadAllHarbor: "下载全部 Harbor 任务",
+    benchmarkDownloadNote: "包含此基准下所有供应商和提交的任务，不受搜索条件影响。",
     preparingHarborDownload: "正在准备 ZIP…",
     retryHarborDownload: "重新下载",
     harborDownloadFailed: "ZIP 准备失败。",
@@ -344,7 +346,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     {view === "model-explanation" && initialModelBenchmark && initialModelExplanation && <ModelBenchmarkExplanationPage benchmark={initialModelBenchmark} explanation={initialModelExplanation} language={language} localPreview={localPreview} />}
     {view === "model-task" && initialModelBenchmark && initialModelSample && <ModelBenchmarkTaskDetail benchmark={initialModelBenchmark} language={language} localPreview={localPreview} sample={initialModelSample} />}
     {state === "ready" && view === "benchmarks" && landscape && !selectedBenchmark && <BenchmarkOverview categories={matchingBenchmarkCategories} language={language} onSelect={(benchmarkId) => { setSelectedBenchmarkId(benchmarkId); setQuery(""); scrollToTop(); }} totalTasks={landscape.taskCount} />}
-    {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}
+    {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail benchmark={selectedBenchmark} downloadHref={localPreview ? `/local-preview/vendor-harbor-download?benchmark=${encodeURIComponent(selectedBenchmark.id)}` : `/api/benchmarks/${encodeURIComponent(selectedBenchmark.id)}/harbor-download`} language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}
     {state === "ready" && view === "vendors" && !selectedVendor && <StateCard>{t.noMatch}</StateCard>}
     {state === "ready" && view === "vendors" && selectedVendor && <div className="portal-grid">
       <aside className="vendor-sidebar" aria-label={t.vendors}>
@@ -396,10 +398,11 @@ function countLabel(count: number, language: Language, englishSingular: string, 
   return language === "en" && count === 1 ? englishSingular : pluralOrChinese;
 }
 
-function BenchmarkDetail({ language, onOpenVendor, records }: { language: Language; onOpenVendor: (vendorId: string) => void; records: HarborTaskContext[] }) {
+function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendor, records }: { benchmark: BenchmarkGroup; downloadHref: string; language: Language; onOpenVendor: (vendorId: string) => void; records: HarborTaskContext[] }) {
   const t = text[language];
   const vendorGroups = groupRecordsByVendor(records);
   return <div className="benchmark-detail">
+    <div><HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={benchmark.taskCount} /><p className="benchmark-download-note">{t.benchmarkDownloadNote}</p></div>
     <section className="benchmark-task-section">
       <div className="section-title"><div><h3>{t.benchmarkTasks}</h3><p>{t.benchmarkTaskNote}</p></div><span>{records.length} {t.taskRecords}</span></div>
       {vendorGroups.length === 0 ? <StateCard>{t.noMatch}</StateCard> : <div className="benchmark-vendor-list">{vendorGroups.map(({ vendor, records: vendorRecords }) => <section className="benchmark-vendor-group" key={vendor.id}>
@@ -429,14 +432,24 @@ function StateCard({ children }: { children: string }) {
 }
 
 function VendorHarborTasks({ vendor, categories, downloadHref, language }: { vendor: CatalogVendor; categories: BenchmarkCategoryGroup[]; downloadHref: string; language: Language }) {
-  const t = text[language];
-  const [downloadState, setDownloadState] = useState<"idle" | "preparing" | "error">("idle");
   const groups = categories.map((category) => ({
     category,
     records: category.groups.flatMap((group) => group.records).filter((record) => record.vendor.id === vendor.id),
   })).filter((group) => group.records.length > 0);
   const taskCount = groups.reduce((sum, group) => sum + group.records.length, 0);
   if (taskCount === 0) return null;
+  return <section className="vendor-harbor-tasks">
+    <HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={taskCount} />
+    <div className="vendor-harbor-category-list">{groups.map((group) => <section className="vendor-harbor-category" key={group.category.id}>
+      <header className="vendor-harbor-category-header"><h3>{group.category.label[language]}</h3></header>
+      <div className="task-list">{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>
+    </section>)}</div>
+  </section>;
+}
+
+function HarborDownloadToolbar({ downloadHref, language, taskCount }: { downloadHref: string; language: Language; taskCount: number }) {
+  const t = text[language];
+  const [downloadState, setDownloadState] = useState<"idle" | "preparing" | "error">("idle");
   const prepareDownload = async () => {
     if (downloadState === "preparing") return;
     setDownloadState("preparing");
@@ -460,13 +473,7 @@ function VendorHarborTasks({ vendor, categories, downloadHref, language }: { ven
       setDownloadState("error");
     }
   };
-  return <section className="vendor-harbor-tasks">
-    <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><button disabled={downloadState === "preparing"} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>
-    <div className="vendor-harbor-category-list">{groups.map((group) => <section className="vendor-harbor-category" key={group.category.id}>
-      <header className="vendor-harbor-category-header"><h3>{group.category.label[language]}</h3></header>
-      <div className="task-list">{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>
-    </section>)}</div>
-  </section>;
+  return <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><button disabled={downloadState === "preparing"} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>;
 }
 
 function VendorInteractionTimeline({ interactions, language }: { interactions: CatalogVendorInteraction[]; language: Language }) {

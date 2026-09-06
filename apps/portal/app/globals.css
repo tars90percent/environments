@@ -90,6 +90,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .benchmark-card-action { margin-top: 11px; color: var(--burgundy); font-size: 9px; font-weight: 640; }
 
 .benchmark-detail { display: grid; gap: 22px; }
+.benchmark-download-note { margin: 4px 0 0; color: var(--faint); font-size: 11px; text-align: right; }
 .landscape-back { width: fit-content; padding: 0; display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--burgundy); font-size: 10px; font-weight: 620; }
 .landscape-back:hover { color: var(--burgundy-deep); }
 .registry-back { margin-bottom: 28px; }
@@ -495,7 +496,7 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .vendor-meta { display: flex; flex-wrap: wrap; gap: 9px 20px; margin-top: 22px; color: rgba(255,255,255,.72); font-size: 10px; }
 .vendor-meta span + span::before { margin-right: 20px; color: rgba(255,255,255,.35); content: "•"; }
 .vendor-harbor-tasks { margin-top: 36px; }
-.vendor-harbor-toolbar { min-height: 40px; display: flex; align-items: flex-start; justify-content: flex-end; gap: 12px; }
+.vendor-harbor-toolbar { min-height: 40px; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 12px; }
 .vendor-harbor-toolbar > span { padding-top: 8px; color: var(--faint); font-size: 10px; }
 .vendor-harbor-toolbar > button { min-height: 30px; padding: 6px 10px; border: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--burgundy-soft); color: var(--burgundy); cursor: pointer; font: inherit; font-size: 9px; font-weight: 620; }
 .vendor-harbor-toolbar > button:hover:not(:disabled) { background: #f8dfe8; }

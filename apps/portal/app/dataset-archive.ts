@@ -1,5 +1,6 @@
 import type { CatalogSourceEvent, CatalogVendor } from "./catalog";
 import { displayArchivePath } from "./archive-path";
+import type { BenchmarkGroup, HarborTaskContext } from "./benchmark-landscape";
 
 export type DatasetSubmission = {
   id: string;
@@ -92,20 +93,7 @@ export function taskDatasetArchive(submission: DatasetSubmission, resolvePackage
 export function vendorHarborDatasetManifest(vendor: CatalogVendor) {
   const tasks: VendorHarborDatasetTask[] = vendor.submissions.flatMap((submission) => submission.tasks
     .filter((task) => task.kind === "task" && task.format === "harbor")
-    .map((task) => ({
-      taskId: task.id,
-      stableKey: task.stableKey,
-      title: task.title,
-      kind: "task" as const,
-      format: "harbor" as const,
-      benchmark: task.benchmark,
-      gpuRequired: task.gpuRequired,
-      sourcePath: displayArchivePath(requiredTaskSourcePath(task.sourcePath, task.id)),
-      checks: task.checks,
-      findings: task.findings,
-      submission: { id: submission.id, date: submission.date, label: submission.label },
-      bucketPrefix: harborTaskBucketPrefix(vendor.id, submission.id, task.sourcePath, task.id),
-    })));
+    .map((task) => harborDatasetTask({ task, submission, vendor })));
   return {
     schemaVersion: "case.vendor-harbor-task-files.v1",
     vendor: { id: vendor.id, name: vendor.name },
@@ -115,6 +103,44 @@ export function vendorHarborDatasetManifest(vendor: CatalogVendor) {
       included: tasks.length,
     },
     tasks,
+  };
+}
+
+export function benchmarkHarborDatasetManifest(benchmark: BenchmarkGroup) {
+  const tasks = benchmark.records.map((record) => ({
+    ...harborDatasetTask(record),
+    vendor: { id: record.vendor.id, name: record.vendor.name },
+  }));
+  return {
+    schemaVersion: "case.benchmark-harbor-task-files.v1",
+    benchmark: { id: benchmark.id, displayName: benchmark.displayName },
+    selection: {
+      kind: "all_active_benchmark_harbor_tasks",
+      source: "harbor-task-gateway",
+      included: tasks.length,
+    },
+    tasks,
+  };
+}
+
+export function benchmarkHarborDatasetFilename(benchmark: BenchmarkGroup): string {
+  return `${safeFilenameSegment(benchmark.displayName, benchmark.id)}-harbor-tasks.zip`;
+}
+
+function harborDatasetTask({ task, submission, vendor }: HarborTaskContext): VendorHarborDatasetTask {
+  return {
+    taskId: task.id,
+    stableKey: task.stableKey,
+    title: task.title,
+    kind: "task" as const,
+    format: "harbor" as const,
+    benchmark: task.benchmark,
+    gpuRequired: task.gpuRequired,
+    sourcePath: displayArchivePath(requiredTaskSourcePath(task.sourcePath, task.id)),
+    checks: task.checks,
+    findings: task.findings,
+    submission: { id: submission.id, date: submission.date, label: submission.label },
+    bucketPrefix: harborTaskBucketPrefix(vendor.id, submission.id, task.sourcePath, task.id),
   };
 }
 

@@ -90,5 +90,7 @@ Harbor filesystem views store tree metadata only; each file continues to live at
 the publisher's repository.
 
 File downloads use short CASE references; old artifact links remain supported.
+
+Vendor pages and individual benchmark-direction pages offer “Download all Harbor tasks”. Both use the Harbor gateway to build or reuse a ZIP from the exact published task folders in `harbor-tasks`. Benchmark downloads span all vendors and submissions for that benchmark, independently of the page's search filter. The ZIP preserves vendor/submission/task paths, and its manifest identifies the vendor and submission for each task. Incomplete task roots cause preparation to fail rather than producing a partial archive.
 Export manifests retain task and submission identity, source paths and evidence,
 without repeating internal content checksums.

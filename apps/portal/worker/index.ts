@@ -3,6 +3,8 @@ import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } fr
 import handler from "vinext/server/app-router-entry";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
+  benchmarkHarborDatasetFilename,
+  benchmarkHarborDatasetManifest,
   taskDatasetArchive,
   taskDatasetFilename,
   taskDatasetManifest,
@@ -13,6 +15,7 @@ import {
 import { originalSubmissionArchive } from "../app/original-submission-archive";
 import { originalSubmissionArchiveFilename, originalSubmissionArtifacts, type OriginalSubmissionArtifact } from "../app/original-submission";
 import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-catalog";
+import { buildBenchmarkLandscape } from "../app/benchmark-landscape";
 
 interface Env {
   ASSETS: Fetcher;
@@ -60,7 +63,9 @@ const worker = {
     const registryUrl = caseRegistryUrl(runtimeEnv);
 
     const vendorHarborDownloadMatch = url.pathname.match(/^\/api\/vendors\/([^/]+)\/harbor-download$/);
-    if (vendorHarborDownloadMatch?.[1]) {
+    const benchmarkHarborDownloadMatch = url.pathname.match(/^\/api\/benchmarks\/([^/]+)\/harbor-download$/);
+    if (vendorHarborDownloadMatch?.[1] || benchmarkHarborDownloadMatch?.[1]) {
+      const unavailableError = benchmarkHarborDownloadMatch ? "benchmark_harbor_dataset_unavailable" : "vendor_harbor_dataset_unavailable";
       if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
       if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
       if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
@@ -71,16 +76,27 @@ const worker = {
         return Response.json({ error: "harbor_task_gateway_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
       }
       try {
-        const vendorId = decodeURIComponent(vendorHarborDownloadMatch[1]);
         const upstream = await fetch(`${registryUrl}/v1/catalog`, {
           headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
         });
-        if (!upstream.ok) return registryErrorResponse(upstream, "vendor_harbor_dataset_unavailable");
-        const vendor = normalizeCaseCatalog(await upstream.json()).vendors.find((candidate) => candidate.id === vendorId);
-        if (!vendor) return Response.json({ error: "vendor_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
-        const manifest = vendorHarborDatasetManifest(vendor);
-        if (!manifest.tasks.length) return Response.json({ error: "vendor_harbor_dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
-        const filename = vendorHarborDatasetFilename(vendor);
+        if (!upstream.ok) return registryErrorResponse(upstream, unavailableError);
+        const catalog = normalizeCaseCatalog(await upstream.json());
+        let manifest: ReturnType<typeof vendorHarborDatasetManifest> | ReturnType<typeof benchmarkHarborDatasetManifest>;
+        let filename: string;
+        if (benchmarkHarborDownloadMatch?.[1]) {
+          const benchmarkId = decodeURIComponent(benchmarkHarborDownloadMatch[1]);
+          const benchmark = buildBenchmarkLandscape(catalog).groups.find((candidate) => candidate.id === benchmarkId);
+          if (!benchmark) return Response.json({ error: "benchmark_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
+          manifest = benchmarkHarborDatasetManifest(benchmark);
+          filename = benchmarkHarborDatasetFilename(benchmark);
+        } else {
+          const vendorId = decodeURIComponent(vendorHarborDownloadMatch![1]);
+          const vendor = catalog.vendors.find((candidate) => candidate.id === vendorId);
+          if (!vendor) return Response.json({ error: "vendor_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
+          manifest = vendorHarborDatasetManifest(vendor);
+          if (!manifest.tasks.length) return Response.json({ error: "vendor_harbor_dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
+          filename = vendorHarborDatasetFilename(vendor);
+        }
         const gateway = await fetch(`${gatewayUrl}/zip-archives`, {
           method: "POST",
           headers: {
@@ -94,7 +110,7 @@ const worker = {
             filename,
           }),
         });
-        if (!gateway.ok) return registryErrorResponse(gateway, "vendor_harbor_dataset_unavailable");
+        if (!gateway.ok) return registryErrorResponse(gateway, unavailableError);
         const archive = await gateway.json() as Record<string, unknown>;
         const downloadUrl = preparedArchiveUrl(archive.downloadUrl);
         if (archive.status !== "ready" || archive.filename !== filename || archive.taskCount !== manifest.tasks.length) {
@@ -112,7 +128,7 @@ const worker = {
           headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
         });
       } catch {
-        return Response.json({ error: "vendor_harbor_dataset_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
+        return Response.json({ error: unavailableError }, { status: 502, headers: { "cache-control": "no-store" } });
       }
     }
 

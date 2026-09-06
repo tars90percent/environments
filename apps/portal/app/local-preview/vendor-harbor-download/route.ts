@@ -1,6 +1,7 @@
 import type { CatalogTask, CatalogVendor } from "../../catalog";
 import { strToU8, zipSync } from "fflate";
-import { vendorHarborDatasetFilename, vendorHarborDatasetManifest } from "../../dataset-archive";
+import { benchmarkHarborDatasetFilename, benchmarkHarborDatasetManifest, vendorHarborDatasetFilename, vendorHarborDatasetManifest } from "../../dataset-archive";
+import { buildBenchmarkLandscape } from "../../benchmark-landscape";
 
 const vendor: CatalogVendor = {
   id: "preview-vendor",
@@ -21,21 +22,34 @@ const vendor: CatalogVendor = {
   ],
 };
 
-export function POST() {
+function previewArchive(request: Request) {
+  const benchmarkId = new URL(request.url).searchParams.get("benchmark");
+  if (benchmarkId === null) return { manifest: vendorHarborDatasetManifest(vendor), filename: vendorHarborDatasetFilename(vendor) };
+  const benchmark = buildBenchmarkLandscape({ generatedAt: "2026-08-20T00:00:00.000Z", vendors: [vendor], totals: { vendors: 1, submissions: 1, tasks: 7, harborTasks: 7 } }).groups.find((group) => group.id === benchmarkId);
+  return benchmark ? { manifest: benchmarkHarborDatasetManifest(benchmark), filename: benchmarkHarborDatasetFilename(benchmark) } : null;
+}
+
+export function POST(request: Request) {
   if (process.env.NODE_ENV !== "development") return new Response("Not found", { status: 404 });
-  const manifest = vendorHarborDatasetManifest(vendor);
+  const archive = previewArchive(request);
+  if (!archive) return new Response("Not found", { status: 404 });
+  const { manifest, filename } = archive;
+  const downloadUrl = new URL(request.url);
+  downloadUrl.searchParams.set("download", "1");
   return Response.json({
     status: "ready",
     cacheHit: true,
-    downloadUrl: "/local-preview/vendor-harbor-download?download=1",
-    filename: vendorHarborDatasetFilename(vendor),
+    downloadUrl: `${downloadUrl.pathname}${downloadUrl.search}`,
+    filename,
     taskCount: manifest.tasks.length,
   }, { headers: { "cache-control": "no-store" } });
 }
 
 export function GET(request: Request) {
   if (process.env.NODE_ENV !== "development" || new URL(request.url).searchParams.get("download") !== "1") return new Response("Not found", { status: 404 });
-  const manifest = vendorHarborDatasetManifest(vendor);
+  const archive = previewArchive(request);
+  if (!archive) return new Response("Not found", { status: 404 });
+  const { manifest, filename } = archive;
   const files: Record<string, Uint8Array> = {
     "manifest.json": strToU8(`${JSON.stringify(manifest, null, 2)}\n`),
   };
@@ -46,7 +60,7 @@ export function GET(request: Request) {
   return new Response(zipSync(files, { level: 6 }), {
     headers: {
       "content-type": "application/zip",
-      "content-disposition": `attachment; filename="${vendorHarborDatasetFilename(vendor)}"`,
+      "content-disposition": `attachment; filename="${filename}"`,
       "cache-control": "no-store",
       "x-case-task-count": String(manifest.tasks.length),
     },
