@@ -87,8 +87,7 @@ test("retains a task rejected by Harbor's static validator and reclassifies it a
       format: "harbor",
       benchmarkId: "unspecified",
       sourcePath: "delivery/task",
-      artifactId: `artifact:sha256:${sha256}`,
-      contentSha256: sha256,
+      artifactId: "file-43",
       sourceItemIds: ["source-item-1"],
     };
     const repository = {

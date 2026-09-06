@@ -362,6 +362,7 @@ type VendorDirectoryRow = {
 };
 type ArtifactRow = {
   id: string;
+  reference?: string;
   kind: ArtifactInput["kind"];
   storage_key: string;
   sha256: string;
@@ -501,7 +502,7 @@ export class PostgresRegistry implements RegistryRepository {
           && current.revises_batch_id === (input.submission.revisesSubmissionId ?? null);
         if (!matches) throw new RegistryConflictError(`Submission ${input.submission.id} already exists with different immutable contents`);
         const mergedFormats = [...new Set([...current.formats, ...formats])].sort();
-        if (hashValue(mergedFormats) !== hashValue(current.formats)) {
+        if (!sameValue(mergedFormats, current.formats)) {
           await client.query(
             "UPDATE registry_submission_batches SET formats = $2::jsonb, updated_at = now() WHERE id = $1",
             [input.submission.id, json(mergedFormats)],
@@ -510,22 +511,17 @@ export class PostgresRegistry implements RegistryRepository {
       } else {
         const primary = sourceLinks[0]!;
         const metadata = { intakePurpose: "sample_evaluation", ...(input.submission.metadata ?? {}) };
-        const manifestSha256 = hashValue({
-          vendor: input.vendor,
-          submission: input.submission,
-          sourceEventIds: sourceLinks.map((source) => source.sourceEventId),
-        });
         await client.query(
           `INSERT INTO registry_submission_batches(
              id, vendor_id, source_event_id, submission_date, label, source_label,
              declared_task_count, formats, workflow_status, catalog_visibility,
-             revises_batch_id, delta, metadata, manifest_sha256, intake_purpose
+             revises_batch_id, delta, metadata, intake_purpose
            ) VALUES ($1, $2, $3, $4, $5, $6, 0, $7::jsonb, 'unchecked', 'available',
-                     $8, $9::jsonb, $10::jsonb, $11, 'sample_evaluation')`,
+                     $8, $9::jsonb, $10::jsonb, 'sample_evaluation')`,
           [input.submission.id, input.vendor.id, primary.sourceEventId, input.submission.date,
             input.submission.label, input.submission.sourceLabel, json(formats), input.submission.revisesSubmissionId ?? null,
             json({ added: 0, removed: 0, changedFiles: sourceLinks.reduce((sum, source) => sum + source.items.length, 0), note: "Original delivery preserved before parsing." }),
-            json(metadata), manifestSha256],
+            json(metadata)],
         );
       }
 
@@ -642,7 +638,7 @@ export class PostgresRegistry implements RegistryRepository {
       const next = [...input.items].sort((a, b) =>
         a.sourceItemId.localeCompare(b.sourceItemId) || a.role.localeCompare(b.role));
       const previousLinks = previous.rows.map((row) => ({ sourceItemId: row.source_item_id, role: row.role }));
-      const changed = hashValue(previousLinks) !== hashValue(next);
+      const changed = !sameValue(previousLinks, next);
 
       if (changed) {
         await client.query(
@@ -847,7 +843,6 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async recordVendorInteraction(input: VendorInteractionInput): Promise<{ interactionId: string; created: boolean }> {
-    const payloadSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -855,11 +850,11 @@ export class PostgresRegistry implements RegistryRepository {
       if (!vendor.rowCount) throw new RegistryNotFoundError(`Vendor ${input.vendorId} does not exist`);
       await this.ensureVendorTimeline(client, input.vendorId, input.actor);
 
-      const existing = await client.query<{ payload_sha256: string }>(
-        "SELECT payload_sha256 FROM registry_vendor_interactions WHERE id = $1",
+      const existing = await client.query<VendorInteractionRow>(
+        "SELECT * FROM registry_vendor_interactions WHERE id = $1 FOR UPDATE",
         [input.id],
       );
-      if (existing.rows[0]?.payload_sha256 && existing.rows[0].payload_sha256 !== payloadSha256) {
+      if (existing.rows[0] && !sameValue(vendorInteractionInputFromRow(existing.rows[0]), { ...input, occurredAt: new Date(input.occurredAt).toISOString() })) {
         throw new RegistryConflictError(`Vendor interaction ${input.id} already exists with different contents; use update-vendor-interaction`);
       }
       if (existing.rowCount) {
@@ -871,12 +866,12 @@ export class PostgresRegistry implements RegistryRepository {
       const inserted = await client.query<{ created_at: string | Date; updated_at: string | Date }>(
         `INSERT INTO registry_vendor_interactions(
            id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
-           occurred_at, source_event_ids, batch_ids, actor, payload_sha256
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14)
+           occurred_at, source_event_ids, batch_ids, actor
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13)
          RETURNING created_at, updated_at`,
         [input.id, input.vendorId, input.kind, input.eventType, input.title, input.summary, input.channel,
           input.evidence, input.visibility, input.occurredAt, json(input.sourceEventIds), json(input.submissionIds),
-          input.actor, payloadSha256],
+          input.actor],
       );
       const insertedRow = inserted.rows[0]!;
       await this.insertVendorTimelineChange(client, {
@@ -918,22 +913,21 @@ export class PostgresRegistry implements RegistryRepository {
       const before = vendorInteractionFromRow(row);
       const current = vendorInteractionInputFromRow(row);
       const next: VendorInteractionInput = { ...current, ...input.changes, actor: input.actor };
-      if (hashValue(current) === hashValue(next)) {
+      if (sameValue(current, next)) {
         await client.query("COMMIT");
         return { interactionId: input.id, updated: false };
       }
       await this.assertVendorInteractionReferences(client, next);
-      const payloadSha256 = hashValue(next);
       const updated = await client.query<VendorInteractionRow>(
         `UPDATE registry_vendor_interactions SET
            kind = $2, event_type = $3, title = $4, summary = $5, channel = $6, evidence = $7,
            visibility = $8, occurred_at = $9, source_event_ids = $10::jsonb, batch_ids = $11::jsonb,
-           actor = $12, payload_sha256 = $13, updated_at = now()
+           actor = $12, updated_at = now()
          WHERE id = $1
          RETURNING id, vendor_id, kind, event_type, title, summary, channel, evidence, visibility,
                    occurred_at, source_event_ids, batch_ids, actor, payload_sha256, created_at, updated_at`,
         [next.id, next.kind, next.eventType, next.title, next.summary, next.channel, next.evidence,
-          next.visibility, next.occurredAt, json(next.sourceEventIds), json(next.submissionIds), next.actor, payloadSha256],
+          next.visibility, next.occurredAt, json(next.sourceEventIds), json(next.submissionIds), next.actor],
       );
       await this.insertVendorTimelineChange(client, {
         vendorId: next.vendorId,
@@ -1253,16 +1247,7 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       for (const task of manifest.tasks ?? []) {
-        await client.query(
-          `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT(vendor_id, stable_key) DO UPDATE SET
-             title = EXCLUDED.title,
-             summary = COALESCE(EXCLUDED.summary, registry_tasks.summary),
-             updated_at = now()`,
-          [stableTaskId(manifest.vendor.id, task.stableKey), manifest.vendor.id, task.stableKey, task.title,
-            task.summary ?? null, manifest.submission.id],
-        );
+        const taskId = await ensureTaskIdentity(client, manifest.vendor.id, manifest.submission.id, task, true);
         await client.query(
           `INSERT INTO registry_task_versions(
              id, task_id, batch_id, category_id, source_path, format, content_sha256,
@@ -1271,7 +1256,7 @@ export class PostgresRegistry implements RegistryRepository {
              task_kind, format_kind, task_stable_key, task_title, task_summary
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
                      $15, $16, $17, $18, $19)`,
-          [task.id, stableTaskId(manifest.vendor.id, task.stableKey), manifest.submission.id, task.categoryId,
+          [task.id, taskId, manifest.submission.id, task.categoryId,
             task.sourcePath ?? null, task.format, task.contentSha256 ?? null,
             task.workflowStatus ?? manifest.submission.workflowStatus,
             task.catalogVisibility ?? manifest.submission.catalogVisibility,
@@ -1413,7 +1398,7 @@ export class PostgresRegistry implements RegistryRepository {
         if (existing.merged_into_id) {
           throw new RegistryConflictError(`Benchmark ${input.id} was merged into ${existing.merged_into_id}`);
         }
-        if (existing.display_name !== input.displayName || hashValue(existing.aliases) !== hashValue(input.aliases ?? [])) {
+        if (existing.display_name !== input.displayName || !sameValue(existing.aliases, input.aliases ?? [])) {
           throw new RegistryConflictError(`Benchmark ${input.id} already exists with different contents`);
         }
         await client.query("COMMIT");
@@ -1484,7 +1469,7 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       const aliases = input.aliases ?? [];
-      const updated = existing.display_name !== input.displayName || hashValue(existing.aliases) !== hashValue(aliases);
+      const updated = existing.display_name !== input.displayName || !sameValue(existing.aliases, aliases);
       if (!updated) {
         await client.query("COMMIT");
         return { benchmark: benchmarkFromRow(existing), updated: false };
@@ -1562,7 +1547,7 @@ export class PostgresRegistry implements RegistryRepository {
         throw new RegistryConflictError(`Benchmark ${input.target.id} was merged into ${target.merged_into_id}`);
       }
       const aliases = input.target.aliases ?? [];
-      if (target && (target.display_name !== input.target.displayName || hashValue(target.aliases) !== hashValue(aliases))) {
+      if (target && (target.display_name !== input.target.displayName || !sameValue(target.aliases, aliases))) {
         throw new RegistryConflictError(`Benchmark ${input.target.id} already exists with different contents`);
       }
 
@@ -1800,7 +1785,7 @@ export class PostgresRegistry implements RegistryRepository {
       await this.insertStatusEvent(
         client,
         "registry",
-        `benchmark-purge:${hashValue(input).slice(0, 24)}`,
+        await nextRecordId(client, "benchmark-purge"),
         "benchmark.erroneous_history_purged",
         input.actor,
         {
@@ -1850,7 +1835,7 @@ export class PostgresRegistry implements RegistryRepository {
           benchmarkId: resolvedBenchmarkIds.get(assignment.benchmarkId)!,
         })),
       };
-      const requestSha256 = hashValue(input);
+      const requestId = await nextRecordId(client, "operation");
 
       const taskIds = input.assignments.map((assignment) => assignment.taskId);
       const currentResult = await client.query<CurrentTaskBenchmarkRow>(
@@ -1880,12 +1865,12 @@ export class PostgresRegistry implements RegistryRepository {
           assignmentsUnchanged += 1;
           continue;
         }
-        const assignmentId = benchmarkAssignmentId(requestSha256, assignment.taskId);
+        const assignmentId = benchmarkAssignmentId(requestId, assignment.taskId);
         await client.query(
           `INSERT INTO registry_task_benchmark_assignments(
-             id, task_version_id, benchmark_id, actor, reason, request_sha256
+             id, task_version_id, benchmark_id, actor, reason, request_id
            ) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [assignmentId, assignment.taskId, assignment.benchmarkId, input.actor, input.reason, requestSha256],
+          [assignmentId, assignment.taskId, assignment.benchmarkId, input.actor, input.reason, requestId],
         );
         changes.push({
           taskId: assignment.taskId,
@@ -1907,7 +1892,7 @@ export class PostgresRegistry implements RegistryRepository {
           input.submissionId,
           "benchmark.assignments_recorded",
           input.actor,
-          { reason: input.reason, requestSha256, changes },
+          { reason: input.reason, requestId, changes },
         );
       }
       await client.query("COMMIT");
@@ -1926,10 +1911,10 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async assignTaskGpuRequirements(input: AssignTaskGpuRequirementsInput): Promise<AssignTaskGpuRequirementsResult> {
-    const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const requestId = await nextRecordId(client, "operation");
       const submissionResult = await client.query<{ intake_purpose: string | null }>(
         `SELECT COALESCE(intake_purpose, metadata->>'intakePurpose') AS intake_purpose
          FROM registry_submission_batches
@@ -1981,13 +1966,13 @@ export class PostgresRegistry implements RegistryRepository {
           assignmentsUnchanged += 1;
           continue;
         }
-        const assignmentId = gpuRequirementAssignmentId(requestSha256, assignment.taskId);
+        const assignmentId = gpuRequirementAssignmentId(requestId, assignment.taskId);
         await client.query(
           `INSERT INTO registry_task_gpu_requirement_assignments(
-             id, task_version_id, gpu_required, evidence, actor, reason, request_sha256
+             id, task_version_id, gpu_required, evidence, actor, reason, request_id
            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [assignmentId, assignment.taskId, assignment.gpuRequired, assignment.evidence,
-            input.actor, input.reason, requestSha256],
+            input.actor, input.reason, requestId],
         );
         changes.push({
           taskId: assignment.taskId,
@@ -2010,7 +1995,7 @@ export class PostgresRegistry implements RegistryRepository {
           input.submissionId,
           "gpu_requirement.assignments_recorded",
           input.actor,
-          { reason: input.reason, requestSha256, changes },
+          { reason: input.reason, requestId, changes },
         );
       }
       await client.query("COMMIT");
@@ -2051,16 +2036,18 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       const artifactIds = [...new Set(input.tasks.map((task) => task.artifactId))];
-      const artifactResult = await client.query<{ id: string; sha256: string }>(
-        "SELECT id, sha256 FROM registry_artifacts WHERE id = ANY($1::text[])",
+      const artifactResult = await client.query<{ id: string; reference: string; sha256: string }>(
+        "SELECT id, reference, sha256 FROM registry_artifacts WHERE id = ANY($1::text[]) OR reference = ANY($1::text[])",
         [artifactIds],
       );
-      const artifacts = new Map(artifactResult.rows.map((artifact) => [artifact.id, artifact.sha256]));
-      for (const task of input.tasks) {
-        if (artifacts.get(task.artifactId) !== task.contentSha256) {
+      const artifacts = new Map(artifactResult.rows.flatMap((artifact) => [[artifact.id, artifact], [artifact.reference, artifact]]));
+      input = { ...input, tasks: input.tasks.map((task) => {
+        const artifact = artifacts.get(task.artifactId);
+        if (!artifact || (task.contentSha256 !== undefined && artifact.sha256 !== task.contentSha256)) {
           throw new RegistryConflictError(`Task ${task.id} must reference its exact immutable artifact`);
         }
-      }
+        return { ...task, artifactId: artifact.id, contentSha256: artifact.sha256 };
+      }) };
 
       const sourceItemIds = [...new Set(input.tasks.flatMap((task) => task.sourceItemIds))];
       const sourceResult = await client.query<{ id: string }>(
@@ -2095,7 +2082,7 @@ export class PostgresRegistry implements RegistryRepository {
           benchmarkId: resolvedBenchmarkIds.get(task.benchmarkId)!,
         })),
       };
-      const requestSha256 = hashValue(input);
+      const requestId = await nextRecordId(client, "operation");
 
       const compatibilityCategoryId = "case:tasks";
       await client.query(
@@ -2113,13 +2100,7 @@ export class PostgresRegistry implements RegistryRepository {
 
       let tasksAdded = 0;
       for (const task of input.tasks) {
-        const taskId = stableTaskId(submission.vendor_id, task.stableKey);
-        await client.query(
-          `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT(vendor_id, stable_key) DO NOTHING`,
-          [taskId, submission.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
-        );
+        const taskId = await ensureTaskIdentity(client, submission.vendor_id, input.submissionId, task);
 
         const existing = await client.query<{
           id: string;
@@ -2178,10 +2159,10 @@ export class PostgresRegistry implements RegistryRepository {
           );
           await client.query(
             `INSERT INTO registry_task_benchmark_assignments(
-               id, task_version_id, benchmark_id, actor, reason, request_sha256
+               id, task_version_id, benchmark_id, actor, reason, request_id
              ) VALUES ($1, $2, $3, $4, $5, $6)`,
-            [benchmarkAssignmentId(requestSha256, task.id), task.id, task.benchmarkId, input.actor,
-              "Initial benchmark assignment during task registration.", requestSha256],
+            [benchmarkAssignmentId(requestId, task.id), task.id, task.benchmarkId, input.actor,
+              "Initial benchmark assignment during task registration.", requestId],
           );
           tasksAdded += 1;
           if (task.format === "harbor") {
@@ -2251,17 +2232,19 @@ export class PostgresRegistry implements RegistryRepository {
       }
 
       const artifactIds = [...new Set(input.tasks.flatMap((task) => task.artifactId ? [task.artifactId] : []))];
-      const artifactResult = await client.query<{ id: string; sha256: string }>(
-        "SELECT id, sha256 FROM registry_artifacts WHERE id = ANY($1::text[])",
+      const artifactResult = await client.query<{ id: string; reference: string; sha256: string }>(
+        "SELECT id, reference, sha256 FROM registry_artifacts WHERE id = ANY($1::text[]) OR reference = ANY($1::text[])",
         [artifactIds],
       );
-      const artifacts = new Map(artifactResult.rows.map((artifact) => [artifact.id, artifact.sha256]));
-      for (const task of input.tasks) {
-        if (!task.artifactId) continue;
-        if (artifacts.get(task.artifactId) !== task.contentSha256) {
+      const artifacts = new Map(artifactResult.rows.flatMap((artifact) => [[artifact.id, artifact], [artifact.reference, artifact]]));
+      input = { ...input, tasks: input.tasks.map((task) => {
+        if (!task.artifactId) return task;
+        const artifact = artifacts.get(task.artifactId);
+        if (!artifact || (task.contentSha256 !== undefined && artifact.sha256 !== task.contentSha256)) {
           throw new RegistryConflictError(`Task ${task.id} must reference its exact immutable artifact`);
         }
-      }
+        return { ...task, artifactId: artifact.id, contentSha256: artifact.sha256 };
+      }) };
 
       const sourceItemIds = [...new Set(input.tasks.flatMap((task) => task.sourceItemIds))];
       const sourceResult = await client.query<{ id: string }>(
@@ -2296,7 +2279,7 @@ export class PostgresRegistry implements RegistryRepository {
           benchmarkId: resolvedBenchmarkIds.get(task.benchmarkId)!,
         })),
       };
-      const requestSha256 = hashValue(input);
+      const requestId = await nextRecordId(client, "operation");
 
       const compatibilityCategoryId = "case:tasks";
       await client.query(
@@ -2365,21 +2348,17 @@ export class PostgresRegistry implements RegistryRepository {
       let benchmarkAssignmentsUnchanged = 0;
 
       for (const task of input.tasks) {
-        const taskId = stableTaskId(submission.vendor_id, task.stableKey);
+        const taskId = await ensureTaskIdentity(client, submission.vendor_id, input.submissionId, task);
         if (desiredTaskIds.has(taskId)) {
           throw new RegistryConflictError(`Task stable key ${task.stableKey} is repeated`);
         }
         desiredTaskIds.add(taskId);
         activeTaskVersionIds.push(task.id);
 
-        await client.query(
-          `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT(vendor_id, stable_key) DO NOTHING`,
-          [taskId, submission.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
-        );
-
         const current = activeByTaskId.get(taskId);
+        if (task.artifactId === null && task.contentSha256 === undefined && current) {
+          task.contentSha256 = current.content_sha256 ?? undefined;
+        }
         const sourceIds = [...task.sourceItemIds].sort();
         const currentSourceIds = current ? [...(activeSourceIds.get(current.id) ?? [])].sort() : [];
         const sameContents = current
@@ -2390,8 +2369,8 @@ export class PostgresRegistry implements RegistryRepository {
           && current.format_kind === task.format
           && current.source_path === task.sourcePath
           && current.artifact_id === task.artifactId
-          && current.content_sha256 === task.contentSha256
-          && hashValue(currentSourceIds) === hashValue(sourceIds)
+          && current.content_sha256 === (task.contentSha256 ?? null)
+          && sameValue(currentSourceIds, sourceIds)
           : false;
         if (current && sameContents && current.id !== task.id) {
           throw new RegistryConflictError(
@@ -2404,10 +2383,10 @@ export class PostgresRegistry implements RegistryRepository {
           } else {
             await client.query(
               `INSERT INTO registry_task_benchmark_assignments(
-                 id, task_version_id, benchmark_id, actor, reason, request_sha256
+                 id, task_version_id, benchmark_id, actor, reason, request_id
                ) VALUES ($1, $2, $3, $4, $5, $6)`,
-              [benchmarkAssignmentId(requestSha256, current.id), current.id, task.benchmarkId,
-                input.actor, input.reason, requestSha256],
+              [benchmarkAssignmentId(requestId, current.id), current.id, task.benchmarkId,
+                input.actor, input.reason, requestId],
             );
             benchmarkAssignmentsAdded += 1;
           }
@@ -2454,15 +2433,15 @@ export class PostgresRegistry implements RegistryRepository {
           [task.id, taskId, input.submissionId, current?.category_id ?? compatibilityCategoryId,
             task.sourcePath, task.format, task.artifactId, task.contentSha256,
             submission.workflow_status, submission.catalog_visibility,
-            json({ reconciliationRequestSha256: requestSha256, reconciliationReason: input.reason }),
+            json({ reconciliationRequestId: requestId, reconciliationReason: input.reason }),
             task.kind, task.format, task.stableKey, task.title, task.summary ?? null, task.benchmarkId],
         );
         await client.query(
           `INSERT INTO registry_task_benchmark_assignments(
-             id, task_version_id, benchmark_id, actor, reason, request_sha256
+             id, task_version_id, benchmark_id, actor, reason, request_id
            ) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [benchmarkAssignmentId(requestSha256, task.id), task.id, task.benchmarkId,
-            input.actor, input.reason, requestSha256],
+          [benchmarkAssignmentId(requestId, task.id), task.id, task.benchmarkId,
+            input.actor, input.reason, requestId],
         );
         benchmarkAssignmentsAdded += 1;
         for (const sourceItemId of task.sourceItemIds) {
@@ -2531,7 +2510,7 @@ export class PostgresRegistry implements RegistryRepository {
         input.actor,
         {
           reason: input.reason,
-          requestSha256,
+          requestId,
           activeTaskVersionIds,
           taskVersionsAdded,
           taskVersionsUnchanged,
@@ -2561,10 +2540,10 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   private async appendNormalizedTasks(input: AppendNormalizedTasksInput): Promise<AppendNormalizedTasksResult> {
-    const requestSha256 = hashValue(input);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const requestId = await nextRecordId(client, "operation");
       const submissionResult = await client.query<{
         vendor_id: string;
         workflow_status: string;
@@ -2650,7 +2629,7 @@ export class PostgresRegistry implements RegistryRepository {
         if (existingSubmissionCategory.rows[0]) {
           if (
             existingSubmissionCategory.rows[0].declared_count !== category.count
-            || hashValue(existingSubmissionCategory.rows[0].examples) !== hashValue(category.examples ?? [])
+            || !sameValue(existingSubmissionCategory.rows[0].examples, category.examples ?? [])
           ) {
             throw new RegistryConflictError(`Submission category ${category.id} already exists with different contents`);
           }
@@ -2667,16 +2646,7 @@ export class PostgresRegistry implements RegistryRepository {
       let taskVersionsAdded = 0;
       let taskVersionsFinalized = 0;
       for (const task of input.tasks) {
-        const taskId = stableTaskId(submission.vendor_id, task.stableKey);
-        await client.query(
-          `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT(vendor_id, stable_key) DO UPDATE SET
-             title = EXCLUDED.title,
-             summary = COALESCE(EXCLUDED.summary, registry_tasks.summary),
-             updated_at = now()`,
-          [taskId, submission.vendor_id, task.stableKey, task.title, task.summary ?? null, input.submissionId],
-        );
+        const taskId = await ensureTaskIdentity(client, submission.vendor_id, input.submissionId, task, true);
 
         const existingVersion = await client.query<{
           id: string;
@@ -2739,7 +2709,7 @@ export class PostgresRegistry implements RegistryRepository {
             taskVersionsFinalized += 1;
             await this.insertStatusEvent(client, "task_version", task.id, "normalization.task_finalized", input.actor, {
               reason: input.reason,
-              requestSha256,
+              requestId,
               artifactId: task.artifactId,
               contentSha256: task.contentSha256,
             });
@@ -2776,7 +2746,7 @@ export class PostgresRegistry implements RegistryRepository {
       if (taskVersionsAdded > 0 || taskVersionsFinalized > 0 || categoriesAdded > 0) {
         await this.insertStatusEvent(client, "submission_batch", input.submissionId, "normalization.tasks_appended", input.actor, {
           reason: input.reason,
-          requestSha256,
+          requestId,
           categoriesAdded,
           taskVersionsAdded,
           taskVersionsFinalized,
@@ -2784,7 +2754,7 @@ export class PostgresRegistry implements RegistryRepository {
         });
         await this.enqueueWork(client, "check_submission", "submission_batch", input.submissionId, {
           reason: "normalized_tasks_appended",
-          requestSha256,
+          requestId,
           taskVersionIds: input.tasks.map((task) => task.id),
         });
       }
@@ -3047,7 +3017,7 @@ export class PostgresRegistry implements RegistryRepository {
       });
 
       const unreferenced = candidateArtifactIds.length ? await client.query<ArtifactRow>(
-        `SELECT a.id, a.kind, a.storage_key, a.sha256, a.size_bytes, a.content_type, a.metadata, a.created_at
+        `SELECT a.id, a.reference, a.kind, a.storage_key, a.sha256, a.size_bytes, a.content_type, a.metadata, a.created_at
          FROM registry_artifacts a
          WHERE a.id = ANY($1::text[])
            AND NOT EXISTS (SELECT 1 FROM registry_source_events se WHERE se.raw_artifact_id = a.id)
@@ -3562,21 +3532,60 @@ export class PostgresRegistry implements RegistryRepository {
       return;
     }
     await this.pool.query(
-      `INSERT INTO registry_artifacts(id, kind, storage_key, sha256, size_bytes, content_type, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      `INSERT INTO registry_artifacts(id, kind, storage_key, sha256, size_bytes, content_type, metadata, reference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, COALESCE($8, 'file-' || nextval('registry_file_reference_seq')))`,
       [input.id, input.kind, input.storageKey, input.sha256, input.sizeBytes ?? null,
-        input.contentType ?? null, json(input.metadata ?? {})],
+        input.contentType ?? null, json(input.metadata ?? {}), input.reference ?? null],
     );
   }
 
   async getArtifact(id: string): Promise<ArtifactRecord | null> {
     const result = await this.pool.query<ArtifactRow>(
-      `SELECT id, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
-       FROM registry_artifacts WHERE id = $1`,
+      `SELECT id, reference, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
+       FROM registry_artifacts WHERE id = $1 OR reference = $1`,
       [id],
     );
     const row = result.rows[0];
     return row ? artifactFromRow(row) : null;
+  }
+
+  async reserveFileReference(): Promise<string> {
+    const result = await this.pool.query<{ reference: string }>(
+      "SELECT 'file-' || nextval('registry_file_reference_seq') AS reference",
+    );
+    return result.rows[0]!.reference;
+  }
+
+  async reserveSourceReference(): Promise<string> {
+    const result = await this.pool.query<{ id: string }>("SELECT 'source-' || nextval('registry_record_seq') AS id");
+    return result.rows[0]!.id;
+  }
+
+  async findSourceEvent(channel: string, externalRef: string): Promise<CatalogSourceEvent | null> {
+    const result = await this.pool.query<{ id: string }>(
+      "SELECT id FROM registry_source_events WHERE channel = $1 AND external_ref = $2", [channel, externalRef],
+    );
+    return result.rows[0] ? this.getSourceEvent(result.rows[0].id) : null;
+  }
+
+  async findCapturedSourceRetry(sourceEventId: string): Promise<CatalogSourceEvent | null> {
+    const result = await this.pool.query<{ id: string }>(
+      `SELECT se.id FROM registry_source_events se
+       WHERE se.metadata->>'retryOfSourceEventId' = $1
+         AND EXISTS (SELECT 1 FROM registry_source_items si WHERE si.source_event_id = se.id
+                     AND si.fetch_status = 'snapshotted' AND si.artifact_id IS NOT NULL)
+       ORDER BY se.created_at DESC, se.id LIMIT 1`, [sourceEventId],
+    );
+    return result.rows[0] ? this.getSourceEvent(result.rows[0].id) : null;
+  }
+
+  async fileReferences(identifiers: string[]): Promise<Array<{ id: string; reference: string }>> {
+    if (!identifiers.length) return [];
+    const result = await this.pool.query<{ id: string; reference: string }>(
+      "SELECT id, reference FROM registry_artifacts WHERE id = ANY($1::text[]) OR reference = ANY($1::text[])",
+      [identifiers],
+    );
+    return result.rows;
   }
 
   async unregisterArtifactIfUnreferenced(id: string): Promise<ArtifactRecord | null> {
@@ -3584,7 +3593,7 @@ export class PostgresRegistry implements RegistryRepository {
     try {
       await client.query("BEGIN");
       const artifact = await client.query<ArtifactRow>(
-        `SELECT id, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
+        `SELECT id, reference, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
          FROM registry_artifacts WHERE id = $1 FOR UPDATE`,
         [id],
       );
@@ -4494,75 +4503,86 @@ export class PostgresRegistry implements RegistryRepository {
     envelope: SourceEnvelopeInput,
     actor: string,
   ): Promise<boolean> {
-    const payloadSha256 = hashSourceEnvelope(envelope);
-    const existingEvent = await client.query<{ payload_sha256: string | null }>(
-      "SELECT payload_sha256 FROM registry_source_events WHERE id = $1",
-      [envelope.sourceEvent.id],
+    const event = envelope.sourceEvent;
+    const existingEvent = await client.query<SourceEventRow & { vendor_id: string; metadata: Record<string, unknown> }>(
+      "SELECT * FROM registry_source_events WHERE id = $1 FOR UPDATE", [event.id],
     );
-    const created = !existingEvent.rows[0];
-    const previousSha = existingEvent.rows[0]?.payload_sha256;
-    if (previousSha && previousSha !== payloadSha256) {
-      throw new RegistryConflictError(`Source event ${envelope.sourceEvent.id} already exists with different immutable contents`);
+    const previous = existingEvent.rows[0];
+    const created = !previous;
+    if (previous && !sameValue({
+      vendorId: previous.vendor_id, channel: previous.channel, externalRef: previous.external_ref,
+      sender: previous.sender, receivedAt: new Date(previous.received_at).toISOString(),
+      rawArtifactId: previous.raw_artifact_id, metadata: previous.metadata,
+    }, {
+      vendorId: envelope.vendor.id, channel: event.channel, externalRef: event.externalRef,
+      sender: event.sender ?? null, receivedAt: new Date(event.receivedAt).toISOString(),
+      rawArtifactId: event.rawArtifactId ?? null, metadata: event.metadata ?? previous?.metadata ?? {},
+    })) {
+      throw new RegistryConflictError(`Source event ${event.id} already exists with different immutable contents; preserve new evidence as a separate source event`);
     }
-
     if (created) {
       await client.query(
-        `INSERT INTO registry_source_events(
-           id, vendor_id, channel, external_ref, sender, received_at, raw_artifact_id, metadata, payload_sha256
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
-        [envelope.sourceEvent.id, envelope.vendor.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
-          envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
-          json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
-      );
-    } else if (!previousSha) {
-      await client.query(
-        `UPDATE registry_source_events
-         SET channel = $2, external_ref = $3, sender = $4, received_at = $5,
-             raw_artifact_id = $6, metadata = $7::jsonb, payload_sha256 = $8, updated_at = now()
-         WHERE id = $1`,
-        [envelope.sourceEvent.id, envelope.sourceEvent.channel, envelope.sourceEvent.externalRef,
-          envelope.sourceEvent.sender ?? null, envelope.sourceEvent.receivedAt, envelope.sourceEvent.rawArtifactId ?? null,
-          json(envelope.sourceEvent.metadata ?? {}), payloadSha256],
+        `INSERT INTO registry_source_events(id, vendor_id, channel, external_ref, sender, received_at, raw_artifact_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+        [event.id, envelope.vendor.id, event.channel, event.externalRef, event.sender ?? null,
+          event.receivedAt, event.rawArtifactId ?? null, json(event.metadata ?? {})],
       );
     }
 
+    let itemsAdded = 0;
     for (const item of envelope.items) {
-      const itemSha256 = hashValue(item);
-      const existingItem = await client.query<{ payload_sha256: string }>(
-        "SELECT payload_sha256 FROM registry_source_items WHERE id = $1",
-        [item.id],
+      const existingItem = await client.query<SourceItemRow>(
+        "SELECT * FROM registry_source_items WHERE id = $1 FOR UPDATE", [item.id],
       );
-      if (existingItem.rows[0]?.payload_sha256 && existingItem.rows[0].payload_sha256 !== itemSha256) {
+      const previousItem = existingItem.rows[0];
+      const expected = {
+        id: item.id, kind: item.kind, displayName: item.displayName, locator: item.locator ?? null,
+        mediaType: item.mediaType ?? null, artifactId: item.artifactId ?? null,
+        contentSha256: item.contentSha256 ?? previousItem?.content_sha256 ?? null,
+        sizeBytes: item.sizeBytes ?? null, fetchStatus: item.fetchStatus, parseStatus: item.parseStatus,
+        mutable: item.mutable, capturedAt: item.capturedAt ? new Date(item.capturedAt).toISOString() : null,
+        metadata: item.metadata ?? {},
+      };
+      if (previousItem && (previousItem.source_event_id !== event.id || !sameValue(sourceItemFromRow(previousItem), expected))) {
         throw new RegistryConflictError(`Source item ${item.id} already exists with different immutable contents`);
       }
-      if (!existingItem.rows[0]) {
+      if (!previousItem) {
         await client.query(
           `INSERT INTO registry_source_items(
              id, source_event_id, kind, display_name, locator, media_type, artifact_id,
-             content_sha256, size_bytes, fetch_status, parse_status, mutable, captured_at, metadata, payload_sha256
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15)`,
-          [item.id, envelope.sourceEvent.id, item.kind, item.displayName, item.locator ?? null, item.mediaType ?? null,
+             content_sha256, size_bytes, fetch_status, parse_status, mutable, captured_at, metadata
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)`,
+          [item.id, event.id, item.kind, item.displayName, item.locator ?? null, item.mediaType ?? null,
             item.artifactId ?? null, item.contentSha256 ?? null, item.sizeBytes ?? null, item.fetchStatus, item.parseStatus,
-            item.mutable, item.capturedAt ?? null, json(item.metadata ?? {}), itemSha256],
+            item.mutable, item.capturedAt ?? null, json(item.metadata ?? {})],
         );
+        itemsAdded += 1;
         if (item.fetchStatus === "queued") {
-          await this.enqueueWork(client, "fetch_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
+          await this.enqueueWork(client, "fetch_source_item", "source_item", item.id, { sourceEventId: event.id });
         }
         if (item.parseStatus === "queued") {
-          await this.enqueueWork(client, "parse_source_item", "source_item", item.id, { sourceEventId: envelope.sourceEvent.id });
+          await this.enqueueWork(client, "parse_source_item", "source_item", item.id, { sourceEventId: event.id });
         }
       }
     }
 
+    let relationsAdded = 0;
     for (const relation of envelope.relations ?? []) {
-      await client.query(
-        `INSERT INTO registry_source_relations(
-           source_event_id, from_item_id, to_item_id, relation, position, metadata
-         ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-         ON CONFLICT(from_item_id, to_item_id, relation) DO NOTHING`,
-        [envelope.sourceEvent.id, relation.fromItemId, relation.toItemId, relation.relation,
-          relation.position ?? null, json(relation.metadata ?? {})],
+      const previousRelation = await client.query<SourceRelationRow & { metadata: Record<string, unknown> }>(
+        `SELECT * FROM registry_source_relations WHERE from_item_id = $1 AND to_item_id = $2 AND relation = $3`,
+        [relation.fromItemId, relation.toItemId, relation.relation],
       );
+      const row = previousRelation.rows[0];
+      if (row && (row.source_event_id !== event.id || row.position !== (relation.position ?? null) || !sameValue(row.metadata, relation.metadata ?? {}))) {
+        throw new RegistryConflictError(`Source relation ${relation.fromItemId} -> ${relation.toItemId} already exists with different contents`);
+      }
+      const inserted = await client.query(
+        `INSERT INTO registry_source_relations(source_event_id, from_item_id, to_item_id, relation, position, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+         ON CONFLICT(from_item_id, to_item_id, relation) DO NOTHING`,
+        [event.id, relation.fromItemId, relation.toItemId, relation.relation, relation.position ?? null, json(relation.metadata ?? {})],
+      );
+      relationsAdded += inserted.rowCount ?? 0;
     }
 
     for (const link of envelope.submissionLinks ?? []) {
@@ -4613,13 +4633,11 @@ export class PostgresRegistry implements RegistryRepository {
       );
     }
 
-    if (created || !previousSha) {
+    if (created || itemsAdded || relationsAdded) {
       await this.enqueueWork(client, "parse_source_event", "source_event", envelope.sourceEvent.id, {
-        payloadSha256,
         sourceItems: envelope.items.length,
       });
-      await this.insertStatusEvent(client, "source_event", envelope.sourceEvent.id, "source.ingested", actor, {
-        payloadSha256,
+      await this.insertStatusEvent(client, "source_event", envelope.sourceEvent.id, created ? "source.ingested" : "source.expanded", actor, {
         sourceItems: envelope.items.length,
         relations: envelope.relations?.length ?? 0,
       });
@@ -4639,10 +4657,10 @@ export class PostgresRegistry implements RegistryRepository {
       return;
     }
     await client.query(
-      `INSERT INTO registry_artifacts(id, kind, storage_key, sha256, size_bytes, content_type, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      `INSERT INTO registry_artifacts(id, kind, storage_key, sha256, size_bytes, content_type, metadata, reference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, COALESCE($8, 'file-' || nextval('registry_file_reference_seq')))`,
       [input.id, input.kind, input.storageKey, input.sha256, input.sizeBytes ?? null,
-        input.contentType ?? null, json(input.metadata ?? {})],
+        input.contentType ?? null, json(input.metadata ?? {}), input.reference ?? null],
     );
   }
 
@@ -4765,20 +4783,37 @@ export class RegistryNotFoundError extends Error {
   }
 }
 
-function stableTaskId(vendorId: string, stableKey: string): string {
-  return `${vendorId}:task:${createHash("sha256").update(stableKey).digest("hex").slice(0, 24)}`;
+async function ensureTaskIdentity(
+  client: PoolClient,
+  vendorId: string,
+  submissionId: string,
+  task: { stableKey: string; title: string; summary?: string },
+  updateDescription = false,
+): Promise<string> {
+  const result = await client.query<{ id: string }>(
+    `INSERT INTO registry_tasks(id, vendor_id, stable_key, title, summary, first_seen_batch_id)
+     VALUES ('task-' || nextval('registry_record_seq'), $1, $2, $3, $4, $5)
+     ON CONFLICT(vendor_id, stable_key) DO UPDATE SET
+       title = CASE WHEN $6 THEN EXCLUDED.title ELSE registry_tasks.title END,
+       summary = CASE WHEN $6 THEN COALESCE(EXCLUDED.summary, registry_tasks.summary) ELSE registry_tasks.summary END,
+       updated_at = CASE WHEN $6 THEN now() ELSE registry_tasks.updated_at END
+     RETURNING id`,
+    [vendorId, task.stableKey, task.title, task.summary ?? null, submissionId, updateDescription],
+  );
+  return result.rows[0]!.id;
 }
 
-function benchmarkAssignmentId(requestSha256: string, taskVersionId: string): string {
-  return `benchmark-assignment:${createHash("sha256")
-    .update(`${requestSha256}\u0000${taskVersionId}`)
-    .digest("hex")}`;
+function benchmarkAssignmentId(requestId: string, taskVersionId: string): string {
+  return `${requestId}:benchmark:${taskVersionId}`;
 }
 
-function gpuRequirementAssignmentId(requestSha256: string, taskVersionId: string): string {
-  return `gpu-requirement-assignment:${createHash("sha256")
-    .update(`${requestSha256}\u0000${taskVersionId}`)
-    .digest("hex")}`;
+function gpuRequirementAssignmentId(requestId: string, taskVersionId: string): string {
+  return `${requestId}:gpu:${taskVersionId}`;
+}
+
+async function nextRecordId(client: PoolClient, prefix: string): Promise<string> {
+  const result = await client.query<{ id: string }>("SELECT $1::text || '-' || nextval('registry_record_seq') AS id", [prefix]);
+  return result.rows[0]!.id;
 }
 
 function legacyTaskKind(metadata: Record<string, unknown> | undefined): "task" | "trace" {
@@ -4854,7 +4889,7 @@ function mergeCompatibleMetadata(
   taskVersionId: string,
 ): Record<string, unknown> {
   for (const [key, value] of Object.entries(additional)) {
-    if (key in current && hashValue(current[key]) !== hashValue(value)) {
+    if (key in current && !sameValue(current[key], value)) {
       throw new RegistryConflictError(
         `Task version ${taskVersionId} metadata.${key} conflicts with its immutable catalog record`,
       );
@@ -4864,15 +4899,15 @@ function mergeCompatibleMetadata(
 }
 
 function metadataContains(current: Record<string, unknown>, expected: Record<string, unknown>): boolean {
-  return Object.entries(expected).every(([key, value]) => key in current && hashValue(current[key]) === hashValue(value));
+  return Object.entries(expected).every(([key, value]) => key in current && sameValue(current[key], value));
 }
 
 function hashManifest(manifest: SubmissionManifest): string {
   return createHash("sha256").update(JSON.stringify(canonical(manifest))).digest("hex");
 }
 
-function hashSourceEnvelope(envelope: SourceEnvelopeInput): string {
-  return hashValue({ sourceEvent: envelope.sourceEvent, items: envelope.items, relations: envelope.relations ?? [] });
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
 }
 
 function hashValue(value: unknown): string {
@@ -4975,6 +5010,7 @@ function sourceItemFromRow(row: SourceItemRow): CatalogSourceItem {
 function artifactFromRow(row: ArtifactRow): ArtifactRecord {
   return {
     id: row.id,
+    reference: row.reference,
     kind: row.kind,
     storageKey: row.storage_key,
     sha256: row.sha256,
@@ -5119,7 +5155,9 @@ function group<T>(values: T[], key: (value: T) => string): Map<string, T[]> {
 }
 
 function isoDate(value: string | Date): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
+  return value instanceof Date
+    ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`
+    : value.slice(0, 10);
 }
 
 function json(value: unknown): string {

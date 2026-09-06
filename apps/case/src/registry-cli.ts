@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { readFile, stat, unlink } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { contentTypeFor, storeSourcePayload } from "./capture-runtime.js";
 import {
   pruneSubmissionHarborTasks,
@@ -17,10 +13,12 @@ import { classifyHarborTaskRegistrations } from "./harbor-export-cli.js";
 import type { ArtifactStore } from "./registry/artifacts.js";
 import { localArtifactStore, openLocalRepository } from "./registry/local.js";
 import type { RegistryRepository } from "./registry/repository.js";
+import { registryFileReferences } from "./registry/file-references.js";
 import {
   parseAssignTaskBenchmarks,
   parseAssignTaskGpuRequirements,
   parseAppendTasks,
+  parseCaptureSubmission,
   parseArtifact,
   parseHarborCheckAttempt,
   parseHarborCheckResult,
@@ -46,13 +44,17 @@ import {
   parseWorkCompletion,
 } from "./registry/validation.js";
 
-const [command, ...arguments_] = process.argv.slice(2);
+const rawOutput = process.argv.includes("--raw");
+const [command, ...arguments_] = process.argv.slice(2).filter((value) => value !== "--raw");
 const argument = arguments_[0];
+let activeRepository: RegistryRepository | undefined;
+let commandResult: unknown;
 
 if (command === "operations") {
   output(operationSchemas());
 } else {
   const repository = await openLocalRepository();
+  activeRepository = repository;
   try {
     switch (command) {
       case "summary":
@@ -155,6 +157,9 @@ if (command === "operations") {
       case "import-source":
         output(await repository.ingestSourceEnvelope(parseSourceEnvelope(await jsonFile(argument))));
         break;
+      case "capture-submission":
+        output(await repository.captureSubmission(parseCaptureSubmission(await jsonFile(argument))));
+        break;
       case "reconcile-submission-source-items":
         output(await repository.reconcileSubmissionSourceItems(parseReconcileSubmissionSourceItems(await jsonFile(argument))));
         break;
@@ -230,15 +235,23 @@ if (command === "operations") {
         output(await repository.reconcileHarborWorkItems(parseReconcileHarborWorkItems(await jsonFile(argument))));
         break;
       default:
-        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|benchmarks|register-benchmark|update-benchmark|merge-benchmarks|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
+        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|benchmarks|register-benchmark|update-benchmark|merge-benchmarks|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|capture-submission|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
     }
   } finally {
-    await repository.close();
+    try {
+      if (commandResult !== undefined) {
+        const result = rawOutput ? commandResult : await registryFileReferences(repository, commandResult, "output");
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      }
+    } finally {
+      await repository.close();
+    }
   }
 }
 
 async function storeFile(repository: RegistryRepository, kind: string, path: string): Promise<unknown> {
   const sourceArtifact = await storeSourcePayload(localArtifactStore(), path, {
+    reference: await repository.reserveFileReference(),
     filename: basename(path),
     contentType: contentTypeFor(path),
     metadata: { source: "case_registry_cli" },
@@ -249,24 +262,10 @@ async function storeFile(repository: RegistryRepository, kind: string, path: str
 }
 
 async function downloadArtifact(repository: RegistryRepository, artifactId: string, path: string): Promise<unknown> {
-  const expectedSha256 = artifactId.startsWith("artifact:sha256:") ? artifactId.slice("artifact:sha256:".length) : "";
-  if (!/^[a-f0-9]{64}$/.test(expectedSha256)) fail("artifact id must be content-addressed with SHA-256");
   const artifact = await repository.getArtifact(artifactId);
   if (!artifact) fail(`Artifact not found: ${artifactId}`);
-  const originalName = typeof artifact.metadata?.originalName === "string" ? artifact.metadata.originalName : undefined;
-  const download = await localArtifactStore().createDownloadUrl(artifact.storageKey, originalName);
-  try {
-    const response = await fetch(download.url);
-    if (!response.ok || !response.body) throw new Error(`Artifact download failed with ${response.status}`);
-    await pipeline(Readable.fromWeb(response.body as never), createWriteStream(path, { flags: "wx", mode: 0o600 }));
-    const sha256 = await sha256File(path);
-    if (sha256 !== expectedSha256) throw new Error(`Artifact checksum mismatch: expected ${expectedSha256}, received ${sha256}`);
-    const fileStat = await stat(path);
-    return { artifactId, path, sha256, sizeBytes: fileStat.size };
-  } catch (error) {
-    await unlink(path).catch(() => undefined);
-    throw error;
-  }
+  await localArtifactStore().downloadFile({ key: artifact.storageKey, path, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes });
+  return { artifactId: artifact.id, path, sizeBytes: artifact.sizeBytes };
 }
 
 async function removeSubmission(repository: RegistryRepository, input: ReturnType<typeof parseSubmissionRemoval>): Promise<unknown> {
@@ -280,26 +279,16 @@ async function removeSubmission(repository: RegistryRepository, input: ReturnTyp
 }
 
 async function purgeArtifact(repository: RegistryRepository, store: ArtifactStore, id: string): Promise<unknown> {
+  id = (await repository.getArtifact(id))?.id ?? id;
   const artifact = await repository.unregisterArtifactIfUnreferenced(id);
   if (!artifact) return { artifactId: id, deleted: false, reason: "not_found_or_referenced" };
   try {
     await store.deleteObject(artifact.storageKey);
-    return { artifactId: id, deleted: true, sizeBytes: artifact.sizeBytes ?? null };
+    return { artifactId: rawOutput ? id : artifact.reference ?? id, deleted: true, sizeBytes: artifact.sizeBytes ?? null };
   } catch (error) {
     await repository.registerArtifact(artifact);
     throw error;
   }
-}
-
-async function sha256File(path: string): Promise<string> {
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(path);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("error", reject);
-    stream.on("end", resolve);
-  });
-  return hash.digest("hex");
 }
 
 async function jsonFile(path: string | undefined): Promise<unknown> {
@@ -307,9 +296,9 @@ async function jsonFile(path: string | undefined): Promise<unknown> {
   if (path === "-") {
     let payload = "";
     for await (const chunk of process.stdin) payload += String(chunk);
-    return JSON.parse(payload);
+    return registryFileReferences(activeRepository!, JSON.parse(payload), "input");
   }
-  return JSON.parse(await readFile(path, "utf8"));
+  return registryFileReferences(activeRepository!, JSON.parse(await readFile(path, "utf8")), "input");
 }
 
 function required(value: string | undefined, name: string): string {
@@ -318,7 +307,8 @@ function required(value: string | undefined, name: string): string {
 }
 
 function output(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+  if (activeRepository) commandResult = value;
+  else process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
 function fail(message: string): never {
@@ -331,6 +321,9 @@ function operationSchemas() {
     database: "DATABASE_URL",
     objectStore: ["AWS_ENDPOINT_URL", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_S3_BUCKET_NAME"],
     note: "Trusted CASE commands call the registry library directly; no registry URL or admin token is used.",
+  },
+  files: {
+    note: "Use short file references from store-file and catalog output. Checksums are managed internally; task registration does not require contentSha256. Original file IDs remain accepted. Add --raw to inspect original identifiers, storage keys and integrity metadata.",
   },
   commands: {
     operations: { arguments: [], result: "this command reference" },
@@ -405,8 +398,12 @@ function operationSchemas() {
       fields: ["submissionId", "assignments[{taskId,gpuRequired,evidence}]", "reason", "actor"],
       note: "Appends audited GPU-requirement assignments without replacing task versions or creating Harbor attempts.",
     },
-    import: { arguments: ["<submission-manifest.json>"], compatibility: "Prefer casectl intake feishu or casectl intake mail for Feishu capture." },
-    "import-source": { arguments: ["<source-envelope.json>"], compatibility: "Registers standalone provenance evidence." },
+    import: { arguments: ["<submission-manifest.json>"], compatibility: "Legacy normalized manifest import. Use capture-submission for arbitrary deliveries, or casectl intake feishu/mail for supported channel capture." },
+    "import-source": {
+      arguments: ["<source-envelope.json>"],
+      fields: ["vendor{id,name,short,description,aliases?}", "sourceEvent{id,channel,externalRef,sender?,receivedAt,rawArtifactId?,metadata?}", "items[{id,kind,displayName,locator?,artifactId?,mediaType?,sizeBytes?,fetchStatus,parseStatus,mutable,capturedAt?,metadata?}]", "relations[{fromItemId,toItemId,relation,position?,metadata?}]?", "submissionLinks[{submissionId,role,sourceItemIds?}]?"],
+      note: "Registers evidence or adds newly discovered items and relations to an existing source event without replacing earlier evidence. Use metadata to preserve details that do not fit the standard fields; file checksums are optional.",
+    },
     "reconcile-submission-source-items": {
       arguments: ["<reconciliation.json>"],
       fields: ["submissionId", "sourceEventId", "items[{sourceItemId,role}]", "reason", "actor"],
@@ -416,6 +413,7 @@ function operationSchemas() {
     "append-tasks": {
       arguments: ["<tasks.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "actor"],
+      taskFields: ["id", "stableKey", "title", "summary?", "kind=task|trace", "format=harbor|non_harbor", "benchmarkId?", "sourcePath", "artifactId=file-N", "sourceItemIds"],
       note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override. Before registration, each task requested as Harbor is checked with the pinned Harbor library's static task-format validation without executing task code. A format failure retains the task but changes its format to non_harbor; missing or mismatched provenance still fails the operation. After the registry transaction commits, every active Harbor task in the submission is published as exact individual files to harbor-tasks; an export failure leaves the registration committed and makes this command fail so the same input can be retried safely.",
     },
     "reconcile-submission-tasks": {
@@ -427,6 +425,11 @@ function operationSchemas() {
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },
     "restore-vendor": { arguments: ["<restore.json>"], fields: ["vendorId", "reason", "actor"] },
     "store-file": { arguments: ["<artifact-kind>", "<absolute-file-path>"] },
+    "capture-submission": {
+      arguments: ["<capture.json>"],
+      fields: ["purpose=sample_evaluation", "vendor{id,name,short,description,aliases?}", "submission{id,date,label,sourceLabel,formats?,revisesSubmissionId?,metadata?}", "sources[{sourceEventId,sourceItemIds?}|{sourceEvent,items,relations?}]", "actor"],
+      note: "Preserve any delivery before parsing, including links, folders, PDFs, spreadsheets and mixed material. Store available files with store-file; external-only items need a locator, not a file. Sources use the import-source graph schema. CASE decides what to follow and parse, and records a sample-delivery entry with record-vendor-interaction linked to this submission and its sources.",
+    },
     "download-artifact": { arguments: ["<artifact-id>", "<output-path>"] },
     "record-harbor-check": { arguments: ["<check.json>"], phases: ["environment", "oracle", "nop"] },
     "record-harbor-attempt": {

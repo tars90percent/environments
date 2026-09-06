@@ -4,6 +4,7 @@ import type {
   AssignTaskBenchmarksInput,
   AppendTasksInput,
   AppendNormalizedTasksInput,
+  CaptureSubmissionInput,
   CheckEvidenceRole,
   CheckExecutionScope,
   CheckResultInput,
@@ -214,9 +215,6 @@ export function parseAppendNormalizedTasks(value: unknown): AppendNormalizedTask
     }
     const artifactId = identifier(task.artifactId, `tasks[${index}].artifactId`);
     const contentSha256 = sha256(task.contentSha256, `tasks[${index}].contentSha256`);
-    if (artifactId !== `artifact:sha256:${contentSha256}`) {
-      throw new ValidationError(`tasks[${index}].artifactId must identify contentSha256`);
-    }
     const sourceItemIds = uniqueIdentifiers(task.sourceItemIds, `tasks[${index}].sourceItemIds`);
     if (!sourceItemIds.length) {
       throw new ValidationError(`tasks[${index}].sourceItemIds must contain at least one source item`);
@@ -286,10 +284,7 @@ export function parseAppendTasks(value: unknown): AppendTasksInput {
       "artifactId", "contentSha256", "sourceItemIds",
     ]), `tasks[${index}]`);
     const artifactId = identifier(task.artifactId, `tasks[${index}].artifactId`);
-    const contentSha256 = sha256(task.contentSha256, `tasks[${index}].contentSha256`);
-    if (artifactId !== `artifact:sha256:${contentSha256}`) {
-      throw new ValidationError(`tasks[${index}].artifactId must identify contentSha256`);
-    }
+    const contentSha256 = task.contentSha256 === undefined ? undefined : sha256(task.contentSha256, `tasks[${index}].contentSha256`);
     const sourceItemIds = uniqueIdentifiers(task.sourceItemIds, `tasks[${index}].sourceItemIds`);
     if (!sourceItemIds.length) throw new ValidationError(`tasks[${index}].sourceItemIds must not be empty`);
     const assignedBenchmarkIds = [...new Set(benchmarkAssignments
@@ -355,8 +350,7 @@ export function parseReconcileSubmissionTasks(value: unknown): ReconcileSubmissi
     const task = object(value, `tasks[${index}]`);
     if (task.artifactId !== null) return task;
     legacyNullArtifactIndexes.add(index);
-    const contentSha256 = sha256(task.contentSha256, `tasks[${index}].contentSha256`);
-    return { ...task, artifactId: `artifact:sha256:${contentSha256}` };
+    return { ...task, artifactId: "legacy-unlinked-file" };
   });
   const parsed = parseAppendTasks({
     submissionId: input.submissionId,
@@ -592,6 +586,44 @@ export function parseHarborFinding(value: unknown): HarborFindingInput {
   };
 }
 
+/** Flexible capture: a source may be a preserved file, an external locator, or a linked source graph. */
+export function parseCaptureSubmission(value: unknown): CaptureSubmissionInput {
+  const input = object(value, "submission capture");
+  onlyKeys(input, new Set(["purpose", "vendor", "submission", "sources", "actor"]), "submission capture");
+  if (input.purpose !== "sample_evaluation") throw new ValidationError("purpose must be sample_evaluation; purchased deliveries belong in the downstream pipeline");
+  const vendor = object(input.vendor, "vendor");
+  const submission = object(input.submission, "submission");
+  const sources = array(input.sources, "sources").map((value, index) => {
+    const source = object(value, `sources[${index}]`);
+    if (source.sourceEventId !== undefined) {
+      onlyKeys(source, new Set(["sourceEventId", "sourceItemIds"]), `sources[${index}]`);
+      return {
+        sourceEventId: identifier(source.sourceEventId, `sources[${index}].sourceEventId`),
+        sourceItemIds: source.sourceItemIds === undefined ? undefined : uniqueIdentifiers(source.sourceItemIds, `sources[${index}].sourceItemIds`),
+      };
+    }
+    onlyKeys(source, new Set(["sourceEvent", "items", "relations"]), `sources[${index}]`);
+    const envelope = parseSourceEnvelope({ ...source, vendor });
+    return { sourceEvent: envelope.sourceEvent, items: envelope.items, relations: envelope.relations };
+  });
+  if (!sources.length) throw new ValidationError("sources must preserve at least one source of the submission");
+  return {
+    vendor: {
+      id: identifier(vendor.id, "vendor.id"), name: string(vendor.name, "vendor.name"),
+      short: string(vendor.short, "vendor.short"), description: string(vendor.description, "vendor.description"),
+      aliases: optionalStringArray(vendor.aliases, "vendor.aliases"),
+    },
+    submission: {
+      id: identifier(submission.id, "submission.id"), date: date(submission.date, "submission.date"),
+      label: string(submission.label, "submission.label"), sourceLabel: string(submission.sourceLabel, "submission.sourceLabel"),
+      formats: submission.formats === undefined ? [] : array(submission.formats, "submission.formats").map((format) => enumValue(format, TASK_FORMATS, "submission.formats")),
+      revisesSubmissionId: optionalString(submission.revisesSubmissionId, "submission.revisesSubmissionId"),
+      metadata: optionalObject(submission.metadata, "submission.metadata"),
+    },
+    sources, artifacts: [], actor: boundedString(input.actor, "actor", 500),
+  };
+}
+
 export function parseSourceEnvelope(value: unknown): SourceEnvelopeInput {
   const root = object(value, "source envelope");
   const vendor = object(root.vendor, "vendor");
@@ -817,6 +849,7 @@ export function parseArtifact(value: unknown): ArtifactInput {
   const input = object(value, "artifact");
   return {
     id: identifier(input.id, "id"),
+    reference: input.reference === undefined ? undefined : identifier(input.reference, "reference"),
     kind: enumValue(input.kind, new Set(["source_payload", "source_snapshot", "submission_manifest", "task_package", "trajectory", "check_evidence", "extracted_text", "other"]), "kind"),
     storageKey: string(input.storageKey, "storageKey"),
     sha256: sha256(input.sha256, "sha256"),

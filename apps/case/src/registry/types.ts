@@ -602,7 +602,8 @@ export type TaskRegistrationInput = {
   benchmarkId: string;
   sourcePath: string;
   artifactId: string;
-  contentSha256: string;
+  /** Optional legacy assertion; the registry obtains the checksum from the file record. */
+  contentSha256?: string;
   sourceItemIds: string[];
 };
 
@@ -684,6 +685,7 @@ export type HarborFindingInput = {
 
 export type ArtifactInput = {
   id: string;
+  reference?: string;
   kind:
     | "source_payload"
     | "source_snapshot"

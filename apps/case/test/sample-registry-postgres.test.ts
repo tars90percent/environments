@@ -133,7 +133,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
         reason: "Reject an atomic request containing a current benchmark.",
         actor: "TARS",
       }),
-      /current task or trace assignments cannot be purged/,
+      /(current task or trace assignments|task-version compatibility snapshots) cannot be purged/,
     );
     assert.ok((await repository.listBenchmarks()).some((benchmark) => benchmark.id === "wrong-bench"));
     const purgedBenchmarks = await repository.purgeErroneousBenchmarks({
@@ -273,7 +273,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     assert.equal(benchmarkedSubmission?.tasks[0]?.id, "task-one");
     assert.deepEqual(benchmarkedSubmission?.tasks[0]?.benchmark, {
       id: "science-bench",
-      displayName: "Science Bench",
+      displayName: "Science Bench 2",
     });
     assert.equal(benchmarkedSubmission?.tasks[0]?.checks.environment?.outcome, "fail");
     assert.equal(benchmarkedSubmission?.tasks[0]?.attempts.oracle?.status, "blocked");
@@ -374,7 +374,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
         {
           id: "task-trace-v2",
           stableKey: "trace-one",
-          title: "Trace one",
+          title: "Trace one (reviewed attempt)",
           kind: "trace",
           format: "non_harbor",
           benchmarkId: "unspecified",
@@ -408,6 +408,7 @@ test("stores submissions, tasks, three-phase Harbor results, and failed-check fi
     );
     assert.deepEqual(benchmarkHistory.rows.map((row) => row.benchmark_id), [
       "terminal-bench",
+      "terminal-bench", // Restoration after the separately purged erroneous assignment.
       "science-bench",
       "terminal-bench",
     ]);

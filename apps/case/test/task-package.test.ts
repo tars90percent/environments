@@ -31,7 +31,8 @@ test("safely extracts ZIPs and creates deterministic task packages", { skip: !ha
 
     const first = run("package-dir", join(extracted, "delivery/task"), join(directory, "first.tar.gz"));
     const second = run("package-dir", join(extracted, "delivery/task"), join(directory, "second.tar.gz"));
-    assert.equal(first.contentSha256, second.contentSha256);
+    assert.deepEqual(readFileSync(join(directory, "first.tar.gz")), readFileSync(join(directory, "second.tar.gz")));
+    assert.equal("contentSha256" in first, false);
     assert.equal(first.sizeBytes, second.sizeBytes);
     assert.equal(first.archiveRoot, "task_contents");
   } finally {

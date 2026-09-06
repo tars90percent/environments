@@ -90,6 +90,8 @@ export interface RegistryRepository {
   recordHarborCheck(input: HarborCheckResultInput): Promise<void>;
   recordHarborFinding(input: HarborFindingInput): Promise<{ findingId: string; created: boolean }>;
   registerArtifact(input: ArtifactInput): Promise<void>;
+  reserveFileReference(): Promise<string>;
+  fileReferences(identifiers: string[]): Promise<Array<{ id: string; reference: string }>>;
   leaseWorkItem(workerId: string, leaseSeconds: number): Promise<WorkItem | null>;
   completeWorkItem(input: WorkCompletionInput): Promise<void>;
   reconcileHarborWorkItems(input: ReconcileHarborWorkItemsInput): Promise<ReconcileHarborWorkItemsResult>;
@@ -97,6 +99,9 @@ export interface RegistryRepository {
   getSampleSubmission(id: string): Promise<SampleCatalogSubmission | null>;
   getSampleTask(id: string): Promise<SampleCatalogTask | null>;
   getSourceEvent(id: string): Promise<CatalogSourceEvent | null>;
+  findSourceEvent(channel: string, externalRef: string): Promise<CatalogSourceEvent | null>;
+  findCapturedSourceRetry(sourceEventId: string): Promise<CatalogSourceEvent | null>;
+  reserveSourceReference(): Promise<string>;
   getArtifact(id: string): Promise<ArtifactRecord | null>;
   unregisterArtifactIfUnreferenced(id: string): Promise<ArtifactRecord | null>;
   operationsSummary(): Promise<OperationsSummary>;

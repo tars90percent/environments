@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -72,11 +71,18 @@ async function captureAttachment(
   local: LocalRegistry,
   attachment: FeishuAttachmentPlan,
 ): Promise<{ status: "captured" | "failed" | "skipped"; artifacts: ArtifactInput[]; sources: CapturedSubmissionSourceInput[] }> {
-  const baseEventId = eventIdFor(attachment);
-  const existing = await local.repository.getSourceEvent(baseEventId);
+  const locator = `${attachment.messageLink}${attachment.messageLink.includes("#") ? "&" : "#"}case-file=${encodeURIComponent(attachment.fileKey)}`;
+  const existing = await local.repository.findSourceEvent("feishu", locator)
+    ?? await local.repository.getSourceEvent(legacyEventIdFor(attachment));
   if (existing && sourceWasCaptured(existing)) {
     return { status: "skipped", artifacts: [], sources: [capturedSourceLink(existing)] };
   }
+
+  if (existing) {
+    const retry = await local.repository.findCapturedSourceRetry(existing.id);
+    if (retry) return { status: "skipped", artifacts: [], sources: [capturedSourceLink(existing), capturedSourceLink(retry)] };
+  }
+  const eventId = await local.repository.reserveSourceReference();
 
   const directory = await mkdtemp(join(tmpdir(), "case-feishu-intake-"));
   const outputName = `${attachment.messageId}-${safeCaptureName(attachment.filename)}`;
@@ -94,6 +100,7 @@ async function captureAttachment(
       "--format", "json",
     ], directory);
     artifact = await storeSourcePayload(local.artifactStore, outputPath, {
+      reference: await local.repository.reserveFileReference(),
       filename: attachment.filename,
       metadata: { messageId: attachment.messageId, fileKey: attachment.fileKey, source: "feishu" },
     });
@@ -103,21 +110,11 @@ async function captureAttachment(
     await rm(directory, { recursive: true, force: true });
   }
 
-  const retryToken = artifact ? artifact.sha256.slice(0, 20) : randomUUID().replaceAll("-", "").slice(0, 20);
-  const eventId = existing ? `${baseEventId}:retry:${retryToken}` : baseEventId;
-  if (existing && artifact) {
-    const recordedRetry = await local.repository.getSourceEvent(eventId);
-    if (recordedRetry && sourceWasCaptured(recordedRetry)) {
-      return { status: "skipped", artifacts: [], sources: [capturedSourceLink(existing), capturedSourceLink(recordedRetry)] };
-    }
-  }
-
-  const itemId = `source-item:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}${existing ? `:retry:${retryToken}` : ""}`;
   const source: CapturedSubmissionSourceInput = {
     sourceEvent: {
       id: eventId,
       channel: "feishu",
-      externalRef: `${attachment.messageLink}${attachment.messageLink.includes("#") ? "&" : "#"}case-file=${shortHash(attachment.fileKey)}${existing ? `&case-retry=${retryToken}` : ""}`,
+      externalRef: `${locator}${existing ? `&case-capture=${eventId}` : ""}`,
       sender: attachment.sender,
       receivedAt: attachment.receivedAt,
       rawArtifactId: artifact?.id,
@@ -130,7 +127,7 @@ async function captureAttachment(
       },
     },
     items: [{
-      id: itemId,
+      id: `${eventId}:file`,
       kind: sourceKindFor(attachment.filename),
       displayName: attachment.filename,
       locator: attachment.messageLink,
@@ -182,6 +179,7 @@ async function runLark(arguments_: string[], cwd: string): Promise<void> {
   if (result.code !== 0) throw new Error(`Feishu resource command failed: ${result.stderr || result.stdout}`);
 }
 
-function eventIdFor(attachment: FeishuAttachmentPlan): string {
+// Look up pre-reference captures without changing their recorded identifiers.
+function legacyEventIdFor(attachment: FeishuAttachmentPlan): string {
   return `capture:feishu:${attachment.messageId}:${shortHash(attachment.fileKey)}`;
 }

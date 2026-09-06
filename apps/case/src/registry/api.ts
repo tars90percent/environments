@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { basename } from "node:path";
 import { ArtifactStore, contentAddressedStorageKey } from "./artifacts.js";
 import { RegistryConflictError, RegistryNotFoundError } from "./postgres.js";
+import { registryFileReferences } from "./file-references.js";
 import type { RegistryRepository } from "./repository.js";
 import type { ResearcherUploadInput } from "./types.js";
 import {
@@ -82,7 +83,7 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   if (role !== "catalog") return sendJson(response, 403, { error: "catalog_token_required" });
 
   if (method === "GET" && url.pathname === "/v1/catalog") {
-    return sendJson(response, 200, await options.repository.sampleCatalogSnapshot());
+    return sendJson(response, 200, await registryFileReferences(options.repository, await options.repository.sampleCatalogSnapshot(), "output", true));
   }
 
   const vendorMatch = url.pathname.match(/^\/v1\/vendors\/([^/]+)$/);
@@ -90,25 +91,25 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
     const vendorId = decodeURIComponent(vendorMatch[1]);
     const value = (await options.repository.sampleCatalogSnapshot()).vendors
       .find((vendor) => vendor.id === vendorId);
-    return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "vendor_not_found" });
+    return value ? sendJson(response, 200, await registryFileReferences(options.repository, value, "output", true)) : sendJson(response, 404, { error: "vendor_not_found" });
   }
 
   const submissionMatch = url.pathname.match(/^\/v1\/submissions\/([^/]+)$/);
   if (method === "GET" && submissionMatch?.[1]) {
     const value = await options.repository.getSampleSubmission(decodeURIComponent(submissionMatch[1]));
-    return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "submission_not_found" });
+    return value ? sendJson(response, 200, await registryFileReferences(options.repository, value, "output", true)) : sendJson(response, 404, { error: "submission_not_found" });
   }
 
   const taskMatch = url.pathname.match(/^\/v1\/tasks\/([^/]+)$/);
   if (method === "GET" && taskMatch?.[1]) {
     const value = await options.repository.getSampleTask(decodeURIComponent(taskMatch[1]));
-    return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "task_not_found" });
+    return value ? sendJson(response, 200, await registryFileReferences(options.repository, value, "output", true)) : sendJson(response, 404, { error: "task_not_found" });
   }
 
   const sourceEventMatch = url.pathname.match(/^\/v1\/source-events\/([^/]+)$/);
   if (method === "GET" && sourceEventMatch?.[1]) {
     const value = await options.repository.getSourceEvent(decodeURIComponent(sourceEventMatch[1]));
-    return value ? sendJson(response, 200, value) : sendJson(response, 404, { error: "source_event_not_found" });
+    return value ? sendJson(response, 200, await registryFileReferences(options.repository, value, "output", true)) : sendJson(response, 404, { error: "source_event_not_found" });
   }
 
   const artifactDownloadMatch = url.pathname.match(/^\/v1\/artifacts\/([^/]+)\/download-url$/);

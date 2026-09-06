@@ -16,10 +16,11 @@ individual files under `<vendor-id>/<submission-id>/<task-name>/`. This mirror
 contains no archives, stable-key directory, or generated wrapper; the canonical
 CASE artifact remains the source of truth.
 
-The workflow is deliberately narrow: preserve a submission, identify clear tasks
-or traces, assign each one a registered general benchmark direction, label each
-task `harbor` or `non_harbor`, and run Environment, Oracle, and Nop only for
-Harbor tasks.
+CASE provides operations to preserve submissions, identify clear tasks or traces,
+assign general benchmark directions, label task formats, and distribute Harbor
+tasks. Humans and CASE choose how to use those operations as the process evolves. New evaluation belongs
+to AutoQA; CASE does not run Environment, Oracle, or Nop checks. Historical
+results remain attached to their exact task versions.
 
 This README describes the CASE application and its runtime. The monorepo's root
 [`AGENTS.md`](../../AGENTS.md) is the sole authoritative operating policy for
@@ -81,8 +82,8 @@ When the registry variables in `.env.example` are configured, the same process
 also serves the portal-facing catalog on `PORT`. It runs built-in migrations at
 startup. Trusted local CASE commands use the registry library directly with
 `DATABASE_URL` and the CASE object-store credentials; there is no internal write
-API or admin token. CASE retains a dormant researcher-upload adapter for
-compatibility, but the portal does not expose it and it is not a current capture path.
+API or admin token. CASE retains a researcher-upload adapter for compatibility; the portal does
+not expose it.
 
 The installed `casectl` command groups CASE-owned operations by area:
 
@@ -95,6 +96,8 @@ casectl registry register-benchmark /absolute/path/benchmark.json
 casectl registry remove-unused-benchmarks /absolute/path/benchmark-removal.json
 casectl registry purge-erroneous-benchmarks /absolute/path/benchmark-purge.json
 casectl registry assign-task-benchmarks /absolute/path/benchmark-assignments.json
+casectl registry capture-submission /absolute/path/capture.json
+casectl registry store-file source_payload /absolute/path/original.pdf
 casectl registry import /absolute/path/submission.json
 casectl registry import-source /absolute/path/source-envelope.json
 casectl registry append-tasks /absolute/path/tasks.json
@@ -144,7 +147,7 @@ findings remain attached and visible. Task reconciliation ignores benchmark-only
 changes and must never be used to manufacture a replacement version for them.
 
 `casectl registry` and `casectl intake` do not call the registry HTTP API. The
-capture commands place exact payload bytes in CASE's content-addressed object store, then use one
+capture commands place exact payload bytes in CASE's object store, then use one
 database transaction to register artifact records, source events and items, the
 dated submission, and every source link. A capture plan contains the vendor,
 submission ID/date/label, attachments, and an optional explicit `harbor` or
@@ -178,17 +181,6 @@ records. It is an audited, idempotent alternative to FIFO leasing when checks
 were performed directly by CASE. It refuses unrelated, unresolved, leased,
 failed, duplicate, missing, superseded, and non-Harbor targets.
 
-The root policy permits one narrowly defined execution adapter for Modal's
-partial Dockerfile implementation. When a task validly uses a named
-`COPY --chown` owner and its Dockerfile deterministically establishes the
-corresponding UID and GID, the checker may replace only that operand with its
-numeric equivalent in a disposable evaluation copy. The stored task artifact
-and task version remain unchanged. Evidence must retain the original artifact
-hash, exact transformation, resolved IDs, adapted Dockerfile hash, and both the
-original rejection and adapted-run logs. A successful adapted run supplies the
-ordinary Environment, Oracle, and Nop results for the original task version;
-this exception does not authorize any other task repair or normalization.
-
 If CASE created a submission record in error, `remove-submission` can hard-remove
 it with the explicit `erroneous_registration` disposition, an actor, and a
 reason. The operation preserves a tombstone and any shared sources, artifacts,
@@ -201,7 +193,7 @@ The intake commands accept only plans that explicitly declare
 attachments through CASE's renewable user login, store immutable bytes in the
 registry bucket, and register visible `unchecked` submission checkpoints. CASE
 then continues the registration by interpreting the preserved material,
-creating task versions, and recording remote execution evidence. Purchased
+creating task versions, and publishing Harbor tasks. Purchased
 deliveries move to a downstream pipeline and must not be registered as samples
 in CASE. Catalog task totals count only registered task versions;
 vendor-declared quantities and raw file counts remain separate.
@@ -214,9 +206,10 @@ artifact can participate in different provenance contexts. Use the audited
 `casectl registry reconcile-submission-source-items` operation to repair legacy
 links without changing source records or stored object bytes.
 
-The portal is read-only and does not expose submission uploads. New sample
-submissions currently enter CASE only through the reviewed Feishu message/file
-or Feishu Mail message/attachment capture paths.
+The portal is read-only and does not expose submission uploads. CASE can capture Feishu message/file and Mail attachments directly, or register
+other deliveries through `store-file`, `capture-submission`, and `import-source`.
+These operations preserve arbitrary file formats and external links; CASE decides
+which tools to use to inspect them.
 
 Send `/new` as a message, or select the app's native `/new` slash command, to
 disconnect that Feishu chat from its current Codex thread in the active
@@ -304,33 +297,61 @@ profile, Railway PostgreSQL, and Railway object storage. Store credentials only
 in Railway secrets. Chat transport, Feishu authorization, Codex permissions,
 registry roles, and portal OAuth are independent permission layers.
 
-CASE is the initial evaluation controller; a second always-on worker service is
-not required. The image includes pinned Harbor and Modal CLIs. Its `harbor`
-launcher forces `harbor run` onto Modal, gives Harbor only evaluation-specific
-credentials, and keeps downloaded job results under `/data/evaluations` on the
-persistent Railway volume. Vendor code executes in a fresh remote sandbox, not
-inside the CASE service.
+The image retains the pinned Harbor library for static task-format validation.
+Legacy Harbor/Modal execution utilities and historical evaluation documentation
+remain for compatibility; they are not authorized execution paths for new
+samples. AutoQA is the execution boundary, once its supported endpoint exists.
 
-Configure a dedicated Modal service-user token with `MODAL_TOKEN_ID` and
-`MODAL_TOKEN_SECRET`, and select its least-privilege Modal environment with
-`MODAL_ENVIRONMENT`. The direct `modal` command is available for provider
-diagnostics. A normal two-trial check uses an Oracle run with a forced clean
-build followed by Nop in a different fresh sandbox:
+## Files and arbitrary deliveries
 
-```sh
-harbor run -p /data/evaluations/input/<artifact-sha256> -a oracle --force-build
-harbor run -p /data/evaluations/input/<artifact-sha256> -a nop --no-force-build
+Use `casectl registry store-file <kind> <path>` for any local file, including an
+untouched PDF, spreadsheet, archive, task package, trace, or other payload. It
+returns a short reference such as `file-123`, the original filename and file
+metadata. New objects use `files/<reference>/<filename>`. Checksums are computed
+and verified internally. Existing objects are not moved or renamed, and their
+original identifiers remain usable. Add `--raw` to a registry command to inspect
+original identifiers and integrity details.
+
+`casectl registry capture-submission <capture.json>` registers a delivery before
+parsing. It accepts existing source references or inline source graphs and has
+no file-format restriction. A link-only delivery is a valid submission even
+when access is blocked or no task boundaries have been identified. Example:
+
+```json
+{
+  "purpose": "sample_evaluation",
+  "vendor": { "id": "vendor-a", "name": "Vendor A", "short": "A", "description": "Vendor record" },
+  "submission": { "id": "vendor-a-september-samples", "date": "2026-09-07", "label": "September samples", "sourceLabel": "Vendor email" },
+  "sources": [{
+    "sourceEvent": { "id": "september-email", "channel": "email", "externalRef": "mail://original-message", "sender": "Vendor contact", "receivedAt": "2026-09-07T08:00:00Z" },
+    "items": [
+      { "id": "sample-index", "kind": "pdf", "displayName": "Sample index.pdf", "artifactId": "file-123", "fetchStatus": "snapshotted", "parseStatus": "not_requested", "mutable": false },
+      { "id": "sample-folder", "kind": "folder", "displayName": "Linked sample folder", "locator": "https://drive.google.com/drive/folders/example", "fetchStatus": "external_only", "parseStatus": "not_requested", "mutable": true }
+    ],
+    "relations": [{ "fromItemId": "sample-index", "toItemId": "sample-folder", "relation": "links_to" }]
+  }],
+  "actor": "CASE"
+}
 ```
 
-The launcher adds `--env modal`; a different execution environment is rejected.
-Each invocation also receives a unique CASE-owned Modal App, a two-hour hard
-sandbox lifetime, and a ten-minute idle timeout. After Harbor exits, the
-launcher stops that App and verifies that it has no active containers. These
-provider-side limits remain a cleanup backstop if the controller is killed
-before its exit handler can run. Harbor creates its normal `jobs/` result tree
-beneath `/data/evaluations`, where CASE can inspect it and register immutable
-evidence. A separate controller service remains a future scaling option, not a
-prerequisite for remote sandbox execution.
+After inspecting more material, use `import-source` to add source items and
+relationships to the same arrival event, or preserve a new arrival as another
+event. Previously recorded items and relationships remain intact. Use the
+submission's exact source-item links to distinguish original vendor files from
+supporting provenance.
 
-The execution boundary, run sequence, and sandbox acceptance test are in
-[`docs/evaluation-runner.md`](docs/evaluation-runner.md).
+When tasks or traces are clearly bounded, `append-tasks` accepts their file
+references without `contentSha256`. The registry resolves file identity and
+integrity itself. Source paths, kinds, benchmark directions, and source links
+are still explicit. Use `unspecified` for an unclear direction. Harbor tasks
+must pass the pinned static validator; successful registration publishes their
+exact files to `harbor-tasks`. `casectl harbor-tasks publish <submission-id>` can
+complete or verify that mirror after an interrupted publication. The archive
+helper inspects/extracts/packages files without producing redundant hashes.
+
+Record or update the vendor's sample-delivery timeline entry with
+`record-vendor-interaction` / `update-vendor-interaction`, citing the submission
+and supporting source events. CASE decides the narrative and next steps; capture
+does not invent a timeline narrative or impose a procurement sequence.
+
+`casectl registry operations` is the current command and input reference.

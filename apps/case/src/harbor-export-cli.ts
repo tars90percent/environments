@@ -120,7 +120,7 @@ export async function classifyHarborTaskRegistrations<T extends TaskRegistration
       if (!extractedPath) {
         const artifact = await input.repository.getArtifact(task.artifactId);
         if (!artifact) throw new Error(`Task ${task.id} cannot be registered as Harbor because artifact ${task.artifactId} does not exist`);
-        if (artifact.sha256 !== task.contentSha256) {
+        if (task.contentSha256 !== undefined && artifact.sha256 !== task.contentSha256) {
           throw new Error(`Task ${task.id} cannot be registered as Harbor because its artifact hash does not match`);
         }
         const candidateDirectory = join(temporary, `artifact-${position}`);

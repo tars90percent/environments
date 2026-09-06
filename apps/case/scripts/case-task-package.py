@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import gzip
-import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -120,7 +119,6 @@ def inspect_zip(path: Path, limits: argparse.Namespace) -> dict[str, object]:
             "tool": TOOL_NAME,
             "toolVersion": TOOL_VERSION,
             "archive": str(path.resolve()),
-            "archiveSha256": sha256_file(path),
             "archiveSizeBytes": path.stat().st_size,
             "entryCount": len(entries),
             "uncompressedSizeBytes": total_bytes,
@@ -179,7 +177,6 @@ def extract_zip(path: Path, destination: Path, limits: argparse.Namespace) -> di
     return {
         "tool": TOOL_NAME,
         "toolVersion": TOOL_VERSION,
-        "archiveSha256": sha256_file(path),
         "destination": str(destination.resolve()),
         "fileCount": extracted_files,
         "extractedSizeBytes": extracted_bytes,
@@ -238,7 +235,6 @@ def inspect_tar(path: Path, limits: argparse.Namespace) -> dict[str, object]:
             "tool": TOOL_NAME,
             "toolVersion": TOOL_VERSION,
             "archive": str(path.resolve()),
-            "archiveSha256": sha256_file(path),
             "archiveSizeBytes": path.stat().st_size,
             "entryCount": len(entries),
             "uncompressedSizeBytes": total_bytes,
@@ -299,7 +295,6 @@ def extract_tar(path: Path, destination: Path, limits: argparse.Namespace) -> di
     return {
         "tool": TOOL_NAME,
         "toolVersion": TOOL_VERSION,
-        "archiveSha256": sha256_file(path),
         "destination": str(destination.resolve()),
         "fileCount": extracted_files,
         "extractedSizeBytes": extracted_bytes,
@@ -367,21 +362,12 @@ def package_directory(source: Path, output: Path, limits: argparse.Namespace) ->
         "toolVersion": TOOL_VERSION,
         "source": str(source),
         "output": str(output.resolve()),
-        "contentSha256": sha256_file(output),
         "sizeBytes": output.stat().st_size,
         "fileCount": file_count,
         "uncompressedSizeBytes": total_bytes,
         "archiveFormat": "tar+gzip",
         "archiveRoot": "task_contents",
     }
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(COPY_CHUNK_BYTES):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def limit_kwargs(arguments: argparse.Namespace) -> dict[str, int]:

@@ -1,8 +1,8 @@
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { stat, unlink } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { open, stat, unlink } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 
 export type ArtifactStoreOptions = {
@@ -60,25 +60,29 @@ export class ArtifactStore {
   }
 
   async downloadFile(input: { key: string; path: string; sha256: string; sizeBytes?: number }): Promise<void> {
-    const object = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: safeKey(input.key) }));
-    if (!object.Body) throw new Error("Stored artifact has no body");
-    const hash = createHash("sha256");
-    let sizeBytes = 0;
-    const body = object.Body as AsyncIterable<Uint8Array>;
-    async function* verified(): AsyncIterable<Uint8Array> {
-      for await (const chunk of body) {
-        hash.update(chunk);
-        sizeBytes += chunk.byteLength;
-        yield chunk;
-      }
-    }
+    // Open exclusively before entering cleanup: an existing local file is never ours to delete.
+    const destination = await open(input.path, "wx", 0o600);
     try {
-      await pipeline(verified(), createWriteStream(input.path, { flags: "wx", mode: 0o600 }));
+      const object = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: safeKey(input.key) }));
+      if (!object.Body) throw new Error("Stored artifact has no body");
+      const hash = createHash("sha256");
+      let sizeBytes = 0;
+      const body = object.Body as AsyncIterable<Uint8Array>;
+      async function* verified(): AsyncIterable<Uint8Array> {
+        for await (const chunk of body) {
+          hash.update(chunk);
+          sizeBytes += chunk.byteLength;
+          yield chunk;
+        }
+      }
+      await pipeline(verified(), destination.createWriteStream());
       if (input.sizeBytes !== undefined && sizeBytes !== input.sizeBytes) throw new Error("Downloaded artifact size does not match");
       if (hash.digest("hex") !== input.sha256) throw new Error("Downloaded artifact bytes do not match the declared SHA-256");
     } catch (error) {
       await unlink(input.path).catch(() => undefined);
       throw error;
+    } finally {
+      await destination.close().catch(() => undefined);
     }
   }
 

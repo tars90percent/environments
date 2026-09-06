@@ -2,7 +2,7 @@ import type { PoolClient } from "pg";
 
 type Migration = { id: string; sql: string };
 
-const migrations: Migration[] = [
+export const registryMigrations: readonly Migration[] = [
   {
     id: "001_registry_core",
     sql: `
@@ -1833,6 +1833,42 @@ const migrations: Migration[] = [
         'Current benchmark assignment per exact task version, resolved through one audited benchmark-direction merge.';
     `,
   },
+  {
+    id: "025_file_references",
+    sql: `
+      ALTER TABLE registry_submission_batches ALTER COLUMN manifest_sha256 DROP NOT NULL;
+      ALTER TABLE registry_source_items ALTER COLUMN payload_sha256 DROP NOT NULL;
+      CREATE SEQUENCE registry_record_seq;
+      SELECT setval('registry_record_seq', COALESCE((
+        SELECT max(substring(id FROM '[0-9]+$')::bigint) + 1 FROM (
+          SELECT id FROM registry_tasks WHERE id ~ '^task-[0-9]{1,18}$'
+          UNION ALL SELECT id FROM registry_source_events WHERE id ~ '^source-[0-9]{1,18}$'
+        ) existing_ids
+      ), 1), false);
+      ALTER TABLE registry_task_benchmark_assignments
+        ALTER COLUMN request_sha256 DROP NOT NULL,
+        ADD COLUMN request_id text;
+      ALTER TABLE registry_task_gpu_requirement_assignments
+        ALTER COLUMN request_sha256 DROP NOT NULL,
+        ADD COLUMN request_id text;
+      ALTER TABLE registry_vendor_interactions ALTER COLUMN payload_sha256 DROP NOT NULL;
+      CREATE SEQUENCE registry_file_reference_seq;
+      ALTER TABLE registry_artifacts ADD COLUMN reference text;
+      UPDATE registry_artifacts SET reference = id WHERE id ~ '^file-[0-9]{1,18}$';
+      SELECT setval('registry_file_reference_seq',
+        COALESCE((SELECT max(substring(reference FROM 6)::bigint) + 1
+                  FROM registry_artifacts WHERE reference IS NOT NULL), 1), false);
+      UPDATE registry_artifacts
+        SET reference = 'file-' || nextval('registry_file_reference_seq')
+        WHERE reference IS NULL;
+      ALTER TABLE registry_artifacts
+        ALTER COLUMN reference SET DEFAULT ('file-' || nextval('registry_file_reference_seq')),
+        ALTER COLUMN reference SET NOT NULL,
+        ADD CONSTRAINT registry_artifact_reference_unique UNIQUE (reference);
+      COMMENT ON COLUMN registry_artifacts.reference IS
+        'Short public file reference. Original identifiers, object keys, checksums and provenance are retained.';
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {
@@ -1845,7 +1881,7 @@ export async function runRegistryMigrations(client: PoolClient): Promise<void> {
       )
     `);
 
-    for (const migration of migrations) {
+    for (const migration of registryMigrations) {
       const result = await client.query<{ id: string }>(
         "SELECT id FROM registry_migrations WHERE id = $1",
         [migration.id],
