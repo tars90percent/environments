@@ -255,6 +255,32 @@ test("ZIP archive requests return a signed cached object without changing the TA
   }
 });
 
+test("benchmark ZIPs span vendors and refuse incomplete or unsafe selections", async () => {
+  const roots = ["vendor-a/submission/task", "vendor-b/submission/task"];
+  const app = await fixture({ missingKeys: new Set(["vendor-b/submission/missing/task.toml"]) });
+  const request = (selected) => fetch(`${app.baseUrl}/zip-archives`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ roots: selected, manifest: { benchmark: { id: "terminal-bench" } }, filename: "Terminal-Bench-harbor-tasks.zip" }),
+  });
+  try {
+    const response = await request(roots);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).taskCount, 2);
+    assert.deepEqual(app.calls.zipArchive[0].roots, roots);
+    assert.deepEqual(app.calls.head, roots.map((root) => `${root}/task.toml`));
+    const incomplete = await request([roots[0], "vendor-b/submission/missing"]);
+    assert.equal(incomplete.status, 409);
+    assert.deepEqual((await incomplete.json()).missing, ["vendor-b/submission/missing"]);
+    for (const invalid of [[roots[0], roots[0]], [roots[0], "vendor-b/../task"], []]) {
+      assert.equal((await request(invalid)).status, 400);
+    }
+    assert.equal(app.calls.zipArchive.length, 1);
+  } finally {
+    await app.close();
+  }
+});
+
 test("HEAD exposes immutable object metadata without signing a download", async () => {
   const app = await fixture();
   try {

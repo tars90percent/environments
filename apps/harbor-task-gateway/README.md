@@ -8,6 +8,8 @@ Directory paths end in `/` and return a paginated JSON listing. File paths retur
 
 `POST /zip-archives` accepts those roots plus a portal manifest and download filename. It returns a short-lived signed URL for a ZIP in the separate `harbor-task-archives` cache. The first request builds the ZIP; later requests for the same exact source objects and manifest reuse it. ZIPs contain `manifest.json` and the exact task file paths, with no generated README. This cache never writes to or changes `harbor-tasks`.
 
+ZIP selections may span vendors, so benchmark downloads use the same service and preserve the full vendor/submission/task paths. Every selected root must still have its `task.toml` completion marker; an incomplete selection fails as a whole. ZIPs spanning vendors are cached under `collections/`. The older streaming TAR endpoint remains scoped to one vendor.
+
 ```text
 GET  /healthz
 GET  /docs

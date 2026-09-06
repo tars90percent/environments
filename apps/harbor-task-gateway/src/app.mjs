@@ -96,7 +96,7 @@ export function createGatewayHandler({
       let roots;
       try {
         requestBody = await readJsonBody(request);
-        roots = archiveTaskRoots(requestBody.roots);
+        roots = archiveTaskRoots(requestBody.roots, { allowMultipleVendors: true });
         validateArchiveManifest(requestBody.manifest);
         validateArchiveFilename(requestBody.filename);
       } catch (error) {
@@ -221,7 +221,7 @@ async function readJsonBody(request) {
   }
 }
 
-function archiveTaskRoots(value) {
+function archiveTaskRoots(value, { allowMultipleVendors = false } = {}) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 1_000) throw new Error("roots must contain between 1 and 1000 task roots");
   const roots = value.map((root) => {
     if (typeof root !== "string") throw new Error("each task root must be a string");
@@ -232,7 +232,7 @@ function archiveTaskRoots(value) {
     return root;
   });
   if (new Set(roots).size !== roots.length) throw new Error("task roots must be unique");
-  if (new Set(roots.map((root) => root.split("/")[0])).size !== 1) throw new Error("task roots must belong to one vendor");
+  if (!allowMultipleVendors && new Set(roots.map((root) => root.split("/")[0])).size !== 1) throw new Error("task roots must belong to one vendor");
   return roots;
 }
 

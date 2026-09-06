@@ -80,6 +80,34 @@ test("builds one deterministic ZIP, then serves a cache hit without rereading ta
   assert.deepEqual(reads, []);
 });
 
+test("benchmark ZIPs preserve identical task names across vendors and exclude other tasks", async () => {
+  const roots = ["vendor-a/submission/task", "vendor-b/submission/task"];
+  const source = new Map([
+    ...roots.flatMap((root) => [[`${root}/task.toml`, Buffer.from(root)], [`${root}/instruction.md`, Buffer.from(`Instructions for ${root}`)]]),
+    ["vendor-b/submission/unselected/task.toml", Buffer.from("unselected")],
+  ]);
+  const cache = new Map();
+  const reads = [];
+  const prepare = createVendorArchiveCache({
+    listSourceObjects: async ({ prefix }) => ({ objects: [...source].filter(([key]) => key.startsWith(prefix)).map(([key, bytes]) => ({ key, sizeBytes: bytes.length, etag: key })) }),
+    readSourceObject: async (key) => { reads.push(key); return { body: source.get(key) }; },
+    headCacheObject: async (key) => cache.has(key) ? { contentLength: cache.get(key).length } : null,
+    uploadCacheObject: async ({ key, body }) => { const chunks = []; for await (const chunk of body) chunks.push(Buffer.from(chunk)); cache.set(key, Buffer.concat(chunks)); },
+    signCacheObject: async ({ key }) => `https://cache.example/${key}`,
+    signedUrlTtlSeconds: 900,
+  });
+  const request = { roots, manifest: { benchmark: { id: "terminal-bench" } }, filename: "Terminal-Bench-harbor-tasks.zip" };
+  const built = await prepare(request);
+  assert.equal(built.taskCount, 2);
+  assert.equal(built.fileCount, 4);
+  const [key, bytes] = [...cache][0];
+  assert.match(key, /^collections\//);
+  assert.deepEqual(zipEntryNames(bytes), ["manifest.json", ...roots.flatMap((root) => [`${root}/instruction.md`, `${root}/task.toml`])]);
+  assert.equal(reads.length, 4);
+  assert.equal((await prepare(request)).cacheHit, true);
+  assert.equal(reads.length, 4);
+});
+
 test("refuses unsafe source object paths", async () => {
   const prepare = createVendorArchiveCache({
     listSourceObjects: async () => ({

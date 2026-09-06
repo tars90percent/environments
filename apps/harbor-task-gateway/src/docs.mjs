@@ -11,7 +11,7 @@ export function documentationHtml() {
 <body>
   <main>
     <h1>Harbor Task Gateway</h1>
-    <p>Read-only access to the exact individual files in the Harbor task bucket, plus cached vendor ZIP downloads stored in a separate disposable cache.</p>
+    <p>Read-only access to the exact individual files in the Harbor task bucket, plus cached vendor and benchmark ZIP downloads stored in a separate disposable cache.</p>
 
     <h2>Authentication</h2>
     <p>Documentation and health checks are public. Task listings, metadata, and downloads require this header:</p>
@@ -41,7 +41,7 @@ export function documentationHtml() {
   --data '{"roots":["vendor/submission/task"]}' \
   "${productionBaseUrl}/archives" &gt; harbor-tasks.tar</code></pre>
 
-    <h2>Prepare a cached vendor ZIP</h2>
+    <h2>Prepare a cached Harbor task ZIP</h2>
     <p>Submit exact active task roots, a portal manifest, and a safe ZIP filename. The response is JSON containing a short-lived signed download URL. The first request builds a content-addressed ZIP in the separate archive cache; identical later requests reuse it. The ZIP contains <code>manifest.json</code> and the exact task paths, with no generated README.</p>
     <pre><code>curl -X POST -H "Authorization: Bearer $HARBOR_TASKS_TOKEN" \
   -H "Content-Type: application/json" \
@@ -67,7 +67,7 @@ export function openApiDocument() {
     info: {
       title: "Harbor Task Gateway",
       version: "1.0.0",
-      description: "Read-only access to exact individual Harbor task files plus content-addressed vendor ZIPs in a separate disposable cache. Documentation and health endpoints are public; task data requires bearer authentication.",
+      description: "Read-only access to exact individual Harbor task files plus cached vendor and benchmark ZIPs in a separate disposable cache. Documentation and health endpoints are public; task data requires bearer authentication.",
     },
     servers: [{ url: productionBaseUrl }],
     security: [{ bearerAuth: [] }],

@@ -28,7 +28,9 @@ export function createVendorArchiveCache({
     if (!Number.isSafeInteger(sourceBytes)) throw new Error("selected source objects are too large");
 
     const digest = archiveDigest({ roots, manifestBytes, objects });
-    const cacheKey = `${roots[0].split("/")[0]}/${digest}.zip`;
+    const vendors = new Set(roots.map((root) => root.split("/")[0]));
+    const cachePrefix = vendors.size === 1 ? roots[0].split("/")[0] : "collections";
+    const cacheKey = `${cachePrefix}/${digest}.zip`;
     let cached = await headCacheObject(cacheKey);
     let cacheHit = Boolean(cached);
 
