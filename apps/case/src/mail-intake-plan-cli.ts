@@ -15,6 +15,7 @@ import {
 } from "./capture-runtime.js";
 import { prepareLarkRuntimeEnv } from "./lark-runtime.js";
 import { openLocalRegistry, type LocalRegistry } from "./registry/local.js";
+import type { FileContext } from "./registry/file-names.js";
 import type { ArtifactInput, CapturedSubmissionSourceInput } from "./registry/types.js";
 
 const [command, planPath] = process.argv.slice(2);
@@ -35,7 +36,7 @@ try {
 
     for (const [index, attachment] of planned.submission.attachments.entries()) {
       process.stdout.write(`${JSON.stringify({ type: "capture_started", submissionId: planned.submission.id, position: index + 1, files: summary.files, filename: attachment.filename })}\n`);
-      const result = await captureAttachment(local, attachment);
+      const result = await captureAttachment(local, attachment, { vendorId: planned.vendor.id, submissionId: planned.submission.id, date: planned.submission.date, label: planned.submission.label });
       artifacts.push(...result.artifacts);
       sources.push(...result.sources);
       summary[result.status] += 1;
@@ -70,6 +71,7 @@ try {
 async function captureAttachment(
   local: LocalRegistry,
   attachment: MailAttachmentPlan,
+  context: FileContext,
 ): Promise<{ status: "captured" | "failed" | "skipped"; artifacts: ArtifactInput[]; sources: CapturedSubmissionSourceInput[] }> {
   const locator = `feishu-mail://message/${encodeURIComponent(attachment.messageId)}/attachment/${encodeURIComponent(attachment.attachmentId)}`;
   const existing = await local.repository.findSourceEvent("email", locator)
@@ -102,7 +104,7 @@ async function captureAttachment(
     if (!response.ok) throw new Error(`Mail attachment download failed with ${response.status}`);
     await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
     artifact = await storeSourcePayload(local.artifactStore, outputPath, {
-      reference: await local.repository.reserveFileReference(),
+      ...await local.repository.files.reserve(attachment.filename, context),
       filename: attachment.filename,
       contentType: attachment.contentType,
       metadata: { messageId: attachment.messageId, attachmentId: attachment.attachmentId, source: "feishu_mail" },

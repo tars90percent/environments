@@ -1,3 +1,4 @@
+import type { FileFilingRepository } from "./file-filing.js";
 import type {
   ArtifactInput,
   ArtifactRecord,
@@ -57,6 +58,7 @@ import type {
 } from "./types.js";
 
 export interface RegistryRepository {
+  readonly files: FileFilingRepository;
   initialize(): Promise<void>;
   close(): Promise<void>;
   captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
@@ -91,7 +93,7 @@ export interface RegistryRepository {
   recordHarborFinding(input: HarborFindingInput): Promise<{ findingId: string; created: boolean }>;
   registerArtifact(input: ArtifactInput): Promise<void>;
   reserveFileReference(): Promise<string>;
-  fileReferences(identifiers: string[]): Promise<Array<{ id: string; reference: string }>>;
+  fileReferences(identifiers: string[]): Promise<Array<{ id: string; reference: string; alias?: string }>>;
   leaseWorkItem(workerId: string, leaseSeconds: number): Promise<WorkItem | null>;
   completeWorkItem(input: WorkCompletionInput): Promise<void>;
   reconcileHarborWorkItems(input: ReconcileHarborWorkItemsInput): Promise<ReconcileHarborWorkItemsResult>;

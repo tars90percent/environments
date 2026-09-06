@@ -23,7 +23,7 @@ test("upgrades existing files without rewriting history and uses short reference
   try {
     await administrator.query(`CREATE SCHEMA "${schema}"`);
     await sql.query("CREATE TABLE registry_migrations(id text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
-    for (const migration of registryMigrations.filter((migration) => migration.id !== "025_file_references")) {
+    for (const migration of registryMigrations.filter((migration) => migration.id < "025_file_references")) {
       await sql.query(migration.sql);
       await sql.query("INSERT INTO registry_migrations(id) VALUES ($1)", [migration.id]);
     }

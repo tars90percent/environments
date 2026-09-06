@@ -1869,6 +1869,39 @@ export const registryMigrations: readonly Migration[] = [
         'Short public file reference. Original identifiers, object keys, checksums and provenance are retained.';
     `,
   },
+  {
+    id: "026_readable_file_locations",
+    sql: `
+      -- Names also reserve upload destinations before the artifact record exists.
+      CREATE TABLE registry_file_names (
+        name text PRIMARY KEY, artifact_id text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+      );
+      INSERT INTO registry_file_names(name, artifact_id) SELECT id, id FROM registry_artifacts;
+      INSERT INTO registry_file_names(name, artifact_id) SELECT reference, id FROM registry_artifacts ON CONFLICT DO NOTHING;
+      CREATE INDEX registry_file_names_artifact_idx ON registry_file_names(artifact_id);
+      CREATE FUNCTION registry_retain_file_names() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        INSERT INTO registry_file_names(name, artifact_id) VALUES (NEW.id, NEW.id), (NEW.reference, NEW.id)
+          ON CONFLICT DO NOTHING;
+        IF EXISTS (SELECT 1 FROM registry_file_names WHERE name IN (NEW.id, NEW.reference) AND artifact_id <> NEW.id) THEN
+          RAISE EXCEPTION 'File name already belongs to a different artifact';
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER registry_retain_file_names AFTER INSERT OR UPDATE OF reference ON registry_artifacts
+        FOR EACH ROW EXECUTE FUNCTION registry_retain_file_names();
+      CREATE TABLE registry_file_moves (
+        id bigserial PRIMARY KEY,
+        artifact_id text NOT NULL REFERENCES registry_artifacts(id),
+        from_key text NOT NULL UNIQUE, to_key text NOT NULL UNIQUE,
+        from_reference text NOT NULL, to_reference text NOT NULL,
+        actor text NOT NULL, reason text NOT NULL,
+        prepared_at timestamptz NOT NULL DEFAULT now(),
+        switched_at timestamptz, old_copy_deleted_at timestamptz
+      );
+      ALTER TABLE registry_tasks ADD COLUMN merged_into_id text REFERENCES registry_tasks(id);
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

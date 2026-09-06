@@ -50,10 +50,19 @@ def main() -> int:
         })
         return 0
 
+    reason = None if valid else "Harbor Task.is_valid_dir returned false"
+    if not valid:
+        # The boolean validator hides configuration and missing-file errors.
+        # Task construction only parses configuration and reads task files.
+        try:
+            Task(task_root)
+        except Exception as error:
+            reason = f"{type(error).__name__}: {error}"
+
     emit({
         "valid": valid,
         "harborVersion": version,
-        "reason": None if valid else "Harbor Task.is_valid_dir returned false",
+        "reason": reason,
     })
     return 0
 

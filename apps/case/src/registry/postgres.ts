@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { runRegistryMigrations } from "./migrations.js";
+import { FileFilingRepository } from "./file-filing.js";
 import { PROCUREMENT_EVENT_KINDS, procurementSummaryFromEvent } from "./procurement-summary.js";
 import type { RegistryRepository } from "./repository.js";
 import { deriveRuntimeVerification, type RuntimeCheckFact } from "./task-evidence.js";
@@ -374,9 +375,11 @@ type ArtifactRow = {
 
 export class PostgresRegistry implements RegistryRepository {
   private readonly pool: Pool;
+  readonly files: FileFilingRepository;
 
   constructor(databaseUrl: string) {
     this.pool = new Pool({ connectionString: databaseUrl, max: 10 });
+    this.files = new FileFilingRepository(this.pool);
   }
 
   async initialize(): Promise<void> {
@@ -3542,7 +3545,7 @@ export class PostgresRegistry implements RegistryRepository {
   async getArtifact(id: string): Promise<ArtifactRecord | null> {
     const result = await this.pool.query<ArtifactRow>(
       `SELECT id, reference, kind, storage_key, sha256, size_bytes, content_type, metadata, created_at
-       FROM registry_artifacts WHERE id = $1 OR reference = $1`,
+       FROM registry_artifacts WHERE id = $1 OR id IN (SELECT artifact_id FROM registry_file_names WHERE name=$1)`,
       [id],
     );
     const row = result.rows[0];
@@ -3579,10 +3582,10 @@ export class PostgresRegistry implements RegistryRepository {
     return result.rows[0] ? this.getSourceEvent(result.rows[0].id) : null;
   }
 
-  async fileReferences(identifiers: string[]): Promise<Array<{ id: string; reference: string }>> {
+  async fileReferences(identifiers: string[]): Promise<Array<{ id: string; reference: string; alias?: string }>> {
     if (!identifiers.length) return [];
-    const result = await this.pool.query<{ id: string; reference: string }>(
-      "SELECT id, reference FROM registry_artifacts WHERE id = ANY($1::text[]) OR reference = ANY($1::text[])",
+    const result = await this.pool.query<{ id: string; reference: string; alias: string }>(
+      "SELECT a.id, a.reference, n.name AS alias FROM registry_artifacts a JOIN registry_file_names n ON n.artifact_id=a.id WHERE a.id = ANY($1::text[]) OR n.name = ANY($1::text[])",
       [identifiers],
     );
     return result.rows;
@@ -4800,7 +4803,9 @@ async function ensureTaskIdentity(
      RETURNING id`,
     [vendorId, task.stableKey, task.title, task.summary ?? null, submissionId, updateDescription],
   );
-  return result.rows[0]!.id;
+  const originalId = result.rows[0]!.id;
+  const canonical = await client.query<{ id: string }>("SELECT COALESCE(merged_into_id,id) AS id FROM registry_tasks WHERE id=$1", [originalId]);
+  return canonical.rows[0]!.id;
 }
 
 function benchmarkAssignmentId(requestId: string, taskVersionId: string): string {

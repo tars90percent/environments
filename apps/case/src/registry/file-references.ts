@@ -14,7 +14,7 @@ export async function registryFileReferences(
   visit(value, (identifier) => { identifiers.add(identifier); return identifier; }, false);
   const files = identifiers.size ? await repository.fileReferences([...identifiers]) : [];
   const replacements = new Map(files.map((file) => direction === "input"
-    ? [file.reference, file.id]
+    ? [file.alias ?? file.reference, file.id]
     : [file.id, file.reference]));
   return visit(value, (identifier) => replacements.get(identifier) ?? identifier, direction === "output" && !includeIntegrity);
 }

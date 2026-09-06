@@ -4,21 +4,23 @@ import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { ArtifactStore } from "./registry/artifacts.js";
 import type { ArtifactInput, CatalogSourceEvent } from "./registry/types.js";
+import { safeFileLocation } from "./registry/file-names.js";
 
 export async function storeSourcePayload(
   store: ArtifactStore,
   path: string,
-  input: { reference: string; filename: string; contentType?: string; metadata: Record<string, unknown> },
+  input: { id?: string; reference: string; filename: string; contentType?: string; metadata: Record<string, unknown> },
 ): Promise<ArtifactInput> {
   const file = await stat(path);
   if (!file.isFile()) throw new Error("Captured payload is not a regular file");
   const sha256 = await sha256File(path);
-  if (!/^file-[0-9]+$/.test(input.reference)) throw new Error("A reserved file reference is required");
-  const storageKey = `files/${input.reference}/${safeCaptureName(input.filename)}`;
+  const id = input.id ?? input.reference;
+  if (!/^file-[0-9]+$/.test(id)) throw new Error("A reserved file identity is required");
+  const storageKey = input.id ? safeFileLocation(input.reference) : `files/${input.reference}/${safeCaptureName(input.filename)}`;
   const contentType = input.contentType || contentTypeFor(input.filename);
   await store.putFile({ key: storageKey, path, contentType, sha256, sizeBytes: file.size });
   return {
-    id: input.reference,
+    id,
     reference: input.reference,
     kind: "source_payload",
     storageKey,

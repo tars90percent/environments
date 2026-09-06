@@ -306,11 +306,34 @@ samples. AutoQA is the execution boundary, once its supported endpoint exists.
 
 Use `casectl registry store-file <kind> <path>` for any local file, including an
 untouched PDF, spreadsheet, archive, task package, trace, or other payload. It
-returns a short reference such as `file-123`, the original filename and file
-metadata. New objects use `files/<reference>/<filename>`. Checksums are computed
-and verified internally. Existing objects are not moved or renamed, and their
-original identifiers remain usable. Add `--raw` to a registry command to inspect
-original identifiers and integrity details.
+returns a readable reference such as
+`vendor-a/2026-09-07-september-samples/Sample index.pdf`, the original filename
+and file metadata. Pass `--submission <existing-id>` to use its delivery details,
+or `--context <file.json>` with `vendorId`, `date`, and `label` when capturing a
+new delivery. Without context, files go under `unassigned/<date>-unfiled/`.
+Name collisions receive ` (2)`, ` (3)`, and so on; files are never overwritten.
+Checksums are computed and verified internally. Old identifiers and `file-N`
+aliases remain usable. Add `--raw` to inspect retained identifiers and integrity
+details.
+
+For historical filing, save the output of `plan-file-filing --raw`, review its
+`entries`, and add `actor` and `reason`. Run `migrate-file-locations <plan.json>`
+with that same saved plan when resuming an interruption. It copies each original
+object, verifies its complete bytes, then changes the central location and
+readable reference. All vendor, submission, task, and source links survive.
+Shared task packages use their first documented submission; correspondence uses
+its actual evidence date. The plan is editable when provenance calls for a
+different location. `file-inventory` and `file-moves` expose the record.
+
+Old copies remain available for rollback for at least 24 hours.
+`rollback-file-move <request.json>` accepts `moveId`, `actor`, and `reason` and
+verifies the old copy before switching back. After review,
+`prune-old-file-copies` verifies the current object again before removing an old
+copy whose retention period has passed. Historical aliases remain accepted.
+`merge-task-identities` can consolidate two identities for an exact repeated
+package while preserving both submissions, task versions and original keys.
+`correct-task-format` applies an audited correction only when it agrees with
+the pinned static validator, then updates the Harbor distribution mirror.
 
 `casectl registry capture-submission <capture.json>` registers a delivery before
 parsing. It accepts existing source references or inline source graphs and has
@@ -325,7 +348,7 @@ when access is blocked or no task boundaries have been identified. Example:
   "sources": [{
     "sourceEvent": { "id": "september-email", "channel": "email", "externalRef": "mail://original-message", "sender": "Vendor contact", "receivedAt": "2026-09-07T08:00:00Z" },
     "items": [
-      { "id": "sample-index", "kind": "pdf", "displayName": "Sample index.pdf", "artifactId": "file-123", "fetchStatus": "snapshotted", "parseStatus": "not_requested", "mutable": false },
+      { "id": "sample-index", "kind": "pdf", "displayName": "Sample index.pdf", "artifactId": "vendor-a/2026-09-07-september-samples/Sample index.pdf", "fetchStatus": "snapshotted", "parseStatus": "not_requested", "mutable": false },
       { "id": "sample-folder", "kind": "folder", "displayName": "Linked sample folder", "locator": "https://drive.google.com/drive/folders/example", "fetchStatus": "external_only", "parseStatus": "not_requested", "mutable": true }
     ],
     "relations": [{ "fromItemId": "sample-index", "toItemId": "sample-folder", "relation": "links_to" }]

@@ -849,7 +849,7 @@ export function parseArtifact(value: unknown): ArtifactInput {
   const input = object(value, "artifact");
   return {
     id: identifier(input.id, "id"),
-    reference: input.reference === undefined ? undefined : identifier(input.reference, "reference"),
+    reference: input.reference === undefined ? undefined : boundedString(input.reference, "reference", 950),
     kind: enumValue(input.kind, new Set(["source_payload", "source_snapshot", "submission_manifest", "task_package", "trajectory", "check_evidence", "extracted_text", "other"]), "kind"),
     storageKey: string(input.storageKey, "storageKey"),
     sha256: sha256(input.sha256, "sha256"),

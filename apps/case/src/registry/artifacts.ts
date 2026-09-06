@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { AbortMultipartUploadCommand, CompleteMultipartUploadCommand, CopyObjectCommand, CreateMultipartUploadCommand, UploadPartCopyCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -152,6 +152,41 @@ export class ArtifactStore {
 
   async deleteObject(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.options.bucket, Key: safeKey(key) }));
+  }
+
+  async copyVerified(input: { fromKey: string; toKey: string; sha256: string; sizeBytes?: number }): Promise<void> {
+    const fromKey=safeKey(input.fromKey); const toKey=safeKey(input.toKey);
+    if (fromKey===toKey) throw new Error("Copy must use a different destination");
+    if (await this.objectMetadata(toKey)) {
+      await this.verifyObject({key:toKey,sha256:input.sha256,sizeBytes:input.sizeBytes});
+      return;
+    }
+    const Bucket=this.options.bucket;
+    const source=await this.client.send(new HeadObjectCommand({Bucket,Key:fromKey}));
+    const size=source.ContentLength;
+    if (size===undefined || (input.sizeBytes!==undefined && size!==input.sizeBytes) || source.Metadata?.sha256!==input.sha256) throw new Error("Source file metadata disagrees with the registry");
+    const CopySource=[Bucket,...fromKey.split("/")].map(encodeURIComponent).join("/");
+    if (size<=5*1024**3) {
+      await this.client.send(new CopyObjectCommand({Bucket,Key:toKey,CopySource,CopySourceIfMatch:source.ETag,MetadataDirective:"COPY"}));
+    } else {
+      const upload=await this.client.send(new CreateMultipartUploadCommand({Bucket,Key:toKey,ContentType:source.ContentType,Metadata:source.Metadata,CacheControl:source.CacheControl,ContentDisposition:source.ContentDisposition,ContentEncoding:source.ContentEncoding,ContentLanguage:source.ContentLanguage}));
+      if (!upload.UploadId) throw new Error("Storage did not create a multipart copy");
+      const UploadId=upload.UploadId;
+      try {
+        const parts=[];
+        const partBytes=Math.max(512*1024**2,Math.ceil(size/9999));
+        for(let start=0,n=1;start<size;start+=partBytes,n++) {
+          const copied=await this.client.send(new UploadPartCopyCommand({Bucket,Key:toKey,UploadId,PartNumber:n,CopySource,CopySourceIfMatch:source.ETag,CopySourceRange:`bytes=${start}-${Math.min(start+partBytes,size)-1}`}));
+          if (!copied.CopyPartResult?.ETag) throw new Error("Storage did not confirm a copied part");
+          parts.push({PartNumber:n,ETag:copied.CopyPartResult.ETag});
+        }
+        await this.client.send(new CompleteMultipartUploadCommand({Bucket,Key:toKey,UploadId,MultipartUpload:{Parts:parts}}));
+      } catch(error) {
+        await this.client.send(new AbortMultipartUploadCommand({Bucket,Key:toKey,UploadId})).catch(()=>undefined);
+        throw error;
+      }
+    }
+    await this.verifyObject({key:toKey,sha256:input.sha256,sizeBytes:size});
   }
 }
 
