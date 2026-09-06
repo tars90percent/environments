@@ -1,6 +1,7 @@
 import type { CatalogSnapshot, CatalogSubmission, CatalogTask, CatalogVendor } from "./catalog";
 
 export type BenchmarkCategoryId =
+  | "active-procurement"
   | "software-engineering"
   | "systems-infrastructure"
   | "tool-use"
@@ -46,6 +47,14 @@ export type BenchmarkLandscape = {
 };
 
 export const benchmarkCategoryDefinitions: BenchmarkCategoryDefinition[] = [
+  {
+    id: "active-procurement",
+    label: { en: "Under Active Procurement", zh: "采购进行中" },
+    description: {
+      en: "Benchmark directions currently under active procurement.",
+      zh: "当前正在推进采购的基准方向。",
+    },
+  },
   {
     id: "software-engineering",
     label: { en: "Software engineering", zh: "软件工程" },
@@ -105,6 +114,7 @@ export const benchmarkCategoryDefinitions: BenchmarkCategoryDefinition[] = [
 ];
 
 const benchmarkCategories: Partial<Record<string, BenchmarkCategoryId>> = Object.fromEntries([
+  ...assign("active-procurement", ["terminal-bench-science", "terminal-bench-3-4"]),
   ...assign("software-engineering", [
     "agentic-coding-benchmark",
     "autoresearch-kernel",
@@ -157,7 +167,6 @@ const benchmarkCategories: Partial<Record<string, BenchmarkCategoryId>> = Object
     "mathematical-reasoning",
     "molecular-bench",
     "stem-rl-env",
-    "terminal-bench-science",
     "worldsims",
   ]),
   ...assign("specialized", [
