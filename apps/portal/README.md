@@ -11,13 +11,13 @@ benchmarks. That page stores descriptive metadata and authoritative external
 links only; it does not copy benchmark task payloads into CASE or its object
 storage.
 
-The interface intentionally contains no procurement, research-demand,
-generalized category, quality, status, scoring, recommendation, or review
-workflow. Benchmark directions are source-backed task labels, not evaluations.
+The portal presents vendor timelines, submissions, source evidence and tasks.
+Interpretation and the evolving vendor process remain with researchers and
+CASE. Benchmark directions are source-backed task labels, not evaluations.
 
 This README describes the portal application and its access boundary. The
 monorepo's root [`AGENTS.md`](../../AGENTS.md) is the sole authoritative
-operating policy; CASE remains the canonical registry and check orchestrator.
+operating policy; CASE remains the canonical registry. New sample execution belongs to AutoQA.
 
 ## Safety boundary
 
@@ -79,11 +79,16 @@ vendor snapshots and submission-mutation surfaces.
 
 ## Deliberate omissions
 
-Persistence, capture, parsing, Harbor execution, event delivery, and Feishu
-synchronization remain CASE responsibilities. The portal cannot create or edit
+Persistence, capture, parsing, Harbor distribution, event delivery, and Feishu
+synchronization remain CASE responsibilities. AutoQA is the execution boundary
+for new Harbor samples. The portal cannot create or edit
 canonical records or turn check tags into a quality judgment. The public
 benchmark reference is not a second registry and does not preserve or execute
 third-party benchmark tasks. Its sample profiles are source-controlled
 descriptions and pointers, not copied prompts, answers, attachments, or packages.
 Harbor filesystem views store tree metadata only; each file continues to live at
 the publisher's repository.
+
+File downloads use short CASE references; old artifact links remain supported.
+Export manifests retain task and submission identity, source paths and evidence,
+without repeating internal content checksums.

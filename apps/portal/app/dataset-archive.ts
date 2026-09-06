@@ -19,7 +19,6 @@ export type DatasetSubmission = {
     gpuRequired: boolean;
     sourcePath: string | null;
     artifactId: string | null;
-    contentSha256: string | null;
     checks: object;
     findings: Array<{ id: string; phase: string; checkRunId: string; finding: string }>;
   }>;
@@ -35,7 +34,6 @@ export type DatasetPackage = {
   gpuRequired: boolean;
   sourcePath: string | null;
   artifactId: string;
-  contentSha256: string | null;
   checks: object;
   findings: Array<{ id: string; phase: string; checkRunId: string; finding: string }>;
   packagePath: string;
@@ -52,7 +50,6 @@ export type VendorHarborDatasetTask = {
   benchmark: { id: string; displayName: string };
   gpuRequired: boolean;
   sourcePath: string;
-  contentSha256: string | null;
   checks: object;
   findings: Array<{ id: string; phase: string; checkRunId: string; finding: string }>;
   submission: { id: string; date: string; label: string };
@@ -88,7 +85,7 @@ export function taskDatasetFilename(submission: DatasetSubmission): string {
 
 export function taskDatasetArchive(submission: DatasetSubmission, resolvePackage: PackageResolver): ReadableStream<Uint8Array> {
   const manifest = taskDatasetManifest(submission);
-  const readme = `# CASE tasks\n\nThis archive contains the ${manifest.tasks.length} exact task or trace artifacts retained for the submission “${submission.label}”. See manifest.json for source identity, Harbor/non-Harbor format, the three Harbor checks when applicable, findings, and content hashes.\n`;
+  const readme = `# CASE tasks\n\nThis archive contains the ${manifest.tasks.length} exact task or trace artifacts retained for the submission “${submission.label}”. See manifest.json for source identity, Harbor/non-Harbor format, historical Harbor checks when available, and findings.\n`;
   return datasetArchiveStream(manifest.tasks, manifest, readme, resolvePackage);
 }
 
@@ -104,7 +101,6 @@ export function vendorHarborDatasetManifest(vendor: CatalogVendor) {
       benchmark: task.benchmark,
       gpuRequired: task.gpuRequired,
       sourcePath: displayArchivePath(requiredTaskSourcePath(task.sourcePath, task.id)),
-      contentSha256: task.contentSha256,
       checks: task.checks,
       findings: task.findings,
       submission: { id: submission.id, date: submission.date, label: submission.label },
@@ -215,7 +211,6 @@ function datasetPackage(task: (DatasetSubmission["tasks"][number] | CatalogVendo
     gpuRequired: task.gpuRequired,
     sourcePath: task.sourcePath ? displayArchivePath(task.sourcePath) : null,
     artifactId: task.artifactId,
-    contentSha256: task.contentSha256,
     checks: task.checks,
     findings: task.findings,
     packagePath: `tasks/${String(index).padStart(4, "0")}-${slug}.artifact`,
