@@ -151,7 +151,7 @@ test("requires an authenticated researcher session", async () => {
 });
 
 test("records standalone benchmark families separately from aggregate indexes", async () => {
-  const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, findModelBenchmark, modelBenchmarks } = await modelBenchmarkDataModule();
+  const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, catalogModelBenchmarks, findModelBenchmark, modelBenchmarks } = await modelBenchmarkDataModule();
 
   assert.equal(artificialAnalysisIndex.version, "4.1.1");
   assert.equal(artificialAnalysisIndex.releasedAt, "2026-08-06");
@@ -162,6 +162,30 @@ test("records standalone benchmark families separately from aggregate indexes", 
   assert.ok(artificialAnalysisIndex.links.every((link) => link.url.startsWith("https://artificialanalysis.ai/")));
 
   assert.equal(modelBenchmarks.length, 39);
+  assert.equal(catalogModelBenchmarks.length, 31);
+  assert.deepEqual(
+    modelBenchmarks.filter((benchmark) => benchmark.catalogPlacement).map((benchmark) => [benchmark.id, benchmark.catalogPlacement]),
+    [
+      ["aa-lcr", "aggregate-only"],
+      ["gpqa-diamond", "legacy"],
+      ["browsecomp", "legacy"],
+      ["officeqa-pro", "specialist"],
+      ["mmmu-pro", "legacy"],
+      ["babyvision", "specialist"],
+      ["charxiv", "legacy"],
+      ["omnidocbench", "specialist"],
+    ],
+  );
+  assert.deepEqual(Object.fromEntries(benchmarkReferenceCategories.map((category) => [category.id, catalogModelBenchmarks.filter((benchmark) => benchmark.categoryId === category.id).length])), {
+    "professional-work": 3,
+    "tools-computer-use": 7,
+    "web-research": 1,
+    "software-engineering": 9,
+    "model-training": 1,
+    "science-knowledge": 5,
+    "documents-vision": 2,
+    cybersecurity: 3,
+  });
   assert.equal(benchmarkReferenceCategories.length, 8);
   const ids = modelBenchmarks.map((benchmark) => benchmark.id);
   assert.equal(new Set(ids).size, ids.length);
@@ -602,7 +626,7 @@ test("keeps the benchmark catalog heading and cards minimal", async () => {
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   const { modelBenchmarks } = await modelBenchmarkDataModule();
 
-  assert.match(source, /<h2 id="benchmark-catalog-title">\{modelBenchmarks\.length\} \{t\.benchmarks\}<\/h2>/);
+  assert.match(source, /<h2 id="benchmark-catalog-title">\{catalogModelBenchmarks\.length\} \{t\.benchmarks\}<\/h2>/);
   assert.match(source, /benchmarks: "Benchmarks"/);
   assert.doesNotMatch(source, /Standalone benchmark catalog|独立基准目录|catalog-category-strip|reference-source-note|benchmark-family-label|benchmark-aliases/);
   assert.match(source, /<p>\{benchmark\.publisher\}<\/p>/);

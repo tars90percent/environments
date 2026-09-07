@@ -4,6 +4,7 @@ import {
   aggregateBenchmarks,
   artificialAnalysisIndex,
   benchmarkReferenceCategories,
+  catalogModelBenchmarks,
   modelBenchmarks,
   modelBenchmarkSearchText,
   type BenchmarkReferenceAccess,
@@ -19,7 +20,7 @@ const copy = {
   en: {
     benchmarks: "Benchmarks",
     aggregateSection: "Aggregate benchmarks",
-    aggregateNote: "Composite scores are listed separately, with their constituent evaluations and weights linked back to the standalone benchmark families above.",
+    aggregateNote: "Composite scores are listed separately, with their constituent evaluations and weights linked to the corresponding benchmark family records.",
     constituents: "constituents",
     weight: "weight",
     creators: "Created by",
@@ -76,7 +77,7 @@ const copy = {
   zh: {
     benchmarks: "Benchmarks",
     aggregateSection: "综合基准",
-    aggregateNote: "综合分数单独列出，并展示其组成评测及权重，同时链接回上方独立基准家族。",
+    aggregateNote: "综合分数单独列出，并展示其组成评测及权重，同时链接到对应的基准家族记录。",
     constituents: "项组成评测",
     weight: "权重",
     creators: "创建机构",
@@ -136,8 +137,8 @@ export function ModelBenchmarkReferencePage({ language, localPreview, query }: {
   const t = copy[language];
   const normalizedQuery = query.trim().toLowerCase();
   const visible = normalizedQuery
-    ? modelBenchmarks.filter((benchmark) => `${modelBenchmarkSearchText(benchmark)} ${modelBenchmarkSampleSearchText(benchmark.id)}`.includes(normalizedQuery))
-    : modelBenchmarks;
+    ? catalogModelBenchmarks.filter((benchmark) => `${modelBenchmarkSearchText(benchmark)} ${modelBenchmarkSampleSearchText(benchmark.id)}`.includes(normalizedQuery))
+    : catalogModelBenchmarks;
   const visibleAggregates = normalizedQuery
     ? aggregateBenchmarks.filter((aggregate) => [
       aggregate.name,
@@ -151,7 +152,7 @@ export function ModelBenchmarkReferencePage({ language, localPreview, query }: {
 
   return <div className="model-reference">
     <section className="benchmark-catalog-intro" aria-labelledby="benchmark-catalog-title">
-      <h2 id="benchmark-catalog-title">{modelBenchmarks.length} {t.benchmarks}</h2>
+      <h2 id="benchmark-catalog-title">{catalogModelBenchmarks.length} {t.benchmarks}</h2>
     </section>
 
     {visible.length === 0 && visibleAggregates.length === 0 ? <div className="state-card">{t.noMatch}</div> : null}
@@ -183,7 +184,7 @@ export function ModelBenchmarkReferencePage({ language, localPreview, query }: {
         <div><h2 id="aggregate-benchmarks-title">{t.aggregateSection}</h2><p>{t.aggregateNote}</p></div>
       </header>
       <div className="aggregate-benchmark-list">
-        {visibleAggregates.map((aggregate) => <AggregateBenchmarkCard aggregate={aggregate} key={aggregate.id} language={language} />)}
+        {visibleAggregates.map((aggregate) => <AggregateBenchmarkCard aggregate={aggregate} key={aggregate.id} language={language} localPreview={localPreview} />)}
       </div>
     </section> : null}
   </div>;
@@ -230,9 +231,10 @@ function ModelBenchmarkCard({ benchmark, language, localPreview }: {
   </article>;
 }
 
-function AggregateBenchmarkCard({ aggregate, language }: {
+function AggregateBenchmarkCard({ aggregate, language, localPreview }: {
   aggregate: typeof artificialAnalysisIndex;
   language: BenchmarkReferenceLanguage;
+  localPreview: boolean;
 }) {
   const t = copy[language];
   return <article className="aggregate-benchmark-card">
@@ -245,7 +247,7 @@ function AggregateBenchmarkCard({ aggregate, language }: {
     </div>
     <ol className="aggregate-components">
       {aggregate.components.map((component) => <li key={component.evaluationName}>
-        <a href={`#benchmark-${component.benchmarkId}`}><span>{component.evaluationName}</span><small>{modelBenchmarks.find((benchmark) => benchmark.id === component.benchmarkId)?.name}{component.benchmarkVersion ? ` · ${component.benchmarkVersion}` : ""}</small></a>
+        <a href={`${localPreview ? "/local-preview" : ""}/model-benchmarks/${component.benchmarkId}`}><span>{component.evaluationName}</span><small>{modelBenchmarks.find((benchmark) => benchmark.id === component.benchmarkId)?.name}{component.benchmarkVersion ? ` · ${component.benchmarkVersion}` : ""}</small></a>
         <strong>{component.weight}%</strong>
       </li>)}
     </ol>
