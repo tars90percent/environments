@@ -38,7 +38,12 @@ test("shortlist card and detail distinguish candidates from retained catalog sam
     assert.ok(!collapsed.includes("mercor task"));
     assert.ok(html.indexOf("unipat task") < html.indexOf(otherLabel));
     assert.equal((html.match(/class="vendor-inventory"/g) ?? []).length, 3);
-    assert.ok(html.includes(language === "en" ? "Download all shortlisted samples" : "下载全部入围样本"));
+    assert.ok(html.includes(language === "en" ? "Download Harbor tasks" : "下载 Harbor 任务"));
+    const buttonLabel = language === "en" ? "Download Harbor tasks" : "下载 Harbor 任务";
+    const section = html.slice(html.indexOf('<section class="benchmark-task-section">'), html.indexOf('<details class="benchmark-other-samples">'));
+    assert.ok(section.includes(buttonLabel), "download belongs to the shortlisted vendors section");
+    assert.ok(html.includes(language === "en" ? "All 2 Harbor tasks from mercor and unipat." : "来自mercor和unipat的全部 2 个 Harbor 任务。"));
+    assert.ok(!html.includes("shortlisted samples") && !html.includes("入围样本"));
     assert.ok(html.includes("2 Harbor"), "shortlist download displays its unfiltered count");
     assert.ok(html.includes("3 Harbor"), "all-vendor download retains its full count");
   }

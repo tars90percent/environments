@@ -65,8 +65,7 @@ const text = {
     across: "across",
     benchmarkTasks: "Matching Harbor tasks",
     shortlistedVendors: "Shortlisted vendors",
-    downloadShortlisted: "Download all shortlisted samples",
-    shortlistedDownloadNote: "Harbor tasks from shortlisted vendors only, across all submissions and regardless of search.",
+    downloadShortlisted: "Download Harbor tasks",
     shortlistedSamples: "Harbor samples from shortlisted vendors",
     otherSamples: "Other cataloged samples",
     catalogSamples: "Cataloged Harbor samples",
@@ -143,8 +142,7 @@ const text = {
     across: "分布于",
     benchmarkTasks: "匹配的 Harbor 任务",
     shortlistedVendors: "入围供应商",
-    downloadShortlisted: "下载全部入围样本",
-    shortlistedDownloadNote: "仅包含入围供应商的 Harbor 任务，涵盖所有提交，不受搜索条件影响。",
+    downloadShortlisted: "下载 Harbor 任务",
     shortlistedSamples: "入围供应商的 Harbor 样本",
     otherSamples: "其他已收录样本",
     catalogSamples: "已收录 Harbor 样本",
@@ -429,15 +427,20 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
   const primaryVendors = shortlist ? vendors.filter((vendor) => shortlist.vendorIds.includes(vendor.id)) : vendors;
   const otherVendors = shortlist ? vendors.filter((vendor) => !shortlist.vendorIds.includes(vendor.id)) : [];
   const otherCount = benchmark.taskCount - benchmarkSampleCount(benchmark);
+  const vendorNames = new Intl.ListFormat(language, { style: "long", type: "conjunction" }).format(shortlist?.vendorIds.flatMap((id) => {
+    const vendor = primaryVendors.find((candidate) => candidate.id === id);
+    return vendor ? [vendor.name] : [];
+  }) ?? []);
   const download = <div className="benchmark-catalog-download">{shortlist && <h3>{t.allCatalogSamples}</h3>}<HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={benchmark.taskCount} /><p className="benchmark-download-note">{t.benchmarkDownloadNote}</p></div>;
   return <div className="benchmark-detail">
     {benchmark.categoryId === "active-procurement" && <BenchmarkDeliveryTimeline vendors={primaryVendors} benchmarkId={benchmark.id} language={language} onOpenVendor={onOpenVendor} />}
-    {shortlist ? <div>
-      <HarborDownloadToolbar downloadHref={`${downloadHref}${downloadHref.includes("?") ? "&" : "?"}scope=shortlisted`} language={language} taskCount={benchmarkSampleCount(benchmark)} buttonLabel={t.downloadShortlisted} />
-      <p className="benchmark-download-note">{t.shortlistedDownloadNote}</p>
-    </div> : download}
+    {!shortlist && download}
     <section className="benchmark-task-section">
       <div className="section-title"><div><h3>{shortlist ? t.shortlistedVendors : t.benchmarkTasks}</h3><p>{shortlist ? t.shortlistedSamples : t.benchmarkTaskNote}</p></div><span>{primaryRecords.length} {t.taskRecords}</span></div>
+      {shortlist && <div className="benchmark-scope-download">
+        <HarborDownloadToolbar downloadHref={`${downloadHref}${downloadHref.includes("?") ? "&" : "?"}scope=shortlisted`} language={language} taskCount={benchmarkSampleCount(benchmark)} buttonLabel={t.downloadShortlisted} />
+        <p className="benchmark-download-note">{language === "en" ? `All ${benchmarkSampleCount(benchmark)} Harbor tasks from ${vendorNames}.` : `来自${vendorNames}的全部 ${benchmarkSampleCount(benchmark)} 个 Harbor 任务。`}</p>
+      </div>}
       <BenchmarkVendorSamples records={primaryRecords} benchmark={benchmark} language={language} onOpenVendor={onOpenVendor} />
     </section>
     {shortlist && (otherCount > 0 || benchmarkDeliveries(otherVendors, benchmark.id).length > 0) && <details className="benchmark-other-samples" key={benchmark.id}>
