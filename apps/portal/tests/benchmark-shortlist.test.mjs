@@ -28,6 +28,7 @@ test("shortlist card and detail distinguish candidates from retained catalog sam
     const card = renderToStaticMarkup(createElement(BenchmarkCard, { group: benchmark, language, totalTasks: 3, onSelect() {} }));
     assert.ok(card.includes(`2 ${shortlistLabel}`));
     assert.ok(card.includes("mercor · unipat"));
+    assert.ok(!card.includes("benchmark-share"), "active procurement does not display catalog-share bars");
     const html = renderDetail(language);
     const collapsed = html.slice(html.indexOf('<details class="benchmark-other-samples">'), html.indexOf('<div class="benchmark-catalog-download">'));
     assert.ok(collapsed.startsWith('<details class="benchmark-other-samples">'), "other vendors are in a closed native disclosure");
@@ -37,6 +38,8 @@ test("shortlist card and detail distinguish candidates from retained catalog sam
     assert.ok(!collapsed.includes("mercor task"));
     assert.ok(html.indexOf("unipat task") < html.indexOf(otherLabel));
     assert.equal((html.match(/class="vendor-inventory"/g) ?? []).length, 3);
+    assert.ok(html.includes(language === "en" ? "Download all shortlisted samples" : "下载全部入围样本"));
+    assert.ok(html.includes("2 Harbor"), "shortlist download displays its unfiltered count");
     assert.ok(html.includes("3 Harbor"), "all-vendor download retains its full count");
   }
 });

@@ -23,10 +23,14 @@ const vendor: CatalogVendor = {
 };
 
 function previewArchive(request: Request) {
-  const benchmarkId = new URL(request.url).searchParams.get("benchmark");
+  const params = new URL(request.url).searchParams;
+  const benchmarkId = params.get("benchmark");
+  const scope = params.get("scope") ?? "all";
+  if (scope !== "all" && scope !== "shortlisted") return null;
   if (benchmarkId === null) return { manifest: vendorHarborDatasetManifest(vendor), filename: vendorHarborDatasetFilename(vendor) };
   const benchmark = buildBenchmarkLandscape({ generatedAt: "2026-08-20T00:00:00.000Z", vendors: [vendor], totals: { vendors: 1, submissions: 1, tasks: 7, harborTasks: 7 } }).groups.find((group) => group.id === benchmarkId);
-  return benchmark ? { manifest: benchmarkHarborDatasetManifest(benchmark), filename: benchmarkHarborDatasetFilename(benchmark) } : null;
+  if (!benchmark || (scope === "shortlisted" && !benchmark.shortlist?.records.length)) return null;
+  return { manifest: benchmarkHarborDatasetManifest(benchmark, scope), filename: benchmarkHarborDatasetFilename(benchmark, scope) };
 }
 
 export function POST(request: Request) {

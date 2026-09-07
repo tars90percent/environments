@@ -756,7 +756,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /BenchmarkDetail/);
   assert.match(source, /<VendorInteractionTimeline interactions=\{selectedVendor\.interactions\}[\s\S]*<VendorHarborTasks categories=\{landscape\?\.categories \?\? \[\]\} downloadHref=[\s\S]*vendor=\{selectedVendor\} \/>[\s\S]*className="submission-history"/);
   assert.match(source, /category\.groups\.flatMap\(\(group\) => group\.records\)/);
-  assert.match(source, /className="vendor-harbor-toolbar">[\s\S]*\{taskCount\} \{t\.harbor\}[\s\S]*<button disabled=\{downloadState === "preparing"\}[\s\S]*t\.downloadAllHarbor/);
+  assert.match(source, /className="vendor-harbor-toolbar">[\s\S]*\{taskCount\} \{t\.harbor\}[\s\S]*<button disabled=\{downloadState === "preparing" \|\| taskCount === 0\}[\s\S]*t\.downloadAllHarbor/);
   assert.match(source, /fetch\(downloadHref, \{ method: "POST"/);
   assert.match(workerSource, /fetch\(`\$\{gatewayUrl\}\/zip-archives`/);
   assert.match(source, /className="vendor-harbor-category-header">[\s\S]*group\.category\.label\[language\]/);

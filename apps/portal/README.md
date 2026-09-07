@@ -21,7 +21,11 @@ a collapsed “Other cataloged samples” section with their delivery histories.
 Inventory evidence and submission history are retained. The shortlist describes
 vendor offerings, not a blanket review result for their tasks. Procurement-group
 totals follow the displayed scope; the overall catalog and explicitly labeled
-all-vendor download still include every registered Harbor task.
+all-vendor download still include every registered Harbor task. A separate
+shortlist download includes only Harbor tasks from the server-selected vendors
+for that direction, across all submissions and independent of search. Its ZIP
+filename and manifest identify the shortlist scope. Active-procurement cards
+omit catalog-share bars so they cannot be mistaken for procurement progress.
 
 This README describes the portal application and its access boundary. The
 monorepo's root [`AGENTS.md`](../../AGENTS.md) is the sole authoritative

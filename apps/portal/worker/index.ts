@@ -84,11 +84,15 @@ const worker = {
         let manifest: ReturnType<typeof vendorHarborDatasetManifest> | ReturnType<typeof benchmarkHarborDatasetManifest>;
         let filename: string;
         if (benchmarkHarborDownloadMatch?.[1]) {
+          const scope = url.searchParams.get("scope") ?? "all";
+          if (scope !== "all" && scope !== "shortlisted") return Response.json({ error: "invalid_download_scope" }, { status: 400, headers: { "cache-control": "no-store" } });
           const benchmarkId = decodeURIComponent(benchmarkHarborDownloadMatch[1]);
           const benchmark = buildBenchmarkLandscape(catalog).groups.find((candidate) => candidate.id === benchmarkId);
           if (!benchmark) return Response.json({ error: "benchmark_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
-          manifest = benchmarkHarborDatasetManifest(benchmark);
-          filename = benchmarkHarborDatasetFilename(benchmark);
+          if (scope === "shortlisted" && !benchmark.shortlist) return Response.json({ error: "benchmark_shortlist_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
+          manifest = benchmarkHarborDatasetManifest(benchmark, scope);
+          if (!manifest.tasks.length) return Response.json({ error: "benchmark_harbor_dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
+          filename = benchmarkHarborDatasetFilename(benchmark, scope);
         } else {
           const vendorId = decodeURIComponent(vendorHarborDownloadMatch![1]);
           const vendor = catalog.vendors.find((candidate) => candidate.id === vendorId);

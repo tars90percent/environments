@@ -65,6 +65,8 @@ const text = {
     across: "across",
     benchmarkTasks: "Matching Harbor tasks",
     shortlistedVendors: "Shortlisted vendors",
+    downloadShortlisted: "Download all shortlisted samples",
+    shortlistedDownloadNote: "Harbor tasks from shortlisted vendors only, across all submissions and regardless of search.",
     shortlistedSamples: "Harbor samples from shortlisted vendors",
     otherSamples: "Other cataloged samples",
     catalogSamples: "Cataloged Harbor samples",
@@ -141,6 +143,8 @@ const text = {
     across: "分布于",
     benchmarkTasks: "匹配的 Harbor 任务",
     shortlistedVendors: "入围供应商",
+    downloadShortlisted: "下载全部入围样本",
+    shortlistedDownloadNote: "仅包含入围供应商的 Harbor 任务，涵盖所有提交，不受搜索条件影响。",
     shortlistedSamples: "入围供应商的 Harbor 样本",
     otherSamples: "其他已收录样本",
     catalogSamples: "已收录 Harbor 样本",
@@ -408,7 +412,7 @@ export function BenchmarkCard({ group, language, onSelect, totalTasks }: { group
     <strong>{group.displayName}</strong>
     <span className="benchmark-card-meta"><b>{sampleCount}</b> {countLabel(sampleCount, language, "task", t.taskRecords)} · {vendorCount} {group.shortlist ? t.shortlistedVendors.toLowerCase() : countLabel(vendorCount, language, "vendor", t.vendors.toLowerCase())}</span>
     {group.shortlist && <span className="benchmark-card-shortlist">{vendorNames}</span>}
-    <span aria-hidden className="benchmark-share"><i style={{ width: `${share}%` }} /></span>
+    {group.categoryId !== "active-procurement" && <span aria-hidden className="benchmark-share"><i style={{ width: `${share}%` }} /></span>}
     <span className="benchmark-card-action">{t.viewTasks}</span>
   </button>;
 }
@@ -428,7 +432,10 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
   const download = <div className="benchmark-catalog-download">{shortlist && <h3>{t.allCatalogSamples}</h3>}<HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={benchmark.taskCount} /><p className="benchmark-download-note">{t.benchmarkDownloadNote}</p></div>;
   return <div className="benchmark-detail">
     {benchmark.categoryId === "active-procurement" && <BenchmarkDeliveryTimeline vendors={primaryVendors} benchmarkId={benchmark.id} language={language} onOpenVendor={onOpenVendor} />}
-    {!shortlist && download}
+    {shortlist ? <div>
+      <HarborDownloadToolbar downloadHref={`${downloadHref}${downloadHref.includes("?") ? "&" : "?"}scope=shortlisted`} language={language} taskCount={benchmarkSampleCount(benchmark)} buttonLabel={t.downloadShortlisted} />
+      <p className="benchmark-download-note">{t.shortlistedDownloadNote}</p>
+    </div> : download}
     <section className="benchmark-task-section">
       <div className="section-title"><div><h3>{shortlist ? t.shortlistedVendors : t.benchmarkTasks}</h3><p>{shortlist ? t.shortlistedSamples : t.benchmarkTaskNote}</p></div><span>{primaryRecords.length} {t.taskRecords}</span></div>
       <BenchmarkVendorSamples records={primaryRecords} benchmark={benchmark} language={language} onOpenVendor={onOpenVendor} />
@@ -521,7 +528,7 @@ function VendorHarborTasks({ vendor, categories, downloadHref, language }: { ven
   </section>;
 }
 
-function HarborDownloadToolbar({ downloadHref, language, taskCount }: { downloadHref: string; language: Language; taskCount: number }) {
+function HarborDownloadToolbar({ downloadHref, language, taskCount, buttonLabel }: { downloadHref: string; language: Language; taskCount: number; buttonLabel?: string }) {
   const t = text[language];
   const [downloadState, setDownloadState] = useState<"idle" | "preparing" | "error">("idle");
   const prepareDownload = async () => {
@@ -547,7 +554,7 @@ function HarborDownloadToolbar({ downloadHref, language, taskCount }: { download
       setDownloadState("error");
     }
   };
-  return <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><button disabled={downloadState === "preparing"} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>;
+  return <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><button disabled={downloadState === "preparing" || taskCount === 0} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : buttonLabel ?? t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>;
 }
 
 function VendorInteractionTimeline({ interactions, language }: { interactions: CatalogVendorInteraction[]; language: Language }) {

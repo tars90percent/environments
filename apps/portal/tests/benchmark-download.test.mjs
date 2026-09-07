@@ -94,3 +94,42 @@ test("benchmark downloads require login and reject unknown benchmarks and invali
     globalThis.fetch = originalFetch;
   }
 });
+
+test("shortlisted downloads include only the server-selected vendors' Harbor tasks across submissions", async () => {
+  const app = (await import("../dist/server/index.js")).default;
+  const vendors = [
+    { id: "mercor", name: "Mercor", short: "M", submissions: [submission("first", [task("m1", "deep-swe")]), submission("second", [task("m2", "deep-swe"), task("native", "deep-swe", "task", "non_harbor"), task("trace", "deep-swe", "trace")])] },
+    { id: "unipat", name: "Unipat", short: "U", submissions: [submission("u", [task("u1", "deep-swe"), task("different-direction")])] },
+    { id: "other", name: "Other", short: "O", submissions: [submission("o", [task("o1", "deep-swe")])] },
+  ];
+  let currentCatalog = { ...catalog, vendors };
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (url === "https://case.example/v1/catalog") return Response.json(currentCatalog);
+    assert.equal(url, "https://gateway.example/zip-archives");
+    const body = JSON.parse(init.body);
+    requests.push(body);
+    return Response.json({ status: "ready", downloadUrl: "https://cache.example/shortlisted.zip", filename: body.filename, taskCount: body.roots.length, sizeBytes: 100, expiresInSeconds: 900 });
+  };
+  const request = (id = "deep-swe", scope = "shortlisted", authenticated = true) => app.fetch(new Request(`https://portal.example.com/api/benchmarks/${id}/harbor-download?scope=${scope}&search=mercor&vendors=other`, { method: "POST", headers: authenticated ? { cookie: cookie() } : {} }), env, {});
+  try {
+    assert.equal((await request("deep-swe", "shortlisted", false)).status, 401);
+    const response = await request();
+    assert.equal(response.status, 200);
+    const archive = await response.json();
+    assert.equal(archive.filename, "deep-swe-shortlisted-harbor-tasks.zip");
+    assert.equal(archive.taskCount, 3);
+    assert.deepEqual(new Set(requests[0].roots), new Set(["mercor/first/same-name", "mercor/second/same-name", "unipat/u/same-name"]));
+    assert.deepEqual(requests[0].manifest.selection, { kind: "shortlisted_benchmark_harbor_tasks", vendorIds: ["mercor", "unipat"], source: "harbor-task-gateway", included: 3 });
+    assert.deepEqual(new Set(requests[0].manifest.tasks.map((entry) => entry.taskId)), new Set(["m1", "m2", "u1"]));
+    assert.equal((await (await request("deep-swe", "all")).json()).taskCount, 4);
+    assert.equal((await request("deep-swe", "unknown")).status, 400);
+    assert.equal((await request("terminal-bench")).status, 404);
+    currentCatalog = { ...catalog, vendors: [vendors[2]] };
+    assert.equal((await request()).status, 404);
+    assert.equal(requests.length, 2, "invalid or empty scopes never reach the archive gateway");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

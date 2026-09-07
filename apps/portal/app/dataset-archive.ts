@@ -106,8 +106,12 @@ export function vendorHarborDatasetManifest(vendor: CatalogVendor) {
   };
 }
 
-export function benchmarkHarborDatasetManifest(benchmark: BenchmarkGroup) {
-  const tasks = benchmark.records.map((record) => ({
+export type BenchmarkDownloadScope = "all" | "shortlisted";
+
+export function benchmarkHarborDatasetManifest(benchmark: BenchmarkGroup, scope: BenchmarkDownloadScope = "all") {
+  if (scope === "shortlisted" && !benchmark.shortlist) throw new Error("Benchmark has no shortlist");
+  const records = scope === "shortlisted" ? benchmark.shortlist!.records : benchmark.records;
+  const tasks = records.map((record) => ({
     ...harborDatasetTask(record),
     vendor: { id: record.vendor.id, name: record.vendor.name },
   }));
@@ -115,7 +119,8 @@ export function benchmarkHarborDatasetManifest(benchmark: BenchmarkGroup) {
     schemaVersion: "case.benchmark-harbor-task-files.v1",
     benchmark: { id: benchmark.id, displayName: benchmark.displayName },
     selection: {
-      kind: "all_active_benchmark_harbor_tasks",
+      kind: scope === "shortlisted" ? "shortlisted_benchmark_harbor_tasks" : "all_active_benchmark_harbor_tasks",
+      ...(scope === "shortlisted" ? { vendorIds: benchmark.shortlist!.vendorIds } : {}),
       source: "harbor-task-gateway",
       included: tasks.length,
     },
@@ -123,8 +128,8 @@ export function benchmarkHarborDatasetManifest(benchmark: BenchmarkGroup) {
   };
 }
 
-export function benchmarkHarborDatasetFilename(benchmark: BenchmarkGroup): string {
-  return `${safeFilenameSegment(benchmark.displayName, benchmark.id)}-harbor-tasks.zip`;
+export function benchmarkHarborDatasetFilename(benchmark: BenchmarkGroup, scope: BenchmarkDownloadScope = "all"): string {
+  return `${safeFilenameSegment(benchmark.displayName, benchmark.id)}${scope === "shortlisted" ? "-shortlisted" : ""}-harbor-tasks.zip`;
 }
 
 function harborDatasetTask({ task, submission, vendor }: HarborTaskContext): VendorHarborDatasetTask {
