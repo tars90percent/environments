@@ -330,6 +330,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
         <button className={view === "vendors" ? "active" : ""} onClick={() => showVendors()} type="button">{t.byVendor}</button>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a className={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? "active" : ""} href="/model-benchmarks" onClick={(event) => { event.preventDefault(); showModelBenchmarks(); }}>{t.modelBenchmarks}</a>
+        <a href="/trajectories">{language === "zh" ? "轨迹查看器" : "Trajectories"}</a>
       </nav>
       <div className="header-tools">
         <label className={`global-search${view === "model-explanation" || view === "model-task" ? " model-task-search" : ""}`}><span aria-hidden>⌕</span><input aria-label={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? t.searchModelBenchmarks : t.search} disabled={view === "model-explanation" || view === "model-task"} onChange={(event) => setQuery(event.target.value)} placeholder={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? t.searchModelBenchmarks : t.search} value={query} /></label>

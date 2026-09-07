@@ -47,6 +47,17 @@ operating policy; CASE remains the canonical registry. New sample execution belo
 
 ## What to inspect
 
+The `/trajectories` viewer opens local JSON or pasted JSON entirely in the browser.
+It supports the MiniMax/Anthropic messages format (text, thinking, tool use, and
+tool results) and OpenAI-style tool calls. An outline, role filters, full-content
+search, and arrow-key navigation make long trajectories easier to inspect.
+Tool results are paired by their explicit call IDs, with errors and missing
+results distinguished. Request metadata and original messages remain available;
+unknown content blocks are retained as JSON. There is a synthetic example, but
+no real trajectory data is bundled, uploaded, persisted, or evaluated. This
+standalone local-file utility needs no registry session and accesses no CASE
+endpoints. Refreshing clears the loaded file. Inputs are limited to 50 MB.
+
 - Browse vendors that have at least one recorded submission.
 - Open dated submissions without replacing earlier observations.
 - Inspect each original submission as one compact block with a direct download for every source item explicitly linked as an original vendor file. Message captures, receipts, screenshots, folders, and URLs remain in CASE as provenance but are not presented as downloads.
