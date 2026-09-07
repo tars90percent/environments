@@ -3,8 +3,8 @@ FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM node:24-bookworm-slim
 
-ARG HARBOR_VERSION=0.21.0
-ARG MODAL_VERSION=1.5.4
+ARG HARBOR_VERSION=0.22.0
+ARG MODAL_VERSION=1.5.5
 
 COPY --from=uv /uv /uvx /usr/local/bin/
 
@@ -23,7 +23,7 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
     UV_CACHE_DIR=/tmp/uv-cache
 RUN mkdir -p /opt/harbor-bin /opt/modal-bin \
     && uv python install 3.12 \
-    && UV_TOOL_BIN_DIR=/opt/harbor-bin uv tool install --python 3.12 "harbor[modal]==${HARBOR_VERSION}" \
+    && UV_TOOL_BIN_DIR=/opt/harbor-bin uv tool install --python 3.12 --with "modal==${MODAL_VERSION}" "harbor[modal]==${HARBOR_VERSION}" \
     && UV_TOOL_BIN_DIR=/opt/modal-bin uv tool install --python 3.12 "modal==${MODAL_VERSION}" \
     && ln -sfn /opt/uv/tools/harbor/bin/python /usr/local/bin/python3 \
     && /opt/harbor-bin/harbor --version \
@@ -42,7 +42,8 @@ RUN ln -sfn /app/node_modules/.bin/lark-cli /usr/local/bin/lark-cli \
 
 # Official Lark/Feishu Agent Skills installation channel. The global installer
 # writes to /root/.agents/skills, which Codex scans for user-level skills.
-RUN npx --yes skills add larksuite/cli --yes --global \
+# Keep the skills at the same release as @larksuite/cli in package.json.
+RUN npx --yes skills add https://github.com/larksuite/cli/tree/v1.0.93 --yes --global \
     && test -f /root/.agents/skills/lark-shared/SKILL.md \
     && test -f /root/.agents/skills/lark-calendar/SKILL.md \
     && test -f /root/.agents/skills/lark-im/SKILL.md
