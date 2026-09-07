@@ -793,3 +793,21 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .vendor-inventory summary { cursor: pointer; }
 .vendor-inventory details p { white-space: pre-wrap; line-height: 1.6; overflow-wrap: anywhere; }
 .vendor-inventory a { color: var(--burgundy); text-decoration: underline; }
+
+.benchmark-delivery-timeline { min-width: 0; }
+.delivery-timeline-scroll { overflow-x: auto; padding: 8px 0 18px; scrollbar-color: var(--burgundy) transparent; }
+.delivery-timeline-scroll:focus-visible { outline: 2px solid var(--burgundy); outline-offset: 4px; border-radius: 8px; }
+.delivery-timeline-scroll ol { display: flex; list-style: none; margin: 0; padding: 0; width: max-content; min-width: 100%; }
+.delivery-timeline-scroll li { flex: 0 0 225px; width: 225px; position: relative; padding: 0 16px 0 0; }
+.delivery-timeline-scroll time { display: block; font-size: 11px; color: var(--muted); margin-bottom: 15px; }
+.delivery-timeline-scroll li::before { content: ""; position: absolute; top: 35px; left: 0; right: 0; height: 1px; background: var(--line); }
+.delivery-timeline-scroll li:last-child::before { right: 16px; }
+.delivery-timeline-dot { display: block; position: relative; width: 9px; height: 9px; border-radius: 50%; background: var(--burgundy); margin: 0 0 14px; }
+.delivery-timeline-scroll article { padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.delivery-timeline-scroll article > button { display: block; border: 0; padding: 0; background: transparent; font-size: 12px; text-align: left; color: var(--ink); cursor: pointer; }
+.delivery-timeline-scroll article > button:hover { color: var(--burgundy); }
+.delivery-timeline-scroll article > strong { display: block; font-size: 19px; margin: 12px 0 5px; }
+.delivery-timeline-scroll small { color: var(--muted); font-size: 10px; }
+.delivery-timeline-scroll details { margin-top: 12px; font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
+.delivery-timeline-scroll summary { cursor: pointer; }
+.delivery-timeline-scroll details p { line-height: 1.5; }

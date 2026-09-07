@@ -109,3 +109,9 @@ vendor timeline. An explicit unknown claim supersedes an older known quantity.
 Inventory is vendor-reported and is not added to received-sample counts.
 Inventory claims do not add vendors to a direction: only vendors with matching
 Harbor samples appear. Other benchmark directions show no inventory section.
+
+Active-procurement directions also show a horizontal sample-delivery timeline,
+derived from the complete catalog rather than the current search. Each entry
+represents one vendor submission with tasks assigned to that exact direction,
+using its recorded submission date. Counts include non-Harbor tasks (shown
+separately) and exclude traces; inventory statements never create deliveries.
