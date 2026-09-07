@@ -26,6 +26,7 @@ import { ModelBenchmarkExplanationPage } from "./model-benchmark-explanation";
 import { modelBenchmarkSamples } from "./model-benchmark-samples";
 import { ModelBenchmarkReferencePage } from "./model-benchmark-reference";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
+import { latestVendorInventory } from "./vendor-inventory";
 import { MiniMaxMark } from "./minimax-mark";
 
 type Language = "zh" | "en";
@@ -346,7 +347,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     {view === "model-explanation" && initialModelBenchmark && initialModelExplanation && <ModelBenchmarkExplanationPage benchmark={initialModelBenchmark} explanation={initialModelExplanation} language={language} localPreview={localPreview} />}
     {view === "model-task" && initialModelBenchmark && initialModelSample && <ModelBenchmarkTaskDetail benchmark={initialModelBenchmark} language={language} localPreview={localPreview} sample={initialModelSample} />}
     {state === "ready" && view === "benchmarks" && landscape && !selectedBenchmark && <BenchmarkOverview categories={matchingBenchmarkCategories} language={language} onSelect={(benchmarkId) => { setSelectedBenchmarkId(benchmarkId); setQuery(""); scrollToTop(); }} totalTasks={landscape.taskCount} />}
-    {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail benchmark={selectedBenchmark} downloadHref={localPreview ? `/local-preview/vendor-harbor-download?benchmark=${encodeURIComponent(selectedBenchmark.id)}` : `/api/benchmarks/${encodeURIComponent(selectedBenchmark.id)}/harbor-download`} language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}
+    {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail vendors={matchingVendors} benchmark={selectedBenchmark} downloadHref={localPreview ? `/local-preview/vendor-harbor-download?benchmark=${encodeURIComponent(selectedBenchmark.id)}` : `/api/benchmarks/${encodeURIComponent(selectedBenchmark.id)}/harbor-download`} language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}
     {state === "ready" && view === "vendors" && !selectedVendor && <StateCard>{t.noMatch}</StateCard>}
     {state === "ready" && view === "vendors" && selectedVendor && <div className="portal-grid">
       <aside className="vendor-sidebar" aria-label={t.vendors}>
@@ -398,18 +399,35 @@ function countLabel(count: number, language: Language, englishSingular: string, 
   return language === "en" && count === 1 ? englishSingular : pluralOrChinese;
 }
 
-function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendor, records }: { benchmark: BenchmarkGroup; downloadHref: string; language: Language; onOpenVendor: (vendorId: string) => void; records: HarborTaskContext[] }) {
+function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendor, records, vendors }: { vendors: CatalogVendor[]; benchmark: BenchmarkGroup; downloadHref: string; language: Language; onOpenVendor: (vendorId: string) => void; records: HarborTaskContext[] }) {
   const t = text[language];
   const vendorGroups = groupRecordsByVendor(records);
+  for (const vendor of vendors) {
+    if (latestVendorInventory(vendor, benchmark.id) && !benchmark.records.some((record) => record.vendor.id === vendor.id)) {
+      vendorGroups.push({ vendor, records: [] });
+    }
+  }
   return <div className="benchmark-detail">
     <div><HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={benchmark.taskCount} /><p className="benchmark-download-note">{t.benchmarkDownloadNote}</p></div>
     <section className="benchmark-task-section">
       <div className="section-title"><div><h3>{t.benchmarkTasks}</h3><p>{t.benchmarkTaskNote}</p></div><span>{records.length} {t.taskRecords}</span></div>
       {vendorGroups.length === 0 ? <StateCard>{t.noMatch}</StateCard> : <div className="benchmark-vendor-list">{vendorGroups.map(({ vendor, records: vendorRecords }) => <section className="benchmark-vendor-group" key={vendor.id}>
-        <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {t.taskRecords}<b aria-hidden>→</b></span></button></header>
+        <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : "Harbor samples"}<b aria-hidden>→</b></span></button><VendorInventory vendor={vendor} benchmarkId={benchmark.id} language={language} /></header>
         <div className="task-list">{vendorRecords.map((record) => <TaskRow contextLabel={`${record.submission.label} · ${formatDate(record.submission.date, language)}`} hideBenchmark key={record.task.id} language={language} task={record.task} />)}</div>
       </section>)}</div>}
     </section>
+  </div>;
+}
+
+function VendorInventory({ vendor, benchmarkId, language }: { vendor: CatalogVendor; benchmarkId: string; language: Language }) {
+  const claim = latestVendorInventory(vendor, benchmarkId);
+  return <div className="vendor-inventory">
+    <span>{language === "zh" ? "可供库存" : "Available inventory"}</span>
+    <p>{claim?.title ?? (language === "zh" ? "库存尚未确认" : "Inventory not confirmed")}</p>
+    {claim && <>
+      <small>{language === "zh" ? "供应商自报" : "Vendor-reported"} · <time dateTime={claim.occurredAt}>{formatInteractionDate(claim.occurredAt, language)}</time> · {interactionChannelLabel(claim.channel, language)}{claim.evidence === "relayed" ? (language === "zh" ? "（用户转述）" : " (relayed by user)") : ""}</small>
+      <details><summary>{language === "zh" ? "查看证据" : "View evidence"}</summary><p>{claim.summary.split(/(https:\/\/[^\s]+)/g).map((part, index) => part.startsWith("https://") ? <a key={index} href={part} target="_blank" rel="noreferrer">{language === "zh" ? "来源消息 ↗" : "Source message ↗"}</a> : part)}</p></details>
+    </>}
   </div>;
 }
 

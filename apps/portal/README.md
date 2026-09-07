@@ -94,3 +94,17 @@ File downloads use short CASE references; old artifact links remain supported.
 Vendor pages and individual benchmark-direction pages offer “Download all Harbor tasks”. Both use the Harbor gateway to build or reuse a ZIP from the exact published task folders in `harbor-tasks`. Benchmark downloads span all vendors and submissions for that benchmark, independently of the page's search filter. The ZIP preserves vendor/submission/task paths, and its manifest identifies the vendor and submission for each task. Incomplete task roots cause preparation to fail rather than producing a partial archive.
 Export manifests retain task and submission identity, source paths and evidence,
 without repeating internal content checksums.
+
+## Vendor inventory claims
+
+Benchmark-direction vendor headers show the latest portal-visible CASE timeline
+interaction with `eventType: inventory_reported:<registered benchmark id>`.
+Record these through `casectl registry record-vendor-interaction`: use the title
+for a concise available-volume/capacity statement, the summary for the original
+claim and source link or attributed relay, and the statement date in `occurredAt`.
+The channel and evidence fields identify direct communications versus relays.
+Append a dated entry when availability changes; earlier claims remain in the
+vendor timeline. An explicit unknown claim supersedes an older known quantity.
+Inventory is vendor-reported and is not added to received-sample counts.
+Vendors with an inventory claim but no Harbor samples still appear on that
+direction's detail page, with zero Harbor samples.

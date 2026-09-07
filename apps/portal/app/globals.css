@@ -784,3 +784,12 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
   .submission-body { margin: 0 7px 7px; padding: 16px; }
   .dataset-metrics { flex-wrap: wrap; }
 }
+
+.vendor-inventory { margin: 0 12px 10px; padding: 12px 14px; border-radius: 12px; background: var(--bg); }
+.vendor-inventory > span { color: var(--muted); font-size: 10px; }
+.vendor-inventory > p { margin: 5px 0; font-size: 13px; font-weight: 550; }
+.benchmark-vendor-group > header .vendor-inventory small { font-size: 10px; text-transform: none; }
+.vendor-inventory details { margin-top: 8px; color: var(--muted); font-size: 11px; }
+.vendor-inventory summary { cursor: pointer; }
+.vendor-inventory details p { white-space: pre-wrap; line-height: 1.6; overflow-wrap: anywhere; }
+.vendor-inventory a { color: var(--burgundy); text-decoration: underline; }
