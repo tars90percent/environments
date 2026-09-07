@@ -689,6 +689,34 @@ test("groups only Harbor tasks into benchmark directions and portal groups", asy
   assert.equal(benchmarkCategoryId("brand-new-direction"), "other");
 });
 
+test("DeepSWE shortlist counts only selected offerings while retaining every catalog record", async () => {
+  const { buildBenchmarkLandscape, benchmarkSampleCount } = await benchmarkLandscapeModule();
+  const vendor = (id, tasks) => ({ id, name: id, submissions: [{ id: `${id}-samples`, date: "2026-09-07", tasks }] });
+  const catalog = { vendors: [
+    vendor("mercor", [landscapeTask("m", "deep-swe", "DeepSWE"), landscapeTask("mt", "terminal-bench-3-4", "Terminal-Bench 3/4")]),
+    vendor("unipat", [landscapeTask("u", "deep-swe", "DeepSWE"), landscapeTask("trace", "deep-swe", "DeepSWE", "trace")]),
+    vendor("other", [landscapeTask("o", "deep-swe", "DeepSWE"), landscapeTask("ot", "terminal-bench-3-4", "Terminal-Bench 3/4")]),
+  ] };
+  const before = structuredClone(catalog);
+  const landscape = buildBenchmarkLandscape(catalog);
+  const deep = landscape.groups.find((group) => group.id === "deep-swe");
+  assert.equal(benchmarkSampleCount(deep), 2);
+  assert.equal(deep.shortlist.vendorCount, 2);
+  assert.deepEqual(deep.shortlist.records.map((record) => record.task.id), ["m", "u"]);
+  assert.equal(deep.taskCount, 3);
+  assert.equal(deep.records.length, 3);
+  assert.equal(landscape.taskCount, 5);
+  assert.equal(landscape.categories.find((category) => category.id === "active-procurement").taskCount, 4);
+  const terminal = landscape.groups.find((group) => group.id === "terminal-bench-3-4");
+  assert.equal(terminal.shortlist, undefined);
+  assert.equal(benchmarkSampleCount(terminal), 2);
+  assert.deepEqual(catalog, before);
+  const missing = buildBenchmarkLandscape({ vendors: [catalog.vendors[2]] }).groups.find((group) => group.id === "deep-swe");
+  assert.equal(benchmarkSampleCount(missing), 0);
+  assert.equal(missing.shortlist.vendorCount, 0);
+  assert.equal(missing.records.length, 1);
+});
+
 test("folds large submissions by benchmark direction and record type", async () => {
   const { groupSubmissionTasks } = await taskGroupsModule();
   const records = [

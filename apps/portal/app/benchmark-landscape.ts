@@ -30,6 +30,7 @@ export type BenchmarkGroup = {
   vendorCount: number;
   submissionCount: number;
   records: HarborTaskContext[];
+  shortlist?: { vendorIds: readonly string[]; records: HarborTaskContext[]; vendorCount: number };
 };
 
 export type BenchmarkCategoryGroup = BenchmarkCategoryDefinition & {
@@ -179,6 +180,16 @@ export function benchmarkCategoryId(benchmarkId: string): BenchmarkCategoryId {
   return benchmarkCategories[benchmarkId] ?? "other";
 }
 
+// User-selected vendor offerings, confirmed 2026-09-07. This is a presentation
+// shortlist, not a review result for every task or submission from these vendors.
+const benchmarkShortlists: Partial<Record<string, readonly string[]>> = {
+  "deep-swe": ["mercor", "unipat"],
+};
+
+export function benchmarkSampleCount(group: BenchmarkGroup): number {
+  return group.shortlist?.records.length ?? group.taskCount;
+}
+
 export function buildBenchmarkLandscape(catalog: CatalogSnapshot): BenchmarkLandscape {
   const records = catalog.vendors.flatMap((vendor) => vendor.submissions.flatMap((submission) => submission.tasks
     .filter((task) => task.kind === "task" && task.format === "harbor")
@@ -190,23 +201,32 @@ export function buildBenchmarkLandscape(catalog: CatalogSnapshot): BenchmarkLand
     recordsByBenchmark.set(record.task.benchmark.id, existing);
   }
 
-  const groups = [...recordsByBenchmark.entries()].map(([id, benchmarkRecords]): BenchmarkGroup => ({
-    id,
-    displayName: benchmarkRecords[0]?.task.benchmark.displayName ?? id,
-    categoryId: benchmarkCategoryId(id),
-    taskCount: benchmarkRecords.length,
-    vendorCount: new Set(benchmarkRecords.map((record) => record.vendor.id)).size,
-    submissionCount: new Set(benchmarkRecords.map((record) => record.submission.id)).size,
-    records: benchmarkRecords.sort((left, right) => left.vendor.name.localeCompare(right.vendor.name)
-      || right.submission.date.localeCompare(left.submission.date)
-      || left.task.title.localeCompare(right.task.title)),
-  })).sort(compareBenchmarkGroups);
+  const groups = [...recordsByBenchmark.entries()].map(([id, benchmarkRecords]): BenchmarkGroup => {
+    const vendorIds = benchmarkShortlists[id];
+    const shortlistedRecords = vendorIds ? benchmarkRecords.filter((record) => vendorIds.includes(record.vendor.id)) : [];
+    return {
+      id,
+      displayName: benchmarkRecords[0]?.task.benchmark.displayName ?? id,
+      categoryId: benchmarkCategoryId(id),
+      taskCount: benchmarkRecords.length,
+      vendorCount: new Set(benchmarkRecords.map((record) => record.vendor.id)).size,
+      submissionCount: new Set(benchmarkRecords.map((record) => record.submission.id)).size,
+      shortlist: vendorIds ? {
+        vendorIds,
+        records: shortlistedRecords,
+        vendorCount: new Set(shortlistedRecords.map((record) => record.vendor.id)).size,
+      } : undefined,
+      records: benchmarkRecords.sort((left, right) => left.vendor.name.localeCompare(right.vendor.name)
+        || right.submission.date.localeCompare(left.submission.date)
+        || left.task.title.localeCompare(right.task.title)),
+    };
+  }).sort(compareBenchmarkGroups);
 
   const categories = benchmarkCategoryDefinitions.map((definition): BenchmarkCategoryGroup => {
     const categoryGroups = groups.filter((group) => group.categoryId === definition.id);
     return {
       ...definition,
-      taskCount: categoryGroups.reduce((sum, group) => sum + group.taskCount, 0),
+      taskCount: categoryGroups.reduce((sum, group) => sum + benchmarkSampleCount(group), 0),
       benchmarkCount: categoryGroups.length,
       groups: categoryGroups,
     };

@@ -15,6 +15,14 @@ The portal presents vendor timelines, submissions, source evidence and tasks.
 Interpretation and the evolving vendor process remain with researchers and
 CASE. Benchmark directions are source-backed task labels, not evaluations.
 
+DeepSWE features the user-confirmed Mercor and Unipat shortlist. Its card and
+detail headline count their registered Harbor samples; other vendors remain in
+a collapsed “Other cataloged samples” section with their delivery histories.
+Inventory evidence and submission history are retained. The shortlist describes
+vendor offerings, not a blanket review result for their tasks. Procurement-group
+totals follow the displayed scope; the overall catalog and explicitly labeled
+all-vendor download still include every registered Harbor task.
+
 This README describes the portal application and its access boundary. The
 monorepo's root [`AGENTS.md`](../../AGENTS.md) is the sole authoritative
 operating policy; CASE remains the canonical registry. New sample execution belongs to AutoQA.
