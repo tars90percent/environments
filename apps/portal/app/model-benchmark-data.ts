@@ -9,6 +9,7 @@ export type BenchmarkReferenceCategoryId =
   | "documents-vision"
   | "cybersecurity";
 export type BenchmarkReferenceAccess = "public" | "public-subset" | "gated" | "public-tasks" | "private";
+export type BenchmarkCatalogPlacement = "aggregate-only" | "legacy" | "specialist";
 
 export type BenchmarkReferenceLink = {
   label: { en: string; zh: string };
@@ -45,6 +46,7 @@ export type ModelBenchmarkReference = {
   creators: { en: string; zh: string };
   publisher: string;
   categoryId: BenchmarkReferenceCategoryId;
+  catalogPlacement?: BenchmarkCatalogPlacement;
   version?: string;
   versionNote?: { en: string; zh: string };
   currentVersionId?: string;
@@ -159,7 +161,7 @@ export const artificialAnalysisIndex: AggregateBenchmarkReference = {
 
 export const aggregateBenchmarks = [artificialAnalysisIndex] satisfies AggregateBenchmarkReference[];
 
-export const modelBenchmarks = [
+export const modelBenchmarks: ModelBenchmarkReference[] = [
     {
       id: "gdpval-aa-v2",
       name: "GDPval",
@@ -361,6 +363,7 @@ export const modelBenchmarks = [
       creators: { en: "Artificial Analysis", zh: "Artificial Analysis" },
       publisher: "Artificial Analysis",
       categoryId: "documents-vision",
+      catalogPlacement: "aggregate-only",
       version: "Current public dataset · unversioned",
       versionNote: {
         en: "The dataset has no semantic version; index v4.1.1 uses GPT-5.6 Luna (medium) as its equality checker.",
@@ -448,6 +451,7 @@ export const modelBenchmarks = [
       creators: { en: "David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty et al.", zh: "David Rein、Betty Li Hou、Asa Cooper Stickland、Jackson Petty 等人" },
       publisher: "David Rein · GPQA authors",
       categoryId: "science-knowledge",
+      catalogPlacement: "legacy",
       version: "Main and Diamond splits",
       versionNote: {
         en: "The Diamond split is the original authors' highest-quality subset. It has no separate semantic version and remains access-gated.",
@@ -559,6 +563,7 @@ export const modelBenchmarks = [
       creators: { en: "Jason Wei, Zhiqing Sun, Spencer Papay et al. at OpenAI", zh: "OpenAI 的 Jason Wei、Zhiqing Sun、Spencer Papay 等人" },
       publisher: "OpenAI",
       categoryId: "web-research",
+      catalogPlacement: "legacy",
       summary: { en: "Purpose-built web-research questions whose answers are difficult to locate.", zh: "专门设计、答案难以检索的网页研究问题。" },
       questionCount: { en: "1,266 questions", zh: "1,266 道问题" },
       access: "public",
@@ -573,6 +578,7 @@ export const modelBenchmarks = [
       creators: { en: "Krista Opsahl-Ong, Arnav Singhvi, Jasmine Collins et al. at Databricks AI Research", zh: "Databricks AI Research 的 Krista Opsahl-Ong、Arnav Singhvi、Jasmine Collins 等人" },
       publisher: "Databricks",
       categoryId: "documents-vision",
+      catalogPlacement: "specialist",
       summary: { en: "Multi-document reasoning questions grounded in U.S. Treasury material.", zh: "基于美国财政部材料的多文档推理问题。" },
       questionCount: { en: "133 questions", zh: "133 道问题" },
       access: "gated",
@@ -1042,6 +1048,7 @@ export const modelBenchmarks = [
       creators: { en: "Xiang Yue, Tianyu Zheng, Yuansheng Ni et al.", zh: "Xiang Yue、Tianyu Zheng、Yuansheng Ni 等人" },
       publisher: "MMMU Benchmark organization",
       categoryId: "documents-vision",
+      catalogPlacement: "legacy",
       summary: { en: "A transformed MMMU task set with filtered questions, expanded choices, and vision-only variants.", zh: "通过筛题、扩展选项并构建纯视觉版本而形成的 MMMU 衍生任务集。" },
       questionCount: { en: "Filtered and transformed MMMU task set", zh: "筛选并改造后的 MMMU 任务集" },
       access: "public",
@@ -1056,6 +1063,7 @@ export const modelBenchmarks = [
       creators: { en: "Liang Chen, Weichu Xie, Yiyan Liang et al., led by UniPat AI and xbench", zh: "Liang Chen、Weichu Xie、Yiyan Liang 等人，UniPat AI 与 xbench 牵头" },
       publisher: "UniPat AI",
       categoryId: "documents-vision",
+      catalogPlacement: "specialist",
       summary: { en: "Purpose-built visual-reasoning items spanning diverse subclasses.", zh: "专门构建、覆盖多种子类别的视觉推理题目。" },
       questionCount: { en: "388 items · 22 subclasses", zh: "388 道题 · 22 个子类别" },
       access: "public",
@@ -1070,6 +1078,7 @@ export const modelBenchmarks = [
       creators: { en: "Zirui Wang, Mengzhou Xia, Luxi He et al., led by Princeton NLP", zh: "Zirui Wang、Mengzhou Xia、Luxi He 等人，Princeton NLP 牵头" },
       publisher: "Princeton NLP",
       categoryId: "documents-vision",
+      catalogPlacement: "legacy",
       summary: { en: "Human-curated and verified questions grounded in scientific charts.", zh: "围绕科学图表、经人工整理与验证的问题。" },
       questionCount: { en: "Questions over 2,323 charts", zh: "覆盖 2,323 张图表的问题" },
       access: "public",
@@ -1098,6 +1107,7 @@ export const modelBenchmarks = [
       creators: { en: "Linke Ouyang, Yuan Qu, Hongbin Zhou et al., led by OpenDataLab and Shanghai AI Laboratory", zh: "Linke Ouyang、Yuan Qu、Hongbin Zhou 等人，OpenDataLab 与上海人工智能实验室牵头" },
       publisher: "OpenDataLab",
       categoryId: "documents-vision",
+      catalogPlacement: "specialist",
       version: "v1.7",
       currentVersionId: "v1.7",
       versionNote: { en: "The current main branch keeps the 1,651-page v1.6 dataset and adds the Qianfan-OCR leaderboard plus skills-based evaluation support.", zh: "当前主分支保留 v1.6 的 1,651 页数据集，并新增 Qianfan-OCR 排行榜与 skills 评测支持。" },
@@ -1205,7 +1215,9 @@ export const modelBenchmarks = [
         { label: { en: "Paper", zh: "论文" }, url: "https://arxiv.org/abs/2605.11086" },
       ],
     },
-  ] satisfies ModelBenchmarkReference[];
+  ];
+
+export const catalogModelBenchmarks = modelBenchmarks.filter((benchmark) => benchmark.catalogPlacement === undefined);
 
 export function modelBenchmarkSearchText(benchmark: ModelBenchmarkReference): string {
   return [
