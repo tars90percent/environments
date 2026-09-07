@@ -1,7 +1,7 @@
 // Run inside the built image without network access or production credentials.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Codex } from "@openai/codex-sdk";
@@ -25,6 +25,7 @@ const run = (command, args) => execFileSync(command, args, {
 });
 
 try {
+  mkdirSync(env.CODEX_HOME);
   const { dependencies } = JSON.parse(readFileSync("/app/package.json", "utf8"));
   assert.ok(run("codex", ["--version"]).includes(dependencies["@openai/codex-sdk"]));
   assert.ok(run("lark-cli", ["--version"]).includes(dependencies["@larksuite/cli"]));

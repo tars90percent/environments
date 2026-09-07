@@ -25,7 +25,8 @@ RUN mkdir -p /opt/harbor-bin /opt/modal-bin \
     && uv python install 3.12 \
     && UV_TOOL_BIN_DIR=/opt/harbor-bin uv tool install --python 3.12 --with "modal==${MODAL_VERSION}" "harbor[modal]==${HARBOR_VERSION}" \
     && UV_TOOL_BIN_DIR=/opt/modal-bin uv tool install --python 3.12 "modal==${MODAL_VERSION}" \
-    && ln -sfn /opt/uv/tools/harbor/bin/python /usr/local/bin/python3 \
+    && printf '#!/bin/sh\nexec /opt/uv/tools/harbor/bin/python "$@"\n' > /usr/local/bin/python3 \
+    && chmod 0755 /usr/local/bin/python3 \
     && /opt/harbor-bin/harbor --version \
     && /opt/modal-bin/modal --version \
     && python3 --version \
