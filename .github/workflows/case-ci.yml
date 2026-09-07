@@ -46,7 +46,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: apps/case/package-lock.json
 
@@ -68,3 +68,6 @@ jobs:
 
       - name: Build deployment image
         run: docker build --file apps/case/Dockerfile --tag case:test .
+
+      - name: Check installed runtime tools without credentials or network
+        run: docker run --rm --network none --entrypoint node case:test scripts/runtime-smoke.mjs
