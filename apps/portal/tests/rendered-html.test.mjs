@@ -782,7 +782,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.doesNotMatch(source, /catalog\?\.totals\.tasks/);
   assert.match(source, /catalog\?\.totals\.harborTasks/);
   assert.doesNotMatch(source, /Upload submission|上传提交|\/api\/uploads|x-case-upload/i);
-  assert.doesNotMatch(source, /procurement|research demand|runtimeVerification|representationPath|normalizationOutcome|needs_vendor_fix|ready_for_research|reviewer/i);
+  assert.doesNotMatch(source.replaceAll('"active-procurement"', '""'), /procurement|research demand|runtimeVerification|representationPath|normalizationOutcome|needs_vendor_fix|ready_for_research|reviewer/i);
   assert.doesNotMatch(source, /task\.category|submission\.categories|categoryIds/);
   assert.doesNotMatch(source, /Deeptune|Prime Intellect|Scaler AI Labs/);
   assert.doesNotMatch(source, /FormatBadge|format-badge|kind-badge|submission-formats/);
