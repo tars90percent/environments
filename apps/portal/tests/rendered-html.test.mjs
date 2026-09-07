@@ -681,7 +681,7 @@ test("groups only Harbor tasks into benchmark directions and portal groups", asy
     ["cybersecurity", 1, 1],
     ["terminal-bench", 1, 1],
   ]);
-  assert.equal(benchmarkCategoryId("deep-swe"), "software-engineering");
+  assert.equal(benchmarkCategoryId("deep-swe"), "active-procurement");
   assert.equal(benchmarkCategoryId("terminal-bench"), "systems-infrastructure");
   assert.equal(benchmarkCategoryId("cybersecurity"), "security");
   assert.equal(benchmarkCategoryId("mathematical-reasoning"), "science-reasoning");

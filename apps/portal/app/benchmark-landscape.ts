@@ -114,13 +114,12 @@ export const benchmarkCategoryDefinitions: BenchmarkCategoryDefinition[] = [
 ];
 
 const benchmarkCategories: Partial<Record<string, BenchmarkCategoryId>> = Object.fromEntries([
-  ...assign("active-procurement", ["terminal-bench-science", "terminal-bench-3-4"]),
+  ...assign("active-procurement", ["terminal-bench-science", "terminal-bench-3-4", "deep-swe"]),
   ...assign("software-engineering", [
     "agentic-coding-benchmark",
     "autoresearch-kernel",
     "codebase-qa",
     "codebase-repair",
-    "deep-swe",
     "doc2repo",
     "frontier-cs",
     "frontier-swe",
