@@ -740,10 +740,10 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
 
   assert.match(source, /Environment & Task Samples/);
   assert.match(source, /RL task landscape/);
-  assert.match(source, /benchmarks: "By Domain"/);
+  assert.match(source, /benchmarks: "By Benchmark"/);
   assert.match(source, /byVendor: "By Vendor"/);
   assert.match(source, /modelBenchmarks: "Benchmark Catalog"/);
-  assert.match(source, /benchmarks: "按领域"/);
+  assert.match(source, /benchmarks: "按基准"/);
   assert.match(source, /byVendor: "按供应商"/);
   assert.match(source, /modelBenchmarks: "Benchmark Catalog"/);
   assert.doesNotMatch(source, /Model benchmarks|模型基准/);

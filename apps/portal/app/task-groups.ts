@@ -1,3 +1,4 @@
+import { sampleGroup } from "./sample-classification";
 import type { CatalogTask, TaskKind } from "./catalog";
 
 export type SubmissionTaskGroup = {
@@ -10,8 +11,9 @@ export type SubmissionTaskGroup = {
 export function groupSubmissionTasks(tasks: CatalogTask[]): SubmissionTaskGroup[] {
   const groups = new Map<string, SubmissionTaskGroup>();
   for (const task of tasks) {
-    const id = `${task.benchmark.id}:${task.kind}`;
-    const group = groups.get(id) ?? { id, benchmark: task.benchmark, kind: task.kind, tasks: [] };
+    const benchmark = sampleGroup(task);
+    const id = `${benchmark.id}:${task.kind}`;
+    const group = groups.get(id) ?? { id, benchmark, kind: task.kind, tasks: [] };
     group.tasks.push(task);
     groups.set(id, group);
   }

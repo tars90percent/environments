@@ -28,7 +28,7 @@ function previewArchive(request: Request) {
   const scope = params.get("scope") ?? "all";
   if (scope !== "all" && scope !== "shortlisted") return null;
   if (benchmarkId === null) return { manifest: vendorHarborDatasetManifest(vendor), filename: vendorHarborDatasetFilename(vendor) };
-  const benchmark = buildBenchmarkLandscape({ generatedAt: "2026-08-20T00:00:00.000Z", vendors: [vendor], totals: { vendors: 1, submissions: 1, tasks: 7, harborTasks: 7 } }).groups.find((group) => group.id === benchmarkId);
+  const benchmark = buildBenchmarkLandscape({ generatedAt: "2026-08-20T00:00:00.000Z", vendors: [vendor], totals: { vendors: 1, submissions: 1, tasks: 7, harborTasks: 7 } }, params.get("capability") || undefined).groups.find((group) => group.id === benchmarkId);
   if (!benchmark || (scope === "shortlisted" && !benchmark.shortlist?.records.length)) return null;
   return { manifest: benchmarkHarborDatasetManifest(benchmark, scope), filename: benchmarkHarborDatasetFilename(benchmark, scope) };
 }

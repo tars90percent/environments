@@ -1,5 +1,6 @@
 "use client";
 
+import { sampleGroup, sampleCapability, capabilityLabel } from "./sample-classification";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import type {
@@ -44,7 +45,7 @@ const text = {
     eyebrow: "CASE registry",
     title: "Environment & Task Samples",
     search: "Search vendors, submissions, or tasks",
-    benchmarks: "By Domain",
+    benchmarks: "By Benchmark",
     byVendor: "By Vendor",
     modelBenchmarks: "Benchmark Catalog",
     searchModelBenchmarks: "Search benchmarks",
@@ -55,7 +56,7 @@ const text = {
     harborFormat: "Harbor task",
     publisherNative: "Publisher native",
     formatOnly: "Format only",
-    benchmarkDirections: "Benchmark directions",
+    benchmarkDirections: "Sample groups",
     benchmarkCategories: "Benchmark groups",
     landscapeTitle: "RL task landscape",
     landscapeIntro: "See the Harbor tasks vendors are offering, organized by the benchmark distributions they target.",
@@ -70,7 +71,7 @@ const text = {
     otherSamples: "Other cataloged samples",
     catalogSamples: "Cataloged Harbor samples",
     allCatalogSamples: "All cataloged samples",
-    benchmarkTaskNote: "The exact registered tasks targeting this benchmark direction, grouped by vendor.",
+    benchmarkTaskNote: "The exact registered tasks targeting this benchmark/version group, grouped by vendor.",
     openVendor: "Open vendor record",
     vendors: "Vendors",
     submissions: "Submissions",
@@ -121,7 +122,7 @@ const text = {
     eyebrow: "CASE 样本库",
     title: "环境与任务样本",
     search: "搜索供应商、提交记录或任务",
-    benchmarks: "按领域",
+    benchmarks: "按基准",
     byVendor: "按供应商",
     modelBenchmarks: "Benchmark Catalog",
     searchModelBenchmarks: "搜索 Benchmark",
@@ -132,7 +133,7 @@ const text = {
     harborFormat: "Harbor 任务",
     publisherNative: "发布方原生格式",
     formatOnly: "仅格式说明",
-    benchmarkDirections: "Benchmark 方向",
+    benchmarkDirections: "样本分组",
     benchmarkCategories: "Benchmark 分组",
     landscapeTitle: "RL 任务全景",
     landscapeIntro: "按目标基准分布查看各供应商提供的 Harbor 任务。",
@@ -174,7 +175,7 @@ const text = {
     directCaseImport: "直接导入 CASE",
     dataset: "下载任务",
     downloadAllHarbor: "下载全部 Harbor 任务",
-    benchmarkDownloadNote: "包含此基准下所有供应商和提交的任务，不受搜索条件影响。",
+    benchmarkDownloadNote: "包含当前基准版本与能力筛选下所有供应商和提交的任务，不受搜索条件影响。",
     preparingHarborDownload: "正在准备 ZIP…",
     retryHarborDownload: "重新下载",
     harborDownloadFailed: "ZIP 准备失败。",
@@ -219,6 +220,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [language, setLanguage] = useState<Language>("zh");
   const [view, setView] = useState<PortalView>(initialView);
   const [query, setQuery] = useState("");
+  const [capabilityId, setCapabilityId] = useState("");
   const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState(initialCatalog?.vendors.find(hasVendorRecord)?.id ?? "");
   const t = text[language];
@@ -250,7 +252,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
 
   const vendors = useMemo(() => (catalog?.vendors ?? []).filter(hasVendorRecord), [catalog]);
   const vendorRecordCount = catalog ? vendors.length : undefined;
-  const landscape = useMemo(() => catalog ? buildBenchmarkLandscape(catalog) : null, [catalog]);
+  const landscape = useMemo(() => catalog ? buildBenchmarkLandscape(catalog, capabilityId || undefined) : null, [catalog, capabilityId]);
   const matchingBenchmarkGroups = useMemo(() => {
     if (!landscape) return [];
     const normalized = query.trim().toLowerCase();
@@ -349,7 +351,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
         {view === "benchmarks" ? <>
           <Stat label={selectedBenchmark?.shortlist ? t.shortlistedSamples : t.harbor} value={selectedBenchmark ? benchmarkSampleCount(selectedBenchmark) : landscape?.taskCount} />
           {!selectedBenchmark && <Stat label={t.benchmarkDirections} value={landscape?.benchmarkCount} />}
-          <Stat label={selectedBenchmark?.shortlist ? t.shortlistedVendors : t.vendors} value={selectedBenchmark?.shortlist?.vendorCount ?? selectedBenchmark?.vendorCount ?? vendorRecordCount} />
+          <Stat label={selectedBenchmark?.shortlist ? t.shortlistedVendors : t.vendors} value={selectedBenchmark?.shortlist?.vendorCount ?? selectedBenchmark?.vendorCount ?? landscape?.vendorCount} />
         </> : <>
           <Stat label={t.vendors} value={vendorRecordCount} />
           <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
@@ -358,13 +360,14 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     </section>}
 
     <div className="page-body">
+    {view === "benchmarks" && landscape && !selectedBenchmark && <label className="capability-filter"><span>{language === "zh" ? "能力类别" : "Capability"}</span><select value={capabilityId} onChange={(event) => { setCapabilityId(event.target.value); setSelectedBenchmarkId(null); }}><option value="">{language === "zh" ? "全部能力类别" : "All capabilities"}</option>{landscape.capabilities.map((capability) => <option value={capability.id} key={capability.id}>{capabilityLabel(capability.displayName, language)} ({capability.taskCount})</option>)}</select></label>}
     {view !== "model-benchmarks" && view !== "model-explanation" && view !== "model-task" && state === "loading" && <StateCard>{t.loading}</StateCard>}
     {view !== "model-benchmarks" && view !== "model-explanation" && view !== "model-task" && state === "unavailable" && <StateCard>{t.unavailable}</StateCard>}
     {view === "model-benchmarks" && <ModelBenchmarkReferencePage language={language} localPreview={localPreview} query={query} />}
     {view === "model-explanation" && initialModelBenchmark && initialModelExplanation && <ModelBenchmarkExplanationPage benchmark={initialModelBenchmark} explanation={initialModelExplanation} language={language} localPreview={localPreview} />}
     {view === "model-task" && initialModelBenchmark && initialModelSample && <ModelBenchmarkTaskDetail benchmark={initialModelBenchmark} language={language} localPreview={localPreview} sample={initialModelSample} />}
     {state === "ready" && view === "benchmarks" && landscape && !selectedBenchmark && <BenchmarkOverview categories={matchingBenchmarkCategories} language={language} onSelect={(benchmarkId) => { setSelectedBenchmarkId(benchmarkId); setQuery(""); scrollToTop(); }} totalTasks={landscape.taskCount} />}
-    {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail vendors={vendors} benchmark={selectedBenchmark} downloadHref={localPreview ? `/local-preview/vendor-harbor-download?benchmark=${encodeURIComponent(selectedBenchmark.id)}` : `/api/benchmarks/${encodeURIComponent(selectedBenchmark.id)}/harbor-download`} language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}
+    {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail vendors={vendors} benchmark={selectedBenchmark} downloadHref={(localPreview ? `/local-preview/vendor-harbor-download?benchmark=${encodeURIComponent(selectedBenchmark.id)}` : `/api/benchmarks/${encodeURIComponent(selectedBenchmark.id)}/harbor-download`) + (capabilityId ? `${localPreview ? "&" : "?"}capability=${encodeURIComponent(capabilityId)}` : "")} language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}
     {state === "ready" && view === "vendors" && !selectedVendor && <StateCard>{t.noMatch}</StateCard>}
     {state === "ready" && view === "vendors" && selectedVendor && <div className="portal-grid">
       <aside className="vendor-sidebar" aria-label={t.vendors}>
@@ -393,7 +396,7 @@ function BenchmarkOverview({ categories, language, onSelect, totalTasks }: { cat
       <header className="benchmark-category-header">
         <div className="category-index">{String(index + 1).padStart(2, "0")}</div>
         <div><h2>{category.label[language]}</h2><p>{category.description[language]}</p></div>
-        <div className="category-totals"><strong>{category.taskCount}</strong><span>{category.id === "active-procurement" ? (language === "zh" ? "采购范围 Harbor 样本" : "Harbor samples in scope") : t.harbor}</span><small>{category.benchmarkCount} {countLabel(category.benchmarkCount, language, "benchmark direction", t.benchmarkDirections.toLowerCase())}</small></div>
+        <div className="category-totals"><strong>{category.taskCount}</strong><span>{category.id === "active-procurement" ? (language === "zh" ? "采购范围 Harbor 样本" : "Harbor samples in scope") : t.harbor}</span><small>{category.benchmarkCount} {countLabel(category.benchmarkCount, language, "sample group", t.benchmarkDirections.toLowerCase())}</small></div>
       </header>
       <div className="benchmark-card-grid">{category.groups.map((group) => <BenchmarkCard group={group} key={group.id} language={language} onSelect={onSelect} totalTasks={totalTasks} />)}</div>
     </section>)}</div>
@@ -407,11 +410,12 @@ export function BenchmarkCard({ group, language, onSelect, totalTasks }: { group
   const vendorNames = group.shortlist?.vendorIds.map((id) => group.records.find((record) => record.vendor.id === id)?.vendor.name).filter(Boolean).join(" · ");
   const share = totalTasks ? Math.max((sampleCount / totalTasks) * 100, 1.5) : 0;
   return <button aria-label={`${group.displayName}: ${sampleCount} ${t.harbor}${group.shortlist ? ` · ${vendorCount} ${t.shortlistedVendors.toLowerCase()}` : ""}`} className="benchmark-card" onClick={() => onSelect(group.id)} type="button">
-    <span className="benchmark-card-top"><code>{group.id}</code><span aria-hidden>↗</span></span>
-    <strong>{group.displayName}</strong>
+    <span className="benchmark-card-top"><span>{group.id.startsWith("capability:") ? (language === "zh" ? "能力类别" : "Capability") : (language === "zh" ? "基准分布" : "Benchmark distribution")}</span><span aria-hidden>↗</span></span>
+    <strong>{capabilityLabel(group.displayName, language)}</strong>
     <span className="benchmark-card-meta"><b>{sampleCount}</b> {countLabel(sampleCount, language, "task", t.taskRecords)} · {vendorCount} {group.shortlist ? t.shortlistedVendors.toLowerCase() : countLabel(vendorCount, language, "vendor", t.vendors.toLowerCase())}</span>
     {group.shortlist && <span className="benchmark-card-shortlist">{vendorNames}</span>}
     {group.categoryId !== "active-procurement" && <span aria-hidden className="benchmark-share"><i style={{ width: `${share}%` }} /></span>}
+    {group.capabilities && <span className="benchmark-capabilities">{group.capabilities.slice(0, 2).map((item) => capabilityLabel(item.displayName, language)).join(" · ")}{group.capabilities.length > 2 ? ` +${group.capabilities.length - 2}` : ""}</span>}
     <span className="benchmark-card-action">{t.viewTasks}</span>
   </button>;
 }
@@ -434,7 +438,8 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
   }) ?? []);
   const download = <div className="benchmark-catalog-download">{shortlist && <h3>{t.allCatalogSamples}</h3>}<HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={benchmark.taskCount} /><p className="benchmark-download-note">{t.benchmarkDownloadNote}</p></div>;
   return <div className="benchmark-detail">
-    {benchmark.categoryId === "active-procurement" && <BenchmarkDeliveryTimeline vendors={primaryVendors} benchmarkId={benchmark.id} language={language} onOpenVendor={onOpenVendor} />}
+    {benchmark.capabilityId && <p className="benchmark-download-note">{language === "zh" ? "当前能力类别：" : "Selected capability: "}{capabilityLabel(benchmark.capabilities?.find((item) => item.id === benchmark.capabilityId)?.displayName ?? "", language)}</p>}
+    {benchmark.categoryId === "active-procurement" && <BenchmarkDeliveryTimeline vendors={primaryVendors} benchmarkId={benchmark.id} capabilityId={benchmark.capabilityId} language={language} onOpenVendor={onOpenVendor} />}
     {!shortlist && download}
     <section className="benchmark-task-section">
       <div className="section-title"><div><h3>{shortlist ? t.shortlistedVendors : t.benchmarkTasks}</h3><p>{shortlist ? t.shortlistedSamples : t.benchmarkTaskNote}</p></div><span>{primaryRecords.length} {t.taskRecords}</span></div>
@@ -444,10 +449,10 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
       </div>}
       <BenchmarkVendorSamples records={primaryRecords} benchmark={benchmark} language={language} onOpenVendor={onOpenVendor} />
     </section>
-    {shortlist && (otherCount > 0 || benchmarkDeliveries(otherVendors, benchmark.id).length > 0) && <details className="benchmark-other-samples" key={benchmark.id}>
+    {shortlist && (otherCount > 0 || benchmarkDeliveries(otherVendors, benchmark.id, benchmark.capabilityId).length > 0) && <details className="benchmark-other-samples" key={benchmark.id}>
       <summary><strong>{t.otherSamples}</strong><span>{otherRecords.length} {t.catalogSamples}</span></summary>
       <div className="benchmark-other-content">
-        <BenchmarkDeliveryTimeline vendors={otherVendors} benchmarkId={benchmark.id} language={language} onOpenVendor={onOpenVendor} />
+        <BenchmarkDeliveryTimeline vendors={otherVendors} benchmarkId={benchmark.id} capabilityId={benchmark.capabilityId} language={language} onOpenVendor={onOpenVendor} />
         <BenchmarkVendorSamples records={otherRecords} benchmark={benchmark} language={language} onOpenVendor={onOpenVendor} />
       </div>
     </details>}
@@ -458,14 +463,15 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
 function BenchmarkVendorSamples({ records, benchmark, language, onOpenVendor }: { records: HarborTaskContext[]; benchmark: BenchmarkGroup; language: Language; onOpenVendor: (vendorId: string) => void }) {
   const t = text[language];
   const vendorGroups = groupRecordsByVendor(records);
+  const inventoryDirectionId = benchmark.inventoryDirectionId ?? (benchmark.id.startsWith("benchmark:") ? undefined : benchmark.id);
   return vendorGroups.length === 0 ? <StateCard>{t.noMatch}</StateCard> : <div className="benchmark-vendor-list">{vendorGroups.map(({ vendor, records: vendorRecords }) => <section className="benchmark-vendor-group" key={vendor.id}>
-    <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : "Harbor samples"}<b aria-hidden>→</b></span></button>{benchmark.categoryId === "active-procurement" && <VendorInventory vendor={vendor} benchmarkId={benchmark.id} language={language} />}</header>
+    <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : "Harbor samples"}<b aria-hidden>→</b></span></button>{benchmark.categoryId === "active-procurement" && inventoryDirectionId && <VendorInventory vendor={vendor} benchmarkId={inventoryDirectionId} language={language} />}</header>
     <div className="task-list">{vendorRecords.map((record) => <TaskRow contextLabel={`${record.submission.label} · ${formatDate(record.submission.date, language)}`} hideBenchmark key={record.task.id} language={language} task={record.task} />)}</div>
   </section>)}</div>;
 }
 
-function BenchmarkDeliveryTimeline({ vendors, benchmarkId, language, onOpenVendor }: { vendors: CatalogVendor[]; benchmarkId: string; language: Language; onOpenVendor: (vendorId: string) => void }) {
-  const deliveries = benchmarkDeliveries(vendors, benchmarkId);
+function BenchmarkDeliveryTimeline({ vendors, benchmarkId, capabilityId, language, onOpenVendor }: { vendors: CatalogVendor[]; benchmarkId: string; capabilityId?: string; language: Language; onOpenVendor: (vendorId: string) => void }) {
+  const deliveries = benchmarkDeliveries(vendors, benchmarkId, capabilityId);
   if (!deliveries.length) return null;
   const total = deliveries.reduce((sum, delivery) => sum + delivery.taskCount, 0);
   return <section className="benchmark-delivery-timeline" aria-label={language === "zh" ? "样本交付时间线" : "Sample delivery timeline"}>
@@ -659,7 +665,8 @@ function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task
       <h5>{task.title}</h5>
       <div className="task-meta">
         {contextLabel && <span>{contextLabel}</span>}
-        {!hideBenchmark && task.benchmark.id !== "unspecified" && <span>{task.benchmark.displayName}</span>}
+        {!hideBenchmark && (task.classification || task.benchmark.id !== "unspecified") && <span>{sampleGroup(task).displayName}</span>}
+        {task.classification && <span>{capabilityLabel(sampleCapability(task).displayName, language)}</span>}
         <span>{task.format === "harbor" ? "Harbor" : t.nonHarbor}</span>
         {task.gpuRequired && <span>{t.gpuRequired}</span>}
         {task.kind === "trace" && <span>{t.trace}</span>}
@@ -672,6 +679,7 @@ function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task
     </div>
     <div className="task-actions">{task.artifactId && <a href={`/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
     </div>
+    {task.classification && <details className="classification-evidence"><summary>{language === "zh" ? "分类依据" : "Classification evidence"}</summary><p>{task.classification.relationship}</p><p>{language === "zh" ? "原始方向：" : "Original direction: "}{task.classification.sourceBenchmark.displayName}</p>{task.classification.benchmarkGroup && <p>{language === "zh" ? "版本分组：" : "Version grouping: "}{task.classification.benchmarkGroup.version ?? (language === "zh" ? "按基准整体归组" : "Benchmark family; no version split")}</p>}<p>{task.classification.evidence}</p></details>}
     {task.findings.length > 0 && <div className="task-findings"><div className="finding-title">{t.findings}</div><div className="task-finding-list">{task.findings.map((finding) => <div className="task-finding" key={finding.id}><strong>{phaseLabels[finding.phase]}</strong><p>{finding.finding}</p></div>)}</div></div>}
   </article>;
 }
@@ -704,7 +712,7 @@ function vendorRecordSummary(vendor: CatalogVendor, language: Language): string 
 }
 
 function vendorSearchText(vendor: CatalogVendor): string {
-  return [vendor.name, vendor.short, ...vendor.interactions.flatMap((interaction) => [interaction.title, interaction.summary, interaction.eventType]), ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, task.benchmark.displayName, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
+  return [vendor.name, vendor.short, ...vendor.interactions.flatMap((interaction) => [interaction.title, interaction.summary, interaction.eventType]), ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, sampleGroup(task).displayName, sampleCapability(task).displayName, task.benchmark.displayName, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
 }
 
 function benchmarkGroupSearchText(group: BenchmarkGroup, language: Language): string {
@@ -722,6 +730,9 @@ function benchmarkGroupSearchText(group: BenchmarkGroup, language: Language): st
       record.task.title,
       record.task.stableKey,
       record.task.summary ?? "",
+    sampleGroup(record.task).displayName,
+    sampleCapability(record.task).displayName,
+
     ]),
   ].join(" ").toLowerCase();
 }
@@ -734,6 +745,8 @@ function benchmarkRecordSearchText(record: HarborTaskContext): string {
     record.task.title,
     record.task.stableKey,
     record.task.summary ?? "",
+    sampleGroup(record.task).displayName,
+    sampleCapability(record.task).displayName,
     record.task.sourcePath ? displayArchivePath(record.task.sourcePath) : "",
   ].join(" ").toLowerCase();
 }
