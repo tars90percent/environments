@@ -1,3 +1,4 @@
+import type { TaskClassification } from "./sample-classification.js";
 export type WorkflowStatus =
   | "unchecked"
   | "received"
@@ -1063,6 +1064,8 @@ export type SampleCatalogFinding = {
 };
 
 export type SampleCatalogTask = {
+  /** Reviewed capability and benchmark/version grouping; benchmark retains the source direction. */
+  classification?: TaskClassification | null;
   id: string;
   stableKey: string;
   title: string;

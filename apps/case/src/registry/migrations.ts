@@ -1902,6 +1902,33 @@ export const registryMigrations: readonly Migration[] = [
       ALTER TABLE registry_tasks ADD COLUMN merged_into_id text REFERENCES registry_tasks(id);
     `,
   },
+  {
+    id: "027_sample_classification",
+    sql: `
+      CREATE TABLE registry_sample_capabilities (
+        id text PRIMARY KEY, display_name text NOT NULL UNIQUE, description text NOT NULL
+      );
+      CREATE TABLE registry_sample_benchmark_groups (
+        id text PRIMARY KEY, family text NOT NULL, version text,
+        UNIQUE NULLS NOT DISTINCT (family, version)
+      );
+      CREATE TABLE registry_sample_taxonomy_events (
+        id bigserial PRIMARY KEY, actor text NOT NULL, reason text NOT NULL,
+        definitions jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE registry_task_classifications (
+        id bigserial PRIMARY KEY,
+        task_version_id text NOT NULL REFERENCES registry_task_versions(id) ON DELETE CASCADE,
+        capability_id text NOT NULL REFERENCES registry_sample_capabilities(id),
+        benchmark_group_id text REFERENCES registry_sample_benchmark_groups(id),
+        evidence text NOT NULL, relationship text NOT NULL, source_benchmark jsonb NOT NULL,
+        actor text NOT NULL, reason text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX registry_task_classifications_current_idx ON registry_task_classifications(task_version_id, id DESC);
+      CREATE VIEW registry_current_task_classifications AS
+        SELECT DISTINCT ON (task_version_id) * FROM registry_task_classifications ORDER BY task_version_id, id DESC;
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

@@ -28,7 +28,7 @@ When a delivery contains clearly bounded tasks or traces, record and link them t
 
 Record a task as Harbor only when it is intended for Harbor and its exact delivered root passes the static format validation from CASE's pinned Harbor library. A clear task that fails remains in the catalog as non-Harbor. Format validation may read task files but must not build an image, start an environment, or execute vendor code.
 
-Assign each parsed item a registered general benchmark direction from an explicit declaration or its full context; use `unspecified` when the direction is unclear. Preserve samples as delivered rather than silently repairing, normalizing, or converting them.
+Assign each parsed item a registered general benchmark direction from an explicit declaration or its full context; use `unspecified` when the direction is unclear. For reviewed categorization, use `casectl registry sample-taxonomy` and `classify-tasks` to record a capability separately from a benchmark family/version group. Preserve the delivered direction as source evidence. Keep distinguishable benchmark distributions separate; when versions cannot be usefully distinguished, use one family group without claiming a specific release. Use no benchmark attribution when it is not established. Classification evidence must distinguish vendor targeting from verified benchmark membership. Read the current classification before updating; retain prior decisions through the supported append-only history. Preserve samples as delivered rather than silently repairing, normalizing, or converting them.
 
 ## Evaluation and distribution
 

@@ -1,3 +1,4 @@
+import type { SampleTaxonomy, RegisterSampleTaxonomyInput, ClassifyTasksInput, ClassifyTasksResult, TaskClassification } from "./sample-classification.js";
 import type { FileFilingRepository } from "./file-filing.js";
 import type {
   ArtifactInput,
@@ -64,6 +65,10 @@ export interface RegistryRepository {
   captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
   reconcileSubmissionSourceItems(input: ReconcileSubmissionSourceItemsInput): Promise<ReconcileSubmissionSourceItemsResult>;
   ingestSubmission(manifest: SubmissionManifest): Promise<{ submissionId: string; created: boolean }>;
+  sampleTaxonomy(): Promise<SampleTaxonomy>;
+  registerSampleTaxonomy(input: RegisterSampleTaxonomyInput): Promise<SampleTaxonomy>;
+  classifyTasks(input: ClassifyTasksInput): Promise<ClassifyTasksResult>;
+  taskClassificationHistory(taskId: string): Promise<TaskClassification[]>;
   listBenchmarks(): Promise<RegistryBenchmark[]>;
   registerBenchmark(input: RegisterBenchmarkInput): Promise<RegisterBenchmarkResult>;
   updateBenchmark(input: UpdateBenchmarkInput): Promise<UpdateBenchmarkResult>;

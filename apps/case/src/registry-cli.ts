@@ -18,6 +18,8 @@ import { migrateFiles, planFileFiling, pruneOldFileCopies } from "./registry/fil
 import type { FileContext } from "./registry/file-names.js";
 import {
   parseAssignTaskBenchmarks,
+  parseClassifyTasks,
+  parseSampleTaxonomy,
   parseAssignTaskGpuRequirements,
   parseAppendTasks,
   parseCaptureSubmission,
@@ -129,6 +131,18 @@ if (command === "operations") {
         output(sourceEvent);
         break;
       }
+      case "sample-taxonomy":
+        output(await repository.sampleTaxonomy());
+        break;
+      case "register-sample-taxonomy":
+        output(await repository.registerSampleTaxonomy(parseSampleTaxonomy(await jsonFile(argument))));
+        break;
+      case "classify-tasks":
+        output(await repository.classifyTasks(parseClassifyTasks(await jsonFile(argument))));
+        break;
+      case "task-classification-history":
+        output(await repository.taskClassificationHistory(required(argument, "task id")));
+        break;
       case "benchmarks":
         output(await repository.listBenchmarks());
         break;
@@ -280,7 +294,7 @@ if (command === "operations") {
         output(await repository.reconcileHarborWorkItems(parseReconcileHarborWorkItems(await jsonFile(argument))));
         break;
       default:
-        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|benchmarks|register-benchmark|update-benchmark|merge-benchmarks|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|capture-submission|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|file-inventory|plan-file-filing|file-moves|migrate-file-locations|rollback-file-move|prune-old-file-copies|merge-task-identities|correct-task-format|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
+        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|sample-taxonomy|register-sample-taxonomy|classify-tasks|task-classification-history|benchmarks|register-benchmark|update-benchmark|merge-benchmarks|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|capture-submission|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|file-inventory|plan-file-filing|file-moves|migrate-file-locations|rollback-file-move|prune-old-file-copies|merge-task-identities|correct-task-format|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
     }
   } finally {
     try {
@@ -434,6 +448,18 @@ function operationSchemas() {
       fields: ["benchmarkIds", "reason", "actor"],
       note: "Deletes explicitly confirmed erroneous non-current assignment history and now-unused benchmark definitions; refuses current assignments and task-version compatibility references and records a purge event.",
     },
+    "sample-taxonomy": { arguments: [], note: "Lists registered capabilities and benchmark/version groups for reviewed sample classifications." },
+    "register-sample-taxonomy": {
+      arguments: ["<taxonomy.json>"],
+      fields: ["capabilities[{id,displayName,description}]", "benchmarkGroups[{id,family,version:string|null}]", "actor", "reason"],
+      note: "Adds stable definitions atomically, with audited provenance. Replays are safe; different contents under the same id are refused. A null version groups the whole benchmark family without claiming a release.",
+    },
+    "classify-tasks": {
+      arguments: ["<classifications.json>"],
+      fields: ["submissionId", "assignments[{taskId,capabilityId,benchmarkGroupId:string|null,evidence,relationship,expectedClassificationId:string|null,expectedBenchmarkId}]", "actor", "reason"],
+      note: "Appends reviewed capability and benchmark/version classifications atomically per submission. Read catalog first: use classification.id (or null), and benchmark.id as preconditions. A null benchmarkGroupId means no established benchmark attribution. Evidence and relationship distinguish vendor targeting from verified membership. Replays are safe; stale changes are refused. Does not alter original directions, task versions, source evidence, or evaluation results.",
+    },
+    "task-classification-history": { arguments: ["<task-id>"], note: "Returns all reviewed classifications, newest first, retaining the actor, reason and source direction at each decision." },
     "assign-task-benchmarks": {
       arguments: ["<assignments.json>"],
       fields: ["submissionId", "assignments[{taskId,benchmarkId}]", "reason", "actor"],
