@@ -1,4 +1,4 @@
-import { sampleGroup, sampleCapability } from "./sample-classification";
+import { landscapeGroup, procurementGroup, sampleGroup, sampleCapability } from "./sample-classification";
 import type { CatalogSnapshot, CatalogSubmission, CatalogTask, CatalogVendor } from "./catalog";
 
 export type BenchmarkCategoryId =
@@ -205,24 +205,23 @@ export function buildBenchmarkLandscape(catalog: CatalogSnapshot, capabilityId?:
   const records = capabilityId ? allRecords.filter((record) => sampleCapability(record.task).id === capabilityId) : allRecords;
   const recordsByBenchmark = new Map<string, HarborTaskContext[]>();
   for (const record of records) {
-    const existing = recordsByBenchmark.get(sampleGroup(record.task).id) ?? [];
+    const existing = recordsByBenchmark.get(landscapeGroup(record.task).id) ?? [];
     existing.push(record);
-    recordsByBenchmark.set(sampleGroup(record.task).id, existing);
+    recordsByBenchmark.set(landscapeGroup(record.task).id, existing);
   }
 
   const groups = [...recordsByBenchmark.entries()].map(([id, benchmarkRecords]): BenchmarkGroup => {
     const firstTask = benchmarkRecords[0]!.task;
     const identity = sampleGroup(firstTask);
     const classification = firstTask.classification;
-    const procurement = identity.family === "DeepSWE" || identity.family === "Terminal-Bench-Science"
-      || (identity.family === "Terminal-Bench" && ["3 / 3.0", "3 / 4", "4"].includes(identity.version ?? ""));
-    const inventoryDirectionId = identity.family === "DeepSWE" ? "deep-swe" : identity.family === "Terminal-Bench-Science" ? "terminal-bench-science" : classification ? undefined : id;
+    const procurement = procurementGroup(firstTask);
+    const inventoryDirectionId = procurement?.id ?? (classification ? undefined : id);
     const vendorIds = benchmarkShortlists[inventoryDirectionId ?? id];
     const shortlistedRecords = vendorIds ? benchmarkRecords.filter((record) => vendorIds.includes(record.vendor.id)) : [];
     return {
       id,
-      displayName: identity.displayName,
-      categoryId: classification ? procurement ? "active-procurement" : identity.family ? "benchmark-families" : "capability-only" : benchmarkCategoryId(id),
+      displayName: procurement?.displayName ?? identity.displayName,
+      categoryId: procurement ? "active-procurement" : classification ? identity.family ? "benchmark-families" : "capability-only" : benchmarkCategoryId(id),
       capabilityId,
       inventoryDirectionId,
       capabilities: [...Map.groupBy(benchmarkRecords, (record) => sampleCapability(record.task).id)].map(([id, items]) => ({ id, displayName: sampleCapability(items[0]!.task).displayName, taskCount: items.length })).sort((a, b) => b.taskCount - a.taskCount || a.displayName.localeCompare(b.displayName)),

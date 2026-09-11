@@ -410,12 +410,12 @@ export function BenchmarkCard({ group, language, onSelect, totalTasks }: { group
   const vendorNames = group.shortlist?.vendorIds.map((id) => group.records.find((record) => record.vendor.id === id)?.vendor.name).filter(Boolean).join(" · ");
   const share = totalTasks ? Math.max((sampleCount / totalTasks) * 100, 1.5) : 0;
   return <button aria-label={`${group.displayName}: ${sampleCount} ${t.harbor}${group.shortlist ? ` · ${vendorCount} ${t.shortlistedVendors.toLowerCase()}` : ""}`} className="benchmark-card" onClick={() => onSelect(group.id)} type="button">
-    <span className="benchmark-card-top"><span>{group.id.startsWith("capability:") ? (language === "zh" ? "能力类别" : "Capability") : (language === "zh" ? "基准分布" : "Benchmark distribution")}</span><span aria-hidden>↗</span></span>
+    <span className="benchmark-card-top">{group.categoryId === "active-procurement" ? <code>{group.id}</code> : <span>{group.id.startsWith("capability:") ? (language === "zh" ? "能力类别" : "Capability") : (language === "zh" ? "基准分布" : "Benchmark distribution")}</span>}<span aria-hidden>↗</span></span>
     <strong>{capabilityLabel(group.displayName, language)}</strong>
     <span className="benchmark-card-meta"><b>{sampleCount}</b> {countLabel(sampleCount, language, "task", t.taskRecords)} · {vendorCount} {group.shortlist ? t.shortlistedVendors.toLowerCase() : countLabel(vendorCount, language, "vendor", t.vendors.toLowerCase())}</span>
     {group.shortlist && <span className="benchmark-card-shortlist">{vendorNames}</span>}
     {group.categoryId !== "active-procurement" && <span aria-hidden className="benchmark-share"><i style={{ width: `${share}%` }} /></span>}
-    {group.capabilities && <span className="benchmark-capabilities">{group.capabilities.slice(0, 2).map((item) => capabilityLabel(item.displayName, language)).join(" · ")}{group.capabilities.length > 2 ? ` +${group.capabilities.length - 2}` : ""}</span>}
+    {group.categoryId !== "active-procurement" && group.capabilities && <span className="benchmark-capabilities">{group.capabilities.slice(0, 2).map((item) => capabilityLabel(item.displayName, language)).join(" · ")}{group.capabilities.length > 2 ? ` +${group.capabilities.length - 2}` : ""}</span>}
     <span className="benchmark-card-action">{t.viewTasks}</span>
   </button>;
 }
@@ -466,7 +466,7 @@ function BenchmarkVendorSamples({ records, benchmark, language, onOpenVendor }: 
   const inventoryDirectionId = benchmark.inventoryDirectionId ?? (benchmark.id.startsWith("benchmark:") ? undefined : benchmark.id);
   return vendorGroups.length === 0 ? <StateCard>{t.noMatch}</StateCard> : <div className="benchmark-vendor-list">{vendorGroups.map(({ vendor, records: vendorRecords }) => <section className="benchmark-vendor-group" key={vendor.id}>
     <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : "Harbor samples"}<b aria-hidden>→</b></span></button>{benchmark.categoryId === "active-procurement" && inventoryDirectionId && <VendorInventory vendor={vendor} benchmarkId={inventoryDirectionId} language={language} />}</header>
-    <div className="task-list">{vendorRecords.map((record) => <TaskRow contextLabel={`${record.submission.label} · ${formatDate(record.submission.date, language)}`} hideBenchmark key={record.task.id} language={language} task={record.task} />)}</div>
+    <div className="task-list">{vendorRecords.map((record) => <TaskRow contextLabel={`${record.submission.label} · ${formatDate(record.submission.date, language)}`} hideBenchmark={benchmark.categoryId !== "active-procurement"} key={record.task.id} language={language} task={record.task} />)}</div>
   </section>)}</div>;
 }
 
@@ -730,9 +730,8 @@ function benchmarkGroupSearchText(group: BenchmarkGroup, language: Language): st
       record.task.title,
       record.task.stableKey,
       record.task.summary ?? "",
-    sampleGroup(record.task).displayName,
-    sampleCapability(record.task).displayName,
-
+      sampleGroup(record.task).displayName,
+      sampleCapability(record.task).displayName,
     ]),
   ].join(" ").toLowerCase();
 }

@@ -1,9 +1,9 @@
-import { sampleGroup, sampleCapability } from "./sample-classification";
+import { landscapeGroup, sampleCapability } from "./sample-classification";
 import type { CatalogVendor } from "./catalog";
 
 export function benchmarkDeliveries(vendors: CatalogVendor[], benchmarkId: string, capabilityId?: string) {
   return vendors.flatMap((vendor) => vendor.submissions.flatMap((submission) => {
-    const tasks = submission.tasks.filter((task) => task.kind === "task" && sampleGroup(task).id === benchmarkId && (!capabilityId || sampleCapability(task).id === capabilityId));
+    const tasks = submission.tasks.filter((task) => task.kind === "task" && landscapeGroup(task).id === benchmarkId && (!capabilityId || sampleCapability(task).id === capabilityId));
     if (!tasks.length) return [];
     return [{
       vendorId: vendor.id,

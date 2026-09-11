@@ -1,5 +1,17 @@
 import type { CatalogTask } from "./catalog";
 
+const procurementDirections = new Set(["terminal-bench-3-4", "terminal-bench-science", "deep-swe"]);
+
+// Procurement scope is an existing business grouping, independent of reviewed
+// benchmark attribution. Classification must not split it or promote new members.
+export function procurementGroup(task: CatalogTask): CatalogTask["benchmark"] | undefined {
+  return procurementDirections.has(task.benchmark.id) ? task.benchmark : undefined;
+}
+
+export function landscapeGroup(task: CatalogTask) {
+  return procurementGroup(task) ?? sampleGroup(task);
+}
+
 /** Family/version identity never depends on vendor, delivery, interface or capability. */
 export function sampleGroup(task: CatalogTask): { id: string; displayName: string; family?: string; version?: string | null } {
   const classification = task.classification;
