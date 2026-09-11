@@ -817,10 +817,4 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .delivery-timeline-scroll summary { cursor: pointer; }
 .delivery-timeline-scroll details p { line-height: 1.5; }
 
-.capability-filter { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; color: var(--muted); font-size: 13px; }
-.capability-filter select { max-width: 100%; padding: 10px 36px 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
 .benchmark-capabilities { font-size: 11px; line-height: 1.6; color: var(--muted); }
-.classification-evidence { margin-top: 12px; font-size: 12px; line-height: 1.7; color: var(--muted); }
-.classification-evidence summary { cursor: pointer; }
-.classification-evidence p { white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .capability-filter { align-items: flex-start; flex-direction: column; } }
