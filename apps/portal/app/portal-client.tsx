@@ -348,7 +348,13 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       {view !== "model-benchmarks" && <div className="eyebrow">{view === "benchmarks" && selectedBenchmarkCategory ? selectedBenchmarkCategory.label[language] : t.eyebrow}</div>}
       <h1>{headerTitle}</h1>
       {headerIntro && <p className="registry-intro">{headerIntro}</p>}
-      {view !== "model-benchmarks" && <div className="registry-stats">
+      {view === "benchmarks" && !selectedBenchmark && <p className="landscape-summary">
+        <strong className="landscape-task-total">{landscape?.taskCount ?? "—"}</strong>
+        {language === "zh" ? " 个 Harbor 任务，来自 " : " Harbor tasks from "}
+        <strong>{landscape?.vendorCount ?? "—"}</strong>
+        {language === "zh" ? " 家供应商" : " vendors"}
+      </p>}
+      {view !== "model-benchmarks" && (view !== "benchmarks" || selectedBenchmark) && <div className="registry-stats">
         {view === "benchmarks" && selectedBenchmark ? <>
           <Stat label={selectedBenchmark.shortlist ? t.shortlistedSamples : t.harbor} value={benchmarkSampleCount(selectedBenchmark)} />
           <Stat label={selectedBenchmark.shortlist ? t.shortlistedVendors : t.vendors} value={selectedBenchmark.shortlist?.vendorCount ?? selectedBenchmark.vendorCount} />

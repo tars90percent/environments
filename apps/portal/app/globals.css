@@ -62,6 +62,9 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .registry-stats > span { min-height: 0; padding: 0 26px; display: flex; align-items: baseline; gap: 8px; border-left: 1px solid var(--line); color: var(--muted); font-size: 11px; white-space: nowrap; }
 .registry-stats > span:first-child { padding-left: 0; border-left: 0; }
 .registry-stats strong { color: var(--burgundy); font-size: 24px; line-height: 1; font-weight: 560; letter-spacing: -.035em; }
+.landscape-summary { margin: 34px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.landscape-summary strong { color: var(--burgundy); font-weight: 600; }
+.landscape-summary .landscape-task-total { font-size: 24px; line-height: 1; font-weight: 560; letter-spacing: -.035em; }
 
 .page-body { width: min(1380px, calc(100% - 64px)); margin: 0 auto; padding: 0 0 96px; }
 
