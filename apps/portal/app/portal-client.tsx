@@ -221,7 +221,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [view, setView] = useState<PortalView>(initialView);
   const [query, setQuery] = useState("");
   const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(null);
-  const [selectedVendorId, setSelectedVendorId] = useState(initialCatalog?.vendors.find(hasVendorRecord)?.id ?? "");
+  const [selectedVendorId, setSelectedVendorId] = useState(vendorsForDisplay(initialCatalog?.vendors ?? [])[0]?.id ?? "");
   const t = text[language];
 
   useEffect(() => {
@@ -239,7 +239,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       .then((snapshot) => {
         if (!active) return;
         setCatalog(snapshot);
-        const visibleVendors = snapshot.vendors.filter(hasVendorRecord);
+        const visibleVendors = vendorsForDisplay(snapshot.vendors);
         setSelectedVendorId((current) => visibleVendors.some((vendor) => vendor.id === current)
           ? current
           : visibleVendors[0]?.id ?? "");
@@ -249,7 +249,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     return () => { active = false; };
   }, [catalog, initialCatalog, view]);
 
-  const vendors = useMemo(() => (catalog?.vendors ?? []).filter(hasVendorRecord), [catalog]);
+  const vendors = useMemo(() => vendorsForDisplay(catalog?.vendors ?? []), [catalog]);
   const vendorRecordCount = catalog ? vendors.length : undefined;
   const landscape = useMemo(() => catalog ? buildBenchmarkLandscape(catalog) : null, [catalog]);
   const matchingBenchmarkGroups = useMemo(() => {
@@ -695,6 +695,11 @@ function HarborChecks({ task, language }: { task: CatalogTask; language: Languag
 
 function hasVendorRecord(vendor: CatalogVendor): boolean {
   return vendor.submissions.length > 0 || vendor.hasTimeline || vendor.interactions.length > 0;
+}
+
+function vendorsForDisplay(vendors: CatalogVendor[]): CatalogVendor[] {
+  const hasHarborTasks = (vendor: CatalogVendor) => vendor.submissions.some((submission) => submission.tasks.some((task) => task.kind === "task" && task.format === "harbor"));
+  return vendors.filter(hasVendorRecord).sort((left, right) => Number(hasHarborTasks(right)) - Number(hasHarborTasks(left)));
 }
 
 function vendorRecordSummary(vendor: CatalogVendor, language: Language): string {
