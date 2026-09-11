@@ -87,7 +87,7 @@ const worker = {
           const scope = url.searchParams.get("scope") ?? "all";
           if (scope !== "all" && scope !== "shortlisted") return Response.json({ error: "invalid_download_scope" }, { status: 400, headers: { "cache-control": "no-store" } });
           const benchmarkId = decodeURIComponent(benchmarkHarborDownloadMatch[1]);
-          const benchmark = buildBenchmarkLandscape(catalog).groups.find((candidate) => candidate.id === benchmarkId);
+          const benchmark = buildBenchmarkLandscape(catalog, url.searchParams.get("capability") || undefined).groups.find((candidate) => candidate.id === benchmarkId);
           if (!benchmark) return Response.json({ error: "benchmark_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
           if (scope === "shortlisted" && !benchmark.shortlist) return Response.json({ error: "benchmark_shortlist_not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
           manifest = benchmarkHarborDatasetManifest(benchmark, scope);

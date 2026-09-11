@@ -29,6 +29,17 @@ export type CatalogFinding = {
 };
 
 export type CatalogTask = {
+  classification?: {
+    id: string;
+    capability: { id: string; displayName: string; description: string };
+    benchmarkGroup: { id: string; family: string; version: string | null } | null;
+    evidence: string;
+    relationship: string;
+    sourceBenchmark: { id: string; displayName: string };
+    actor: string;
+    reason: string;
+    createdAt: string;
+  } | null;
   id: string;
   stableKey: string;
   title: string;

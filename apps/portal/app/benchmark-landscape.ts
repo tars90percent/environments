@@ -1,3 +1,4 @@
+import { landscapeGroup, procurementGroup, sampleGroup, sampleCapability } from "./sample-classification";
 import type { CatalogSnapshot, CatalogSubmission, CatalogTask, CatalogVendor } from "./catalog";
 
 export type BenchmarkCategoryId =
@@ -8,7 +9,9 @@ export type BenchmarkCategoryId =
   | "security"
   | "science-reasoning"
   | "specialized"
-  | "other";
+  | "other"
+  | "benchmark-families"
+  | "capability-only";
 
 export type BenchmarkCategoryDefinition = {
   id: BenchmarkCategoryId;
@@ -30,6 +33,9 @@ export type BenchmarkGroup = {
   vendorCount: number;
   submissionCount: number;
   records: HarborTaskContext[];
+  capabilityId?: string;
+  capabilities?: Array<{ id: string; displayName: string; taskCount: number }>;
+  inventoryDirectionId?: string;
   shortlist?: { vendorIds: readonly string[]; records: HarborTaskContext[]; vendorCount: number };
 };
 
@@ -45,6 +51,7 @@ export type BenchmarkLandscape = {
   vendorCount: number;
   groups: BenchmarkGroup[];
   categories: BenchmarkCategoryGroup[];
+  capabilities: Array<{ id: string; displayName: string; taskCount: number }>;
 };
 
 export const benchmarkCategoryDefinitions: BenchmarkCategoryDefinition[] = [
@@ -190,24 +197,34 @@ export function benchmarkSampleCount(group: BenchmarkGroup): number {
   return group.shortlist?.records.length ?? group.taskCount;
 }
 
-export function buildBenchmarkLandscape(catalog: CatalogSnapshot): BenchmarkLandscape {
-  const records = catalog.vendors.flatMap((vendor) => vendor.submissions.flatMap((submission) => submission.tasks
+export function buildBenchmarkLandscape(catalog: CatalogSnapshot, capabilityId?: string): BenchmarkLandscape {
+  const allRecords = catalog.vendors.flatMap((vendor) => vendor.submissions.flatMap((submission) => submission.tasks
     .filter((task) => task.kind === "task" && task.format === "harbor")
     .map((task) => ({ task, submission, vendor }))));
+  const capabilities = [...Map.groupBy(allRecords, (record) => sampleCapability(record.task).id)].map(([id, items]) => ({ id, displayName: sampleCapability(items[0]!.task).displayName, taskCount: items.length })).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const records = capabilityId ? allRecords.filter((record) => sampleCapability(record.task).id === capabilityId) : allRecords;
   const recordsByBenchmark = new Map<string, HarborTaskContext[]>();
   for (const record of records) {
-    const existing = recordsByBenchmark.get(record.task.benchmark.id) ?? [];
+    const existing = recordsByBenchmark.get(landscapeGroup(record.task).id) ?? [];
     existing.push(record);
-    recordsByBenchmark.set(record.task.benchmark.id, existing);
+    recordsByBenchmark.set(landscapeGroup(record.task).id, existing);
   }
 
   const groups = [...recordsByBenchmark.entries()].map(([id, benchmarkRecords]): BenchmarkGroup => {
-    const vendorIds = benchmarkShortlists[id];
+    const firstTask = benchmarkRecords[0]!.task;
+    const identity = sampleGroup(firstTask);
+    const classification = firstTask.classification;
+    const procurement = procurementGroup(firstTask);
+    const inventoryDirectionId = procurement?.id ?? (classification ? undefined : id);
+    const vendorIds = benchmarkShortlists[inventoryDirectionId ?? id];
     const shortlistedRecords = vendorIds ? benchmarkRecords.filter((record) => vendorIds.includes(record.vendor.id)) : [];
     return {
       id,
-      displayName: benchmarkRecords[0]?.task.benchmark.displayName ?? id,
-      categoryId: benchmarkCategoryId(id),
+      displayName: procurement?.displayName ?? identity.displayName,
+      categoryId: procurement ? "active-procurement" : classification ? identity.family ? "benchmark-families" : "capability-only" : benchmarkCategoryId(id),
+      capabilityId,
+      inventoryDirectionId,
+      capabilities: [...Map.groupBy(benchmarkRecords, (record) => sampleCapability(record.task).id)].map(([id, items]) => ({ id, displayName: sampleCapability(items[0]!.task).displayName, taskCount: items.length })).sort((a, b) => b.taskCount - a.taskCount || a.displayName.localeCompare(b.displayName)),
       taskCount: benchmarkRecords.length,
       vendorCount: new Set(benchmarkRecords.map((record) => record.vendor.id)).size,
       submissionCount: new Set(benchmarkRecords.map((record) => record.submission.id)).size,
@@ -222,7 +239,12 @@ export function buildBenchmarkLandscape(catalog: CatalogSnapshot): BenchmarkLand
     };
   }).sort(compareBenchmarkGroups);
 
-  const categories = benchmarkCategoryDefinitions.map((definition): BenchmarkCategoryGroup => {
+  const definitions: BenchmarkCategoryDefinition[] = [benchmarkCategoryDefinitions[0]!,
+    { id: "benchmark-families", label: { en: "Benchmark families & versions", zh: "基准家族与版本" }, description: { en: "Separate groups for distinguishable versions. Families without a useful version split remain together.", zh: "可区分的版本分别分组；无法有效区分版本的基准按家族归组。" } },
+    { id: "capability-only", label: { en: "Samples by capability", zh: "按能力归类的样本" }, description: { en: "Samples without established benchmark attribution, organized by their primary capability.", zh: "尚无明确基准归属的样本，按主要能力类别归组。" } },
+    ...benchmarkCategoryDefinitions.slice(1),
+  ];
+  const categories = definitions.map((definition): BenchmarkCategoryGroup => {
     const categoryGroups = groups.filter((group) => group.categoryId === definition.id);
     return {
       ...definition,
@@ -238,6 +260,7 @@ export function buildBenchmarkLandscape(catalog: CatalogSnapshot): BenchmarkLand
     vendorCount: new Set(records.map((record) => record.vendor.id)).size,
     groups,
     categories,
+    capabilities,
   };
 }
 

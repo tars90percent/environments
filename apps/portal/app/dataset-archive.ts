@@ -1,4 +1,4 @@
-import type { CatalogSourceEvent, CatalogVendor } from "./catalog";
+import type { CatalogSourceEvent, CatalogTask, CatalogVendor } from "./catalog";
 import { displayArchivePath } from "./archive-path";
 import type { BenchmarkGroup, HarborTaskContext } from "./benchmark-landscape";
 
@@ -16,6 +16,7 @@ export type DatasetSubmission = {
     summary: string | null;
     kind: "task" | "trace";
     format: "harbor" | "non_harbor";
+    classification?: CatalogTask["classification"];
     benchmark: { id: string; displayName: string };
     gpuRequired: boolean;
     sourcePath: string | null;
@@ -31,6 +32,7 @@ export type DatasetPackage = {
   title: string;
   kind: "task" | "trace";
   format: "harbor" | "non_harbor";
+  classification?: CatalogTask["classification"];
   benchmark: { id: string; displayName: string };
   gpuRequired: boolean;
   sourcePath: string | null;
@@ -48,6 +50,7 @@ export type VendorHarborDatasetTask = {
   title: string;
   kind: "task";
   format: "harbor";
+  classification?: CatalogTask["classification"];
   benchmark: { id: string; displayName: string };
   gpuRequired: boolean;
   sourcePath: string;
@@ -120,6 +123,7 @@ export function benchmarkHarborDatasetManifest(benchmark: BenchmarkGroup, scope:
     benchmark: { id: benchmark.id, displayName: benchmark.displayName },
     selection: {
       kind: scope === "shortlisted" ? "shortlisted_benchmark_harbor_tasks" : "all_active_benchmark_harbor_tasks",
+      ...(benchmark.capabilityId ? { capabilityId: benchmark.capabilityId } : {}),
       ...(scope === "shortlisted" ? { vendorIds: benchmark.shortlist!.vendorIds } : {}),
       source: "harbor-task-gateway",
       included: tasks.length,
@@ -129,7 +133,7 @@ export function benchmarkHarborDatasetManifest(benchmark: BenchmarkGroup, scope:
 }
 
 export function benchmarkHarborDatasetFilename(benchmark: BenchmarkGroup, scope: BenchmarkDownloadScope = "all"): string {
-  return `${safeFilenameSegment(benchmark.displayName, benchmark.id)}${scope === "shortlisted" ? "-shortlisted" : ""}-harbor-tasks.zip`;
+  return `${safeFilenameSegment(benchmark.displayName, benchmark.id)}${benchmark.capabilityId ? `-${safeFilenameSegment(benchmark.capabilityId, "capability")}` : ""}${scope === "shortlisted" ? "-shortlisted" : ""}-harbor-tasks.zip`;
 }
 
 function harborDatasetTask({ task, submission, vendor }: HarborTaskContext): VendorHarborDatasetTask {
@@ -140,6 +144,7 @@ function harborDatasetTask({ task, submission, vendor }: HarborTaskContext): Ven
     kind: "task" as const,
     format: "harbor" as const,
     benchmark: task.benchmark,
+    ...(task.classification ? { classification: task.classification } : {}),
     gpuRequired: task.gpuRequired,
     sourcePath: displayArchivePath(requiredTaskSourcePath(task.sourcePath, task.id)),
     checks: task.checks,
@@ -239,6 +244,7 @@ function datasetPackage(task: (DatasetSubmission["tasks"][number] | CatalogVendo
     kind: task.kind,
     format: task.format,
     benchmark: task.benchmark,
+    ...(task.classification ? { classification: task.classification } : {}),
     gpuRequired: task.gpuRequired,
     sourcePath: task.sourcePath ? displayArchivePath(task.sourcePath) : null,
     artifactId: task.artifactId,
