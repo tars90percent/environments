@@ -56,10 +56,8 @@ const text = {
     harborFormat: "Harbor task",
     publisherNative: "Publisher native",
     formatOnly: "Format only",
-    benchmarkDirections: "Sample groups",
     benchmarkCategories: "Benchmark groups",
     landscapeTitle: "RL task landscape",
-    landscapeIntro: "See the Harbor tasks vendors are offering, organized by the benchmark distributions they target.",
     viewTasks: "View tasks",
     backToLandscape: "Back to benchmark landscape",
     offeredBy: "Offered by",
@@ -133,10 +131,8 @@ const text = {
     harborFormat: "Harbor 任务",
     publisherNative: "发布方原生格式",
     formatOnly: "仅格式说明",
-    benchmarkDirections: "样本分组",
     benchmarkCategories: "Benchmark 分组",
     landscapeTitle: "RL 任务全景",
-    landscapeIntro: "按目标基准分布查看各供应商提供的 Harbor 任务。",
     viewTasks: "查看任务",
     backToLandscape: "返回基准全景",
     offeredBy: "来自",
@@ -292,11 +288,10 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     : initialModelBenchmarkId ? findModelBenchmark(initialModelBenchmarkId) : undefined;
   const initialModelSample = initialModelTask && initialModelBenchmark ? modelBenchmarkSamples[initialModelBenchmark.id]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
   const headerTitle = view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
-  const headerIntro = view === "model-benchmarks" ? null : view === "benchmarks" ? selectedBenchmark
+  const headerIntro = view === "benchmarks" && selectedBenchmark
     ? selectedBenchmark.shortlist
       ? selectedBenchmark.shortlist.vendorIds.map((id) => vendors.find((vendor) => vendor.id === id)?.name).filter(Boolean).join(" · ")
       : `${selectedBenchmark.taskCount} ${t.taskRecords} · ${selectedBenchmark.vendorCount} ${t.vendors.toLowerCase()}`
-    : t.landscapeIntro
     : null;
 
   function showBenchmarks() {
@@ -401,7 +396,7 @@ function BenchmarkOverview({ categories, language, onSelect }: { categories: Ben
       <header className="benchmark-category-header">
         <div className="category-index">{String(index + 1).padStart(2, "0")}</div>
         <div><h2>{category.label[language]}</h2><p>{category.description[language]}</p></div>
-        <div className="category-totals"><strong>{category.taskCount}</strong><span>{category.id === "active-procurement" ? (language === "zh" ? "采购范围 Harbor 样本" : "Harbor samples in scope") : t.harbor}</span><small>{category.benchmarkCount} {countLabel(category.benchmarkCount, language, "sample group", t.benchmarkDirections.toLowerCase())}</small></div>
+        <div className="category-totals"><strong>{category.taskCount}</strong><span>{category.id === "active-procurement" ? (language === "zh" ? "采购范围 Harbor 样本" : "Harbor samples in scope") : t.harbor}</span></div>
       </header>
       <div className="benchmark-card-grid">{category.groups.map((group) => <BenchmarkCard group={group} key={group.id} language={language} onSelect={onSelect} />)}</div>
     </section>)}</div>
