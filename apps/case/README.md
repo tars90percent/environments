@@ -378,3 +378,26 @@ and supporting source events. CASE decides the narrative and next steps; capture
 does not invent a timeline narrative or impose a procurement sequence.
 
 `casectl registry operations` is the current command and input reference.
+
+### Reviewed sample classifications
+
+`casectl registry sample-taxonomy` lists capability definitions and benchmark/version
+ groups. Register definitions with `register-sample-taxonomy <taxonomy.json>`;
+ use `casectl registry operations` for the complete input contracts.
+
+Use `classify-tasks <classifications.json>` to assign each exact task or trace version
+ a capability and, when supported, a benchmark/version group. Keep different known
+ distributions separate; use a null group version when a family cannot usefully be
+ split by release. Use a null benchmark group when benchmark attribution is not
+ established, and the registered `unspecified` capability when the objective is unclear.
+ Evidence should retain source declarations, version uncertainty, and whether the
+ sample targets a benchmark rather than being a verified benchmark task.
+
+Read the catalog before writing and supply its current classification id (null when
+ absent) and original benchmark id as preconditions. Changes are atomic per
+ submission, safe to replay, and reject stale reviews. Definitions have stable meaning
+ and cannot be silently repurposed. `task-classification-history <task-id>` returns
+ prior decisions with their evidence, actor and reason. The catalog's `classification`
+ is the reviewed taxonomy; `benchmark` remains the retained source direction for
+ compatibility and provenance. Sample files, versions, evaluations and timelines are
+ unaffected by classification updates.

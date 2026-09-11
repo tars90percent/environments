@@ -1,3 +1,4 @@
+import { sampleTaxonomy, registerSampleTaxonomy, classifyTasks, taskClassifications, type RegisterSampleTaxonomyInput, type ClassifyTasksInput } from "./sample-classification.js";
 import { createHash, randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { runRegistryMigrations } from "./migrations.js";
@@ -1358,6 +1359,13 @@ export class PostgresRegistry implements RegistryRepository {
     } finally {
       client.release();
     }
+  }
+
+  sampleTaxonomy() { return sampleTaxonomy(this.pool); }
+  registerSampleTaxonomy(input: RegisterSampleTaxonomyInput) { return registerSampleTaxonomy(this.pool, input); }
+  classifyTasks(input: ClassifyTasksInput) { return classifyTasks(this.pool, input); }
+  async taskClassificationHistory(taskId: string) {
+    return (await taskClassifications(this.pool, taskId)).map((row) => row.classification);
   }
 
   async listBenchmarks(): Promise<RegistryBenchmark[]> {
@@ -4141,7 +4149,8 @@ export class PostgresRegistry implements RegistryRepository {
   }
 
   async sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot> {
-    const [vendorsResult, interactionsResult, submissionsResult, tasksResult, checksResult, attemptsResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
+    const [classificationRows, vendorsResult, interactionsResult, submissionsResult, tasksResult, checksResult, attemptsResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
+      taskClassifications(this.pool),
       this.pool.query<VendorRow & { has_timeline: boolean }>(
         `SELECT v.id, v.name, v.short, v.description,
                 EXISTS (
@@ -4261,6 +4270,7 @@ export class PostgresRegistry implements RegistryRepository {
       ),
     ]);
 
+    const classificationsByTask = new Map(classificationRows.map((row) => [row.taskId, row.classification]));
     const checksByTask = group(checksResult.rows, (row) => row.task_id);
     const attemptsByTask = group(attemptsResult.rows, (row) => row.task_id);
     const findingsByTask = group(findingsResult.rows, (row) => row.task_id);
@@ -4302,6 +4312,7 @@ export class PostgresRegistry implements RegistryRepository {
         kind: row.task_kind,
         format: row.format_kind,
         benchmark: { id: row.benchmark_id, displayName: row.benchmark_name },
+        classification: classificationsByTask.get(row.id) ?? null,
         gpuRequired: row.gpu_required,
         sourcePath: row.source_path,
         artifactId: row.artifact_id,

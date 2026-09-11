@@ -464,6 +464,44 @@ export function parsePurgeErroneousBenchmarks(value: unknown): PurgeErroneousBen
   };
 }
 
+export function parseSampleTaxonomy(value: unknown): import("./sample-classification.js").RegisterSampleTaxonomyInput {
+  const input = object(value, "sample taxonomy");
+  onlyKeys(input, new Set(["capabilities", "benchmarkGroups", "actor", "reason"]), "sample taxonomy");
+  const capabilities = array(input.capabilities, "capabilities").map((value) => {
+    const item = object(value, "capability");
+    onlyKeys(item, new Set(["id", "displayName", "description"]), "capability");
+    return { id: identifier(item.id, "capability.id"), displayName: boundedString(item.displayName, "capability.displayName", 200), description: boundedString(item.description, "capability.description", 2_000) };
+  });
+  const benchmarkGroups = array(input.benchmarkGroups, "benchmarkGroups").map((value) => {
+    const item = object(value, "benchmark group");
+    onlyKeys(item, new Set(["id", "family", "version"]), "benchmark group");
+    return { id: identifier(item.id, "benchmarkGroup.id"), family: boundedString(item.family, "benchmarkGroup.family", 200), version: item.version === null ? null : boundedString(item.version, "benchmarkGroup.version", 100) };
+  });
+  for (const [name, items] of [["capabilities", capabilities], ["benchmarkGroups", benchmarkGroups]] as const) {
+    if (new Set(items.map((item) => item.id)).size !== items.length) throw new ValidationError(`${name} must use unique ids`);
+  }
+  return { capabilities, benchmarkGroups, actor: boundedString(input.actor, "actor", 500), reason: boundedString(input.reason, "reason", 2_000) };
+}
+
+export function parseClassifyTasks(value: unknown): import("./sample-classification.js").ClassifyTasksInput {
+  const input = object(value, "task classification");
+  onlyKeys(input, new Set(["submissionId", "assignments", "reason", "actor"]), "task classification");
+  const assignments = array(input.assignments, "assignments").map((value) => {
+    const item = object(value, "classification");
+    onlyKeys(item, new Set(["taskId", "capabilityId", "benchmarkGroupId", "evidence", "relationship", "expectedClassificationId", "expectedBenchmarkId"]), "classification");
+    return {
+      taskId: identifier(item.taskId, "taskId"), capabilityId: identifier(item.capabilityId, "capabilityId"),
+      benchmarkGroupId: item.benchmarkGroupId === null ? null : identifier(item.benchmarkGroupId, "benchmarkGroupId"),
+      evidence: boundedString(item.evidence, "evidence", 20_000), relationship: boundedString(item.relationship, "relationship", 2_000),
+      expectedClassificationId: item.expectedClassificationId === null ? null : identifier(item.expectedClassificationId, "expectedClassificationId"),
+      expectedBenchmarkId: identifier(item.expectedBenchmarkId, "expectedBenchmarkId"),
+    };
+  });
+  if (!assignments.length || assignments.length > 10_000) throw new ValidationError("assignments must contain 1–10000 classifications");
+  if (new Set(assignments.map((item) => item.taskId)).size !== assignments.length) throw new ValidationError("assignments must name each task at most once");
+  return { submissionId: identifier(input.submissionId, "submissionId"), assignments, actor: boundedString(input.actor, "actor", 500), reason: boundedString(input.reason, "reason", 2_000) };
+}
+
 export function parseAssignTaskBenchmarks(value: unknown): AssignTaskBenchmarksInput {
   const input = object(value, "benchmark assignment");
   onlyKeys(input, new Set(["submissionId", "assignments", "reason", "actor"]), "benchmark assignment");
