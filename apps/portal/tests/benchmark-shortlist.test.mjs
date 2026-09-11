@@ -25,7 +25,7 @@ const renderDetail = (language, matching = records) => renderToStaticMarkup(crea
 
 test("shortlist card and detail distinguish candidates from retained catalog samples in both languages", () => {
   for (const [language, shortlistLabel, otherLabel] of [["en", "shortlisted vendors", "Other cataloged samples"], ["zh", "入围供应商", "其他已收录样本"]]) {
-    const card = renderToStaticMarkup(createElement(BenchmarkCard, { group: benchmark, language, totalTasks: 3, onSelect() {} }));
+    const card = renderToStaticMarkup(createElement(BenchmarkCard, { group: benchmark, language, onSelect() {} }));
     assert.ok(card.includes(`2 ${shortlistLabel}`));
     assert.ok(card.includes("mercor · unipat"));
     assert.ok(!card.includes("benchmark-share"), "active procurement does not display catalog-share bars");
