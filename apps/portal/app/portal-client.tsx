@@ -252,6 +252,9 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const vendors = useMemo(() => vendorsForDisplay(catalog?.vendors ?? []), [catalog]);
   const vendorRecordCount = catalog ? vendors.length : undefined;
   const landscape = useMemo(() => catalog ? buildBenchmarkLandscape(catalog) : null, [catalog]);
+  const vendorSummaryLabel = landscape
+    ? language === "zh" ? `供应商 · 其中 ${landscape.vendorCount} 家已提交 Harbor 任务` : `Vendors · ${landscape.vendorCount} with Harbor tasks`
+    : t.vendors;
   const matchingBenchmarkGroups = useMemo(() => {
     if (!landscape) return [];
     const normalized = query.trim().toLowerCase();
@@ -346,13 +349,12 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       <h1>{headerTitle}</h1>
       {headerIntro && <p className="registry-intro">{headerIntro}</p>}
       {view !== "model-benchmarks" && <div className="registry-stats">
-        {view === "benchmarks" ? <>
-          <Stat label={selectedBenchmark?.shortlist ? t.shortlistedSamples : t.harbor} value={selectedBenchmark ? benchmarkSampleCount(selectedBenchmark) : landscape?.taskCount} />
-          {!selectedBenchmark && <Stat label={t.benchmarkDirections} value={landscape?.benchmarkCount} />}
-          <Stat label={selectedBenchmark?.shortlist ? t.shortlistedVendors : t.vendors} value={selectedBenchmark?.shortlist?.vendorCount ?? selectedBenchmark?.vendorCount ?? landscape?.vendorCount} />
+        {view === "benchmarks" && selectedBenchmark ? <>
+          <Stat label={selectedBenchmark.shortlist ? t.shortlistedSamples : t.harbor} value={benchmarkSampleCount(selectedBenchmark)} />
+          <Stat label={selectedBenchmark.shortlist ? t.shortlistedVendors : t.vendors} value={selectedBenchmark.shortlist?.vendorCount ?? selectedBenchmark.vendorCount} />
         </> : <>
-          <Stat label={t.vendors} value={vendorRecordCount} />
           <Stat label={t.harbor} value={catalog?.totals.harborTasks} />
+          <Stat label={vendorSummaryLabel} value={vendorRecordCount} />
         </>}
       </div>}
     </section>}

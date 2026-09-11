@@ -801,7 +801,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.match(source, /Interaction timeline/);
   assert.doesNotMatch(source, /interaction\.externalRef|interaction\.sourceEventIds|interaction\.actor/);
   assert.match(source, /const vendorRecordCount = catalog \? vendors\.length : undefined/);
-  assert.match(source, /<Stat label=\{t\.vendors\} value=\{vendorRecordCount\} \/>/);
+  assert.match(source, /<Stat label=\{vendorSummaryLabel\} value=\{vendorRecordCount\} \/>/);
   assert.doesNotMatch(source, /<Stat label=\{t\.vendors\} value=\{landscape\?\.vendorCount\} \/>/);
   assert.doesNotMatch(source, /<Stat label=\{t\.benchmarkCategories\}/);
   assert.doesNotMatch(source, /catalog\?\.totals\.submissions/);
