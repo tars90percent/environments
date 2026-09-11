@@ -235,6 +235,35 @@ in. Replies and logs report only slot names and status, never credential data.
 
 ## Feishu capabilities and authorization
 
+### Model and reasoning
+
+CASE explicitly selects `gpt-6-astra` with `high` reasoning by default for both
+new and resumed conversations, in either credential slot. `CODEX_MODEL` and
+`CODEX_REASONING_EFFORT` can override these application defaults. These explicit
+SDK options take precedence over each login directory's Codex configuration.
+
+Administrators listed in `ADMIN_USER_IDS` can send ordinary Feishu text messages:
+
+```text
+/reasoning
+/reasoning high
+```
+
+`/reasoning` (or `/reasoning status`) shows the model, current reasoning level,
+and valid choices. `/reasoning low`, `/reasoning medium`, `/reasoning high`, and
+`/reasoning xhigh` change CASE's reasoning level. These are the levels supported
+by both Astra and the pinned SDK's typed thread options; `max` and `ultra` are
+not exposed by this command. Invalid values return help without reaching the
+model. No Feishu developer-console slash-command registration is needed.
+
+The chosen level is stored in `AGENT_STATE` and overrides
+`CODEX_REASONING_EFFORT` across restarts and deployments. It applies to the next
+response in every chat and both credential slots. Running responses keep their
+existing settings, and subsequent responses resume the same conversation with
+the new effort. `/new` resets conversation history without resetting reasoning.
+
+### Feishu access
+
 The deployment image installs the official Lark skill bundle with:
 
 ```sh
@@ -255,7 +284,7 @@ separate CASE-specific skill package.
 The resulting renewable user login is stored by `lark-cli` under its configured
 directory. On Railway, `LARKSUITE_CLI_CONFIG_DIR` points to `/data/lark-cli`, so
 the login survives image rebuilds and service restarts. The outer harness
-handles message transport, `/new`, and the exact admin commands under `/auth`;
+handles message transport, `/new`, and admin commands under `/auth` and `/reasoning`;
 other authorization language is passed directly to Codex.
 
 The checked-in `.env.example` is safe by default: group chats and broad user

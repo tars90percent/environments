@@ -5,12 +5,13 @@ import { inspectCodexLogin, type AuthStatus, type AuthSlotState } from "./auth.j
 import { config } from "./config.js";
 import { StateStore } from "./state.js";
 import type { AuthSlot, FeishuMessageEvent } from "./types.js";
+import type { ReasoningEffort } from "./reasoning.js";
 
 export type AuthSwitchResult = "already-active" | "signed-out" | "switched" | "unavailable";
 
 export class ChatAgent {
   private readonly codexBySlot = new Map<AuthSlot, Codex>();
-  private readonly threads = new Map<string, Thread>();
+  private readonly threads = new Map<string, { thread: Thread; effort: ReasoningEffort }>();
   private readonly env: NodeJS.ProcessEnv;
   private activeSlot: AuthSlot;
   private authMutationQueue: Promise<void> = Promise.resolve();
@@ -29,6 +30,17 @@ export class ChatAgent {
 
   currentAuthSlot(): AuthSlot {
     return this.activeSlot;
+  }
+
+  modelSettings(): { model: string; reasoningEffort: ReasoningEffort } {
+    return {
+      model: config.codexModel,
+      reasoningEffort: this.state.reasoningEffort() ?? config.codexReasoningEffort,
+    };
+  }
+
+  async useReasoningEffort(effort: ReasoningEffort, messageId: string): Promise<void> {
+    await this.state.setReasoningEffort(effort, messageId);
   }
 
   async authStatus(): Promise<AuthStatus> {
@@ -79,9 +91,12 @@ export class ChatAgent {
   private threadFor(chatId: string, slot: AuthSlot): Thread {
     const key = threadKey(chatId, slot);
     const cached = this.threads.get(key);
-    if (cached) return cached;
+    const { model, reasoningEffort } = this.modelSettings();
+    if (cached?.effort === reasoningEffort) return cached.thread;
 
     const options = {
+      model,
+      modelReasoningEffort: reasoningEffort,
       workingDirectory: config.workspace,
       skipGitRepoCheck: true,
       sandboxMode: config.codexSandboxMode,
@@ -90,11 +105,11 @@ export class ChatAgent {
       webSearchMode: config.codexWebSearchMode,
     };
     const codex = this.codexFor(slot);
-    const savedThreadId = this.state.threadId(chatId, slot);
+    const savedThreadId = cached?.thread.id ?? this.state.threadId(chatId, slot);
     const thread = savedThreadId
       ? codex.resumeThread(savedThreadId, options)
       : codex.startThread(options);
-    this.threads.set(key, thread);
+    this.threads.set(key, { thread, effort: reasoningEffort });
     return thread;
   }
 

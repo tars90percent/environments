@@ -1,3 +1,5 @@
+import type { ReasoningEffort } from "./reasoning.js";
+
 export type FeishuMessageEvent = {
   type: "im.message.receive_v1";
   event_id: string;
@@ -16,6 +18,7 @@ export type AuthSlot = "primary" | "backup";
 export type AgentState = {
   version: 2;
   activeAuthSlot: AuthSlot;
+  reasoningEffort?: ReasoningEffort;
   chats: Record<string, { threads: Partial<Record<AuthSlot, string>> }>;
   processedMessageIds: string[];
 };

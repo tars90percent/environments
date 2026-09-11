@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AgentState, AuthSlot } from "./types.js";
+import { isReasoningEffort, type ReasoningEffort } from "./reasoning.js";
 
 const EMPTY_STATE: AgentState = {
   version: 2,
@@ -35,6 +36,9 @@ export class StateStore {
         this.state = migrateLegacyState(parsed);
         await this.saveCurrentState();
       } else if (parsed.version === 2 && isAuthSlot(parsed.activeAuthSlot)) {
+        if (parsed.reasoningEffort !== undefined && !isReasoningEffort(parsed.reasoningEffort)) {
+          throw new Error("Unsupported saved reasoning effort");
+        }
         this.state = parsed;
       } else {
         throw new Error("Unsupported agent state format");
@@ -47,6 +51,18 @@ export class StateStore {
 
   activeAuthSlot(): AuthSlot {
     return this.state.activeAuthSlot;
+  }
+
+  reasoningEffort(): ReasoningEffort | undefined {
+    return this.state.reasoningEffort;
+  }
+
+  async setReasoningEffort(effort: ReasoningEffort, messageId: string): Promise<void> {
+    if (!isReasoningEffort(effort)) throw new Error("Unsupported reasoning effort");
+    await this.mutate(() => {
+      this.state.reasoningEffort = effort;
+      this.appendProcessed(messageId);
+    });
   }
 
   threadId(chatId: string, slot: AuthSlot): string | undefined {
@@ -96,16 +112,25 @@ export class StateStore {
 
   private async mutate(operation: () => void): Promise<void> {
     const mutation = this.mutationQueue.then(async () => {
-      operation();
-      await this.saveCurrentState();
+      const previous = this.state;
+      const next = structuredClone(previous);
+      this.state = next;
+      try {
+        operation();
+      } finally {
+        this.state = previous;
+      }
+      // Readers and new turns see a setting only after it is safely persisted.
+      await this.saveCurrentState(next);
+      this.state = next;
     });
     this.mutationQueue = mutation.catch(() => undefined);
     await mutation;
   }
 
-  private async saveCurrentState(): Promise<void> {
+  private async saveCurrentState(state: AgentState = this.state): Promise<void> {
     const temporaryPath = `${this.path}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(this.state, null, 2)}\n`, {
+    await writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, {
       encoding: "utf8",
       mode: 0o600,
     });
