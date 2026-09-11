@@ -1,5 +1,5 @@
 import { ChatAgent } from "./agent.js";
-import { parseAgentCommand } from "./commands.js";
+import { handleReasoningCommand, parseAgentCommand } from "./commands.js";
 import { config, validateConfig } from "./config.js";
 import { FeishuGateway } from "./feishu.js";
 import { prepareLarkRuntimeEnv } from "./lark-runtime.js";
@@ -73,6 +73,15 @@ async function handle(event: FeishuMessageEvent): Promise<void> {
       return;
     }
 
+    if (command?.kind === "reasoning") {
+      const text = await handleReasoningCommand({
+        command, senderId: event.sender_id, messageId: event.message_id,
+        adminUserIds: config.adminUserIds, agent, state,
+      });
+      await gateway.reply(event.message_id, text);
+      return;
+    }
+
     if (command) {
       if (!config.adminUserIds.has(event.sender_id)) {
         await state.markProcessed(event.message_id);
@@ -141,6 +150,7 @@ console.log(
 console.log(
   `Codex credential slots enabled (active=${agent.currentAuthSlot()}, admins=${config.adminUserIds.size}, automatic-switching=disabled)`,
 );
+console.log(`Codex model (model=${agent.modelSettings().model}, reasoning=${agent.modelSettings().reasoningEffort})`);
 await gateway.listen(enqueue);
 
 function safeError(error: unknown): string {

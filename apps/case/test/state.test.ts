@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -94,4 +94,51 @@ test("migrates version 1 state into the primary credential slot", async () => {
   assert.equal(store.threadId("oc_chat", "backup"), undefined);
   assert.equal(store.hasProcessed("om_legacy"), true);
   assert.equal(JSON.parse(await readFile(path, "utf8")).version, 2);
+});
+
+test("reasoning changes survive reload and reset without replacing slot histories", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "case-reasoning-state-"));
+  const path = join(directory, "state.json");
+  const state = new StateStore(path);
+  await state.load();
+  assert.equal(state.reasoningEffort(), undefined);
+  await state.recordSuccess("chat", "primary", "primary-thread", "first");
+  await state.recordSuccess("chat", "backup", "backup-thread", "second");
+  await state.setReasoningEffort("low", "set-low");
+  const reloaded = new StateStore(path);
+  await reloaded.load();
+  assert.equal(reloaded.reasoningEffort(), "low");
+  assert.equal(reloaded.hasProcessed("set-low"), true);
+  assert.equal(reloaded.threadId("chat", "primary"), "primary-thread");
+  assert.equal(reloaded.threadId("chat", "backup"), "backup-thread");
+  await reloaded.resetChat("chat", "primary", "reset");
+  assert.equal(reloaded.reasoningEffort(), "low");
+  await rm(directory, { recursive: true, force: true });
+});
+
+test("failed reasoning writes leave the previous setting and allow a later retry", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "case-reasoning-state-"));
+  const path = join(directory, "state.json");
+  const state = new StateStore(path);
+  await state.load();
+  await state.setReasoningEffort("high", "initial");
+  await mkdir(`${path}.tmp`);
+  await assert.rejects(state.setReasoningEffort("low", "failed"));
+  assert.equal(state.reasoningEffort(), "high");
+  assert.equal(state.hasProcessed("failed"), false);
+  await rm(`${path}.tmp`, { recursive: true });
+  await state.setReasoningEffort("xhigh", "retry");
+  const reloaded = new StateStore(path);
+  await reloaded.load();
+  assert.equal(reloaded.reasoningEffort(), "xhigh");
+  assert.equal(reloaded.hasProcessed("retry"), true);
+  await rm(directory, { recursive: true, force: true });
+});
+
+test("rejects unsupported persisted reasoning settings", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "case-reasoning-state-"));
+  const path = join(directory, "state.json");
+  await writeFile(path, JSON.stringify({ version: 2, activeAuthSlot: "primary", chats: {}, processedMessageIds: [], reasoningEffort: "bogus" }));
+  await assert.rejects(new StateStore(path).load(), /Unsupported saved reasoning effort/);
+  await rm(directory, { recursive: true, force: true });
 });

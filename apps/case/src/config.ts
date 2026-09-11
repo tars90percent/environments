@@ -2,6 +2,7 @@ import { loadEnvFile } from "node:process";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { REASONING_EFFORTS } from "./reasoning.js";
 
 try {
   loadEnvFile();
@@ -56,6 +57,8 @@ export const config = {
   larkCli: process.env.LARK_CLI ?? "lark-cli",
   larkProfile: process.env.LARK_PROFILE?.trim() || undefined,
   codexPath: process.env.CODEX_PATH?.trim() || "codex",
+  codexModel: process.env.CODEX_MODEL?.trim() || "gpt-6-astra",
+  codexReasoningEffort: choice("CODEX_REASONING_EFFORT", REASONING_EFFORTS, "high"),
   allowGroupChats: bool("ALLOW_GROUP_CHATS", false),
   allowAllUsers: bool("ALLOW_ALL_USERS", false),
   allowedUserIds: csv("ALLOWED_USER_IDS"),
