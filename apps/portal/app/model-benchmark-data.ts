@@ -77,11 +77,14 @@ export type AggregateBenchmarkReference = {
   verifiedAt: string;
   summary: { en: string; zh: string };
   links: BenchmarkReferenceLink[];
+  releaseNote?: { en: string; zh: string };
+  previousReleases?: AggregateBenchmarkReference[];
   components: Array<{
     benchmarkId: string;
     benchmarkVersion?: string;
     evaluationName: string;
     weight: number;
+    note?: { en: string; zh: string };
   }>;
 };
 
@@ -130,7 +133,7 @@ export const benchmarkReferenceCategories = [
   },
 ] satisfies BenchmarkReferenceCategory[];
 
-export const artificialAnalysisIndex: AggregateBenchmarkReference = {
+const artificialAnalysisIndex411: AggregateBenchmarkReference = {
   id: "artificial-analysis-intelligence-index",
   name: "Artificial Analysis Intelligence Index",
   publisher: "Artificial Analysis",
@@ -159,9 +162,82 @@ export const artificialAnalysisIndex: AggregateBenchmarkReference = {
   ],
 };
 
+export const artificialAnalysisIndex: AggregateBenchmarkReference = {
+  id: "artificial-analysis-intelligence-index",
+  name: "Artificial Analysis Intelligence Index",
+  publisher: "Artificial Analysis",
+  version: "4.3",
+  releasedAt: "2026-09-07",
+  verifiedAt: "2026-09-13",
+  summary: {
+    en: "Ten evaluations across agentic work, coding, scientific reasoning, and general capability. Agents and General each contribute 30%; Coding and Scientific Reasoning each contribute 20%.",
+    zh: "十项评测涵盖智能体工作、编程、科学推理与通用能力。智能体与通用能力各占 30%，编程与科学推理各占 20%。",
+  },
+  releaseNote: {
+    en: "v4.3 adopts Terminal-Bench 4.0 and replaces τ³-Banking with AutomationBench-AA. The preceding v4.2 added AA-Briefcase and GDP.pdf, retired GPQA Diamond, and revised the weights. Compare results within the same index version.",
+    zh: "v4.3 采用 Terminal-Bench 4.0，并以 AutomationBench-AA 替换 τ³-Banking。此前 v4.2 新增 AA-Briefcase 和 GDP.pdf、移除 GPQA Diamond 并调整权重。比较成绩时应使用同一指数版本。",
+  },
+  links: [
+    { label: { en: "Methodology", zh: "方法说明" }, url: "https://artificialanalysis.ai/methodology/intelligence-benchmarking" },
+    { label: { en: "Leaderboard", zh: "排行榜" }, url: "https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index" },
+    { label: { en: "v4.3 release", zh: "v4.3 发布说明" }, url: "https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-3" },
+    { label: { en: "v4.2 release", zh: "v4.2 发布说明" }, url: "https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-2" },
+  ],
+  components: [
+    { benchmarkId: "aa-briefcase", benchmarkVersion: "91-task private set", evaluationName: "AA-Briefcase", weight: 15, note: { en: "91 private tasks", zh: "91 项私有任务" } },
+    { benchmarkId: "gdpval-aa-v2", benchmarkVersion: "GDPval-AA v2", evaluationName: "GDPval-AA v2", weight: 10 },
+    { benchmarkId: "automationbench", benchmarkVersion: "v1.0.6 · held-out set", evaluationName: "AutomationBench-AA", weight: 5, note: { en: "v1.0.6 · 657 held-out tasks", zh: "v1.0.6 · 657 项留出任务" } },
+    { benchmarkId: "terminal-bench", benchmarkVersion: "v4.0.0", evaluationName: "Terminal-Bench v4.0", weight: 10 },
+    { benchmarkId: "scicode", benchmarkVersion: "AA grader v1.0.1", evaluationName: "SciCode", weight: 10, note: { en: "AA grader v1.0.1", zh: "AA 评分器 v1.0.1" } },
+    { benchmarkId: "aa-omniscience", evaluationName: "AA-Omniscience", weight: 15, note: { en: "Accuracy 10% · non-hallucination 5%", zh: "准确率 10% · 非幻觉率 5%" } },
+    { benchmarkId: "gdp-pdf", evaluationName: "GDP.pdf", weight: 10 },
+    { benchmarkId: "aa-lcr", benchmarkVersion: "v1.1", evaluationName: "AA-LCR v1.1", weight: 5 },
+    { benchmarkId: "hle", benchmarkVersion: "May 2025 · text-only", evaluationName: "Humanity's Last Exam", weight: 10, note: { en: "May 2025 · text-only subset", zh: "2025 年 5 月 · 纯文本子集" } },
+    { benchmarkId: "critpt", benchmarkVersion: "70-test subset", evaluationName: "CritPt", weight: 10, note: { en: "70-test subset", zh: "70 道测试题子集" } },
+  ],
+  previousReleases: [artificialAnalysisIndex411],
+};
+
 export const aggregateBenchmarks = [artificialAnalysisIndex] satisfies AggregateBenchmarkReference[];
 
 export const modelBenchmarks: ModelBenchmarkReference[] = [
+    {
+      id: "aa-briefcase",
+      name: "AA-Briefcase",
+      creators: { en: "Artificial Analysis with industry experts", zh: "Artificial Analysis 与行业专家" },
+      publisher: "Artificial Analysis",
+      categoryId: "professional-work",
+      version: "June 2026 release",
+      versionNote: { en: "The scored set is private; AA-Briefcase Lite is a separate, unscored demonstration scenario.", zh: "计分集合为私有；AA-Briefcase Lite 是独立且不计分的公开演示场景。" },
+      summary: { en: "Professional deliverables built from fragmented evidence across multi-week business projects.", zh: "在跨周业务项目中综合分散证据，产出专业工作成果。" },
+      questionCount: { en: "91 private tasks · 4 scenarios", zh: "91 项私有任务 · 4 个场景" },
+      responseType: { en: "Reports, models, presentations and other files", zh: "报告、模型、演示文稿等文件" },
+      scoring: { en: "Rubric success + analytical and presentation Elo", zh: "评分细则达成率 + 分析与呈现 Elo" },
+      repeats: 1, toolUse: true, access: "public-subset",
+      links: [
+        { label: { en: "Release article", zh: "发布文章" }, url: "https://artificialanalysis.ai/articles/aa-briefcase" },
+        { label: { en: "Public Lite scenario", zh: "公开 Lite 场景" }, url: "https://huggingface.co/datasets/ArtificialAnalysis/AA-Briefcase-Lite" },
+      ],
+    },
+    {
+      id: "gdp-pdf",
+      name: "GDP.pdf",
+      creators: { en: "Surge AI with domain experts", zh: "Surge AI 与领域专家" },
+      publisher: "Surge AI",
+      categoryId: "documents-vision",
+      version: "2026 public release",
+      summary: { en: "Professional reasoning over long PDFs, including tables, figures, and document layout.", zh: "针对长篇 PDF 的专业推理，涵盖表格、图示和文档布局。" },
+      questionCount: { en: "100 tasks · 10 domains", zh: "100 项任务 · 10 个领域" },
+      responseType: { en: "Document-grounded written answers", zh: "基于文档证据的文字回答" },
+      scoring: { en: "All-pass and mean rubric pass rate", zh: "全部标准通过率与平均标准通过率" },
+      access: "public",
+      links: [
+        { label: { en: "Benchmark", zh: "基准主页" }, url: "https://surgehq.ai/benchmarks/gdp-pdf" },
+        { label: { en: "Dataset", zh: "数据集" }, url: "https://huggingface.co/datasets/surgeai/GDP.pdf" },
+        { label: { en: "Evaluation code", zh: "评测代码" }, url: "https://github.com/surge-ai/gdp-pdf" },
+      ],
+    },
+
     {
       id: "gdpval-aa-v2",
       name: "GDPval",
@@ -338,8 +414,8 @@ export const modelBenchmarks: ModelBenchmarkReference[] = [
       categoryId: "science-knowledge",
       version: "Current public test set · unversioned",
       versionNote: {
-        en: "No semantic dataset release is published; the test set includes scientist-authored background.",
-        zh: "发布方未提供语义化版本号；测试集包含科学家编写的背景材料。",
+        en: "The public dataset is unversioned. AA grader v1.0.1 allows 300 seconds per script and isolates execution; this is an evaluation change, not a new task set.",
+        zh: "公开数据集未设版本号。AA 评分器 v1.0.1 将单脚本时限设为 300 秒并隔离执行；这是评测调整，而非新任务集。",
       },
       summary: {
         en: "Python program synthesis for realistic scientific problems across 16 disciplines.",
@@ -364,10 +440,15 @@ export const modelBenchmarks: ModelBenchmarkReference[] = [
       publisher: "Artificial Analysis",
       categoryId: "documents-vision",
       catalogPlacement: "aggregate-only",
-      version: "Current public dataset · unversioned",
+      version: "v1.1",
+      currentVersionId: "v1.1",
+      versions: [
+        { id: "v1.1", label: "v1.1", change: "maintenance", questionCount: { en: "100 questions", zh: "100 道题" }, note: { en: "16 answer-key corrections and revised grading instructions; scores are not directly comparable to v1.0.", zh: "修正 16 个参考答案并更新评分指令；分数不能与 v1.0 直接比较。" }, comparableToPrevious: false, sourceUrl: "https://artificialanalysis.ai/methodology/intelligence-benchmarking" },
+        { id: "v1.0", label: "Original release", change: "initial", questionCount: { en: "100 questions", zh: "100 道题" }, note: { en: "Original document-reasoning set, retained as evaluation history.", zh: "最初的文档推理集合，作为评测历史保留。" }, sourceUrl: "https://artificialanalysis.ai/articles/announcing-aa-lcr" },
+      ],
       versionNote: {
-        en: "The dataset has no semantic version; index v4.1.1 uses GPT-5.6 Luna (medium) as its equality checker.",
-        zh: "该数据集未设语义版本号；指数 v4.1.1 使用 GPT-5.6 Luna（medium）作等价性评分器。",
+        en: "v1.1 revises answer keys and grading instructions; it uses GPT-5.6 Luna (medium) for answer checking.",
+        zh: "v1.1 修订参考答案与评分指令，使用 GPT-5.6 Luna（medium）核验答案。",
       },
       summary: {
         en: "Reasoning across sets of long documents totaling roughly 100k tokens per question.",
@@ -511,12 +592,18 @@ export const modelBenchmarks: ModelBenchmarkReference[] = [
     {
       id: "automationbench",
       name: "AutomationBench",
+      aliases: ["AutomationBench-AA"],
+      version: "v1.0.6",
+      versionNote: { en: "AutomationBench-AA evaluates 657 held-out tasks with objective-level partial credit; any guardrail violation zeros the task score.", zh: "AutomationBench-AA 评测 657 项留出任务，按目标给予部分得分；任何约束违规都会使该任务得零分。" },
       creators: { en: "Daniel Shepard and Robin Salimans at Zapier", zh: "Zapier 的 Daniel Shepard 与 Robin Salimans" },
       publisher: "Zapier",
       categoryId: "tools-computer-use",
       summary: { en: "Cross-application workflows executed across simulated SaaS tools.", zh: "跨模拟 SaaS 工具执行的跨应用工作流。" },
-      questionCount: { en: "600 scored workflows", zh: "600 项计分工作流" },
-      access: "public",
+      questionCount: { en: "600 public workflows · 657 held-out AA tasks", zh: "600 项公开工作流 · 657 项 AA 留出任务" },
+      responseType: { en: "State changes across application APIs", zh: "跨应用 API 的状态变更" },
+      scoring: { en: "Public: task completion · AA: guarded partial credit", zh: "公开集：完整完成 · AA：带约束的部分得分" },
+      toolUse: true,
+      access: "public-subset",
       links: [
         { label: { en: "Repository", zh: "代码仓库" }, url: "https://github.com/zapier/AutomationBench" },
         { label: { en: "Paper", zh: "论文" }, url: "https://arxiv.org/abs/2604.18934" },

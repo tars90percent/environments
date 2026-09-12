@@ -1,3 +1,5 @@
+import { getPortalLanguage } from "../../../../portal-language-server";
+import type { PageSearchParams } from "../../../../task-navigation";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { findModelBenchmark } from "../../../../model-benchmark-data";
@@ -12,7 +14,7 @@ export const metadata: Metadata = {
   description: "Task-level structure, provenance, evaluation, and upstream filesystem metadata for a model benchmark sample.",
 };
 
-export default async function ModelBenchmarkTaskPage({ params }: { params: Promise<{ benchmarkId: string; sampleId: string }> }) {
+export default async function ModelBenchmarkTaskPage({ params, searchParams }: { searchParams: Promise<PageSearchParams>; params: Promise<{ benchmarkId: string; sampleId: string }> }) {
   const { benchmarkId, sampleId } = await params;
   const benchmark = findModelBenchmark(benchmarkId);
   const sample = benchmark ? modelBenchmarkSamples[benchmark.id]?.find((entry) => entry.id === sampleId) : undefined;
@@ -20,5 +22,5 @@ export default async function ModelBenchmarkTaskPage({ params }: { params: Promi
 
   const user = await getPortalSession();
   if (!user) redirect("/auth/login");
-  return <PortalClient initialModelTask={{ benchmarkId: benchmark.id, sampleId }} initialView="model-task" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
+  return <PortalClient initialLanguage={await getPortalLanguage(await searchParams)} initialModelTask={{ benchmarkId: benchmark.id, sampleId }} initialView="model-task" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
 }

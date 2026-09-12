@@ -1,3 +1,5 @@
+import { getPortalLanguage } from "../../portal-language-server";
+import type { PageSearchParams } from "../../task-navigation";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { findModelBenchmark } from "../../model-benchmark-data";
@@ -12,7 +14,7 @@ export const metadata: Metadata = {
   description: "A source-grounded guide to a benchmark’s domain, distribution, difficulty, runtime, failure modes, and score interpretation.",
 };
 
-export default async function ModelBenchmarkExplanationRoute({ params }: { params: Promise<{ benchmarkId: string }> }) {
+export default async function ModelBenchmarkExplanationRoute({ params, searchParams }: { searchParams: Promise<PageSearchParams>; params: Promise<{ benchmarkId: string }> }) {
   const { benchmarkId } = await params;
   const benchmark = findModelBenchmark(benchmarkId);
   const explanation = benchmark ? modelBenchmarkExplanations[benchmark.id] : undefined;
@@ -20,5 +22,5 @@ export default async function ModelBenchmarkExplanationRoute({ params }: { param
 
   const user = await getPortalSession();
   if (!user) redirect("/auth/login");
-  return <PortalClient initialModelBenchmarkId={benchmark.id} initialModelExplanation={explanation} initialView="model-explanation" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
+  return <PortalClient initialLanguage={await getPortalLanguage(await searchParams)} initialModelBenchmarkId={benchmark.id} initialModelExplanation={explanation} initialView="model-explanation" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
 }

@@ -1,3 +1,4 @@
+import { getPortalLanguage } from "../../portal-language-server";
 import { readTaskListLocation, type PageSearchParams } from "../../task-navigation";
 import { redirect } from "next/navigation";
 import { getPortalSession } from "../../feishu-auth";
@@ -10,7 +11,8 @@ export default async function VendorTaskPage({ params, searchParams }: { params:
   if (!user) redirect("/auth/login");
   // Vinext preserves percent-encoding in page params; decode before building API URLs.
   const taskId = decodeURIComponent((await params).taskId);
-  const returnTo = (await searchParams).returnTo;
+  const search = await searchParams;
+  const returnTo = search.returnTo;
   const origin = readTaskListLocation(typeof returnTo === "string" ? returnTo : null, false);
-  return <PortalClient initialTaskOrigin={origin} initialVendorTaskId={taskId} initialView="vendor-task" user={{ name: user.name, avatarUrl: user.avatarUrl ?? undefined }} />;
+  return <PortalClient initialLanguage={await getPortalLanguage({ ...search, lang: search.lang ?? origin?.language })} initialTaskOrigin={origin} initialVendorTaskId={taskId} initialView="vendor-task" user={{ name: user.name, avatarUrl: user.avatarUrl ?? undefined }} />;
 }

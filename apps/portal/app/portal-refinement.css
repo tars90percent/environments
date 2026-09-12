@@ -107,12 +107,9 @@ main { padding-top: 68px; }
 .model-benchmark-creators > span, .model-benchmark-version > span, .model-benchmark-facts dt { font-size: 10px; }
 .model-benchmark-creators p, .model-benchmark-version p, .model-benchmark-facts dd { font-size: 12px; }
 .model-benchmark-version strong, .model-benchmark-facts dd strong { font-size: 12px; }
-.benchmark-explanation-link { border-radius: 8px; box-shadow: none; background: var(--surface); color: var(--ink); }
-.benchmark-explanation-link small { color: var(--muted); font-size: 10px; }
-.benchmark-explanation-link strong, .benchmark-sample-trigger strong { font-size: 13px; }
+.benchmark-sample-trigger strong { font-size: 13px; }
 .benchmark-sample-trigger small { font-size: 11px; }
 .benchmark-sample-trigger { border-radius: 8px; background: transparent; }
-.benchmark-explanation-link:hover { transform: none; background: var(--surface-strong); box-shadow: none; }
 .model-benchmark-links a { border: 0; padding-left: 0; padding-right: 16px; font-size: 12px; }
 @media (max-width: 1000px) {
   .portal-grid { grid-template-columns: 200px minmax(0,1fr); gap: 24px; }

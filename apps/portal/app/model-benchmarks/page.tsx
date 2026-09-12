@@ -1,3 +1,5 @@
+import { getPortalLanguage } from "../portal-language-server";
+import type { PageSearchParams } from "../task-navigation";
 import type { Metadata } from "next";
 import PortalClient from "../portal-client";
 import { getPortalSession } from "../feishu-auth";
@@ -10,8 +12,8 @@ export const metadata: Metadata = {
   description: "Benchmarks, task examples, official sources, and composite indexes.",
 };
 
-export default async function ModelBenchmarksPage() {
+export default async function ModelBenchmarksPage({ searchParams }: { searchParams: Promise<PageSearchParams> }) {
   const user = await getPortalSession();
   if (!user) redirect("/auth/login");
-  return <PortalClient initialView="model-benchmarks" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
+  return <PortalClient initialLanguage={await getPortalLanguage(await searchParams)} initialView="model-benchmarks" user={{ name: user.name, avatarUrl: user.avatarUrl }} />;
 }

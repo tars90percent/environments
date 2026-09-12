@@ -432,6 +432,7 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
   "aa-lcr": [
     {
       id: "aa-lcr-consumer-infringements",
+      versionId: "v1.0",
       sourceId: "ac_markets · question 1",
       sourceKind: "public-task",
       title: { en: "Consumer-infringement frequency across reports", zh: "跨报告统计消费者侵权频次" },
@@ -460,6 +461,7 @@ export const modelBenchmarkSamples: Record<string, BenchmarkSampleTask[]> = {
     },
     {
       id: "aa-lcr-data-center-revenue",
+      versionId: "v1.0",
       sourceId: "co_dc_ann_sup_a · question 16",
       sourceKind: "public-task",
       title: { en: "Conditional data-center revenue analysis", zh: "条件式数据中心收入分析" },

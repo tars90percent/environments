@@ -1,0 +1,33 @@
+/* Short benchmark articles share the portal's typography without a separate page system. */
+.benchmark-article { width: min(760px, 100%); margin: 0 auto; padding: 36px 0 80px; }
+.benchmark-article h1 { margin: 36px 0 10px; color: var(--ink); font-size: clamp(32px, 4vw, 44px); line-height: 1.15; font-weight: 600; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.benchmark-article-byline { margin: 0 0 32px; color: var(--faint); font-size: 13px; line-height: 1.6; }
+.benchmark-article-copy p { margin: 0 0 24px; color: var(--ink); font-size: 17px; line-height: 1.85; }
+.benchmark-article-tasks { display: inline-flex; align-items: center; gap: 20px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--burgundy-deep); font-size: 14px; font-weight: 600; text-decoration: none; transition: background .18s ease, border-color .18s ease; }
+.benchmark-article-tasks:hover { background: var(--card); border-color: var(--burgundy); }
+.benchmark-article-sources { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 16px; color: var(--faint); font-size: 12px; line-height: 1.6; }
+.benchmark-article-sources a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.benchmark-article-sources small { flex-basis: 100%; font-size: 11px; }
+.benchmark-article a:focus-visible { outline: 2px solid var(--burgundy); outline-offset: 4px; }
+@media (max-width: 720px) {
+  .benchmark-article { padding-top: 20px; }
+  .benchmark-article h1 { margin-top: 28px; }
+  .benchmark-article-copy p { font-size: 16px; line-height: 1.85; }
+}
+
+.aggregate-release-note { padding: 18px 0; color: var(--muted); font-size: 14px; line-height: 1.7; border-bottom: 1px solid var(--line); }
+.aggregate-release-note p { margin: 0 0 8px; }
+.aggregate-release-note small { color: var(--faint); font-size: 11px; }
+.aggregate-release-history { margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--line); }
+.aggregate-release-history summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.aggregate-release-history p { font-size: 13px; color: var(--muted); line-height: 1.7; }
+.aggregate-release-history ul { padding-left: 18px; columns: 2; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.aggregate-components li small { white-space: normal; }
+.aggregate-benchmark-card { border-radius: 8px; box-shadow: none; }
+.aggregate-benchmark-card > header > div > p { font-size: 14px; line-height: 1.7; }
+.aggregate-components { gap: 0 24px; }
+.aggregate-components li { padding: 15px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.aggregate-components li a > span { font-size: 14px; font-weight: 600; }
+.aggregate-components li a > small { margin-top: 4px; font-size: 12px; line-height: 1.5; }
+.aggregate-components li > strong { font-size: 16px; }
+@media (max-width: 720px) { .aggregate-release-history ul { columns: 1; } }

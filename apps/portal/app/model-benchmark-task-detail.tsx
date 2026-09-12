@@ -1,3 +1,4 @@
+import { localizedHref } from "./portal-language";
 import { decodeTaskText, isMacMetadataPath } from "./task-file-preview";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
@@ -157,7 +158,7 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
   const nativeRecord = modelBenchmarkNativeTaskRecords[sample.id];
   const agentView = modelBenchmarkAgentViews[sample.id];
   const siblingSamples = siblingModelBenchmarkSamples(benchmark, sample);
-  const backHref = localPreview ? "/local-preview/model-benchmarks" : "/model-benchmarks";
+  const backHref = localizedHref(localPreview ? "/local-preview/model-benchmarks" : "/model-benchmarks", language);
   const tabs: Array<{ id: TaskDetailTab; label: string }> = filesystem
     ? [{ id: "files", label: t.filesTab }]
     : agentView?.kind === "tau-runtime"
@@ -185,7 +186,7 @@ export function ModelBenchmarkTaskDetail({ benchmark, language, localPreview, sa
         <div>{siblingSamples.map((entry, index) => <a
           aria-current={entry.id === sample.id ? "page" : undefined}
           className={entry.id === sample.id ? "active" : ""}
-          href={`${localPreview ? "/local-preview" : ""}/model-benchmarks/${benchmark.id}/tasks/${entry.id}`}
+          href={localizedHref(`${localPreview ? "/local-preview" : ""}/model-benchmarks/${benchmark.id}/tasks/${entry.id}`, language)}
           key={entry.id}
         ><small>{t.taskNumber} {index + 1}</small><strong>{entry.title[language]}</strong></a>)}</div>
       </nav> : null}

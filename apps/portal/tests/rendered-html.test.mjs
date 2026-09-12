@@ -153,16 +153,25 @@ test("requires an authenticated researcher session", async () => {
 test("records standalone benchmark families separately from aggregate indexes", async () => {
   const { aggregateBenchmarks, artificialAnalysisIndex, benchmarkReferenceCategories, catalogModelBenchmarks, findModelBenchmark, modelBenchmarks } = await modelBenchmarkDataModule();
 
-  assert.equal(artificialAnalysisIndex.version, "4.1.1");
-  assert.equal(artificialAnalysisIndex.releasedAt, "2026-08-06");
-  assert.equal(artificialAnalysisIndex.verifiedAt, "2026-08-29");
+  assert.equal(artificialAnalysisIndex.version, "4.3");
+  assert.equal(artificialAnalysisIndex.releasedAt, "2026-09-07");
+  assert.equal(artificialAnalysisIndex.verifiedAt, "2026-09-13");
   assert.equal(aggregateBenchmarks.length, 1);
-  assert.equal(artificialAnalysisIndex.components.length, 9);
+  assert.deepEqual(Object.fromEntries(artificialAnalysisIndex.components.map((component) => [component.benchmarkId, component.weight])), {
+    "aa-briefcase": 15, "gdpval-aa-v2": 10, automationbench: 5, "terminal-bench": 10,
+    scicode: 10, "aa-omniscience": 15, "gdp-pdf": 10, "aa-lcr": 5, hle: 10, critpt: 10,
+  });
+  assert.equal(artificialAnalysisIndex.components.find((component) => component.benchmarkId === "terminal-bench").benchmarkVersion, "v4.0.0");
+  assert.equal(artificialAnalysisIndex.components.find((component) => component.benchmarkId === "aa-lcr").benchmarkVersion, "v1.1");
+  assert.ok(artificialAnalysisIndex.components.every((component) => findModelBenchmark(component.benchmarkId)));
+  assert.equal(artificialAnalysisIndex.previousReleases[0].version, "4.1.1");
+
+  assert.equal(artificialAnalysisIndex.components.length, 10);
   assert.equal(artificialAnalysisIndex.components.reduce((total, component) => total + component.weight, 0), 100);
   assert.ok(artificialAnalysisIndex.links.every((link) => link.url.startsWith("https://artificialanalysis.ai/")));
 
-  assert.equal(modelBenchmarks.length, 39);
-  assert.equal(catalogModelBenchmarks.length, 31);
+  assert.equal(modelBenchmarks.length, 41);
+  assert.equal(catalogModelBenchmarks.length, 33);
   assert.deepEqual(
     modelBenchmarks.filter((benchmark) => benchmark.catalogPlacement).map((benchmark) => [benchmark.id, benchmark.catalogPlacement]),
     [
@@ -177,26 +186,26 @@ test("records standalone benchmark families separately from aggregate indexes", 
     ],
   );
   assert.deepEqual(Object.fromEntries(benchmarkReferenceCategories.map((category) => [category.id, catalogModelBenchmarks.filter((benchmark) => benchmark.categoryId === category.id).length])), {
-    "professional-work": 3,
+    "professional-work": 4,
     "tools-computer-use": 7,
     "web-research": 1,
     "software-engineering": 9,
     "model-training": 1,
     "science-knowledge": 5,
-    "documents-vision": 2,
+    "documents-vision": 3,
     cybersecurity: 3,
   });
   assert.equal(benchmarkReferenceCategories.length, 8);
   const ids = modelBenchmarks.map((benchmark) => benchmark.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual(Object.fromEntries(benchmarkReferenceCategories.map((category) => [category.id, modelBenchmarks.filter((benchmark) => benchmark.categoryId === category.id).length])), {
-    "professional-work": 3,
+    "professional-work": 4,
     "tools-computer-use": 7,
     "web-research": 2,
     "software-engineering": 9,
     "model-training": 1,
     "science-knowledge": 6,
-    "documents-vision": 8,
+    "documents-vision": 9,
     cybersecurity: 3,
   });
   assert.deepEqual(Object.fromEntries(modelBenchmarks.filter((benchmark) => ["spreadsheetbench", "posttrainbench", "cursorbench", "terminal-bench", "officeqa-pro"].includes(benchmark.id)).map((benchmark) => [benchmark.id, benchmark.categoryId])), {
@@ -277,22 +286,18 @@ test("provides a bilingual source-grounded explanation for every benchmark famil
 
   for (const benchmark of modelBenchmarks) {
     const explanation = modelBenchmarkExplanations[benchmark.id];
-    for (const field of ["orientation", "distribution", "difficulty", "time", "interpretation"]) {
-      assert.ok(explanation[field].en.length >= 80, `${benchmark.id} ${field} needs a substantive English explanation`);
-      assert.ok(explanation[field].zh.length >= 30, `${benchmark.id} ${field} needs a substantive Chinese explanation`);
+    for (const language of ["en", "zh"]) {
+      assert.ok(explanation.paragraphs.length > 0);
+      assert.ok(explanation.paragraphs.every((paragraph) => paragraph[language]));
     }
-    assert.equal(explanation.failureModes.en.length, 3);
-    assert.equal(explanation.failureModes.zh.length, 3);
-    assert.ok(explanation.failureModes.en.every((entry) => entry.length >= 30));
-    assert.ok(explanation.failureModes.zh.every((entry) => entry.length >= 12));
     assert.ok(explanation.sourceUrls.length >= 2);
     assert.ok(explanation.sourceUrls.every((url) => url.startsWith("https://")));
   }
 
-  assert.match(modelBenchmarkExplanations.frontierswe.time.en, /twenty hours/i);
-  assert.match(modelBenchmarkExplanations["gdpval-aa-v2"].time.en, /seven hours/i);
-  assert.match(modelBenchmarkExplanations.browsecomp.time.en, /two hours/i);
-  assert.match(modelBenchmarkExplanations.exploitgym.interpretation.en, /dual-use/i);
+  assert.match(modelBenchmarkExplanations.frontierswe.paragraphs.map((paragraph) => paragraph.en).join(" "), /twenty hours/i);
+  assert.match(modelBenchmarkExplanations["gdpval-aa-v2"].paragraphs.map((paragraph) => paragraph.en).join(" "), /seven hours/i);
+  assert.match(modelBenchmarkExplanations.browsecomp.paragraphs.map((paragraph) => paragraph.en).join(" "), /two hours/i);
+  assert.match(modelBenchmarkExplanations.exploitgym.paragraphs.map((paragraph) => paragraph.en).join(" "), /dual-use/i);
 });
 
 test("retains version-scoped public-task profiles for benchmark families", async () => {
@@ -596,7 +601,7 @@ test("opens benchmark task profiles directly instead of expanding an inline anal
   const detailSource = await readFile(new URL("../app/model-benchmark-task-detail.tsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.match(source, /href=\{`\$\{localPreview \? "\/local-preview" : ""\}\/model-benchmarks\/\$\{benchmark\.id\}\/tasks\/\$\{samples\[0\]\.id\}`\}/);
+  assert.match(source, /href=\{localizedHref\(`\$\{localPreview \? "\/local-preview" : ""\}\/model-benchmarks\/\$\{benchmark\.id\}\/tasks\/\$\{samples\[0\]\.id\}`, language\)\}/);
   assert.doesNotMatch(source, /expandedBenchmarkId|scrollIntoView|BenchmarkTaskAnalysis/);
   assert.match(styles, /\.benchmark-sample-trigger \{[^}]*text-decoration: none;/);
   assert.match(detailSource, /const siblingSamples = siblingModelBenchmarkSamples\(benchmark, sample\)/);
@@ -609,16 +614,15 @@ test("opens one source-grounded explanation page per benchmark family", async ()
   const catalogSource = await readFile(new URL("../app/model-benchmark-reference.tsx", import.meta.url), "utf8");
   const explanationSource = await readFile(new URL("../app/model-benchmark-explanation.tsx", import.meta.url), "utf8");
   const routeSource = await readFile(new URL("../app/model-benchmarks/[benchmarkId]/page.tsx", import.meta.url), "utf8");
-  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.match(catalogSource, /className="benchmark-explanation-link"/);
   assert.match(catalogSource, /\/model-benchmarks\/\$\{benchmark\.id\}`/);
-  assert.match(explanationSource, /explanation\.distribution\[language\]/);
-  assert.match(explanationSource, /explanation\.failureModes\[language\]/);
+  assert.match(explanationSource, /explanation\.paragraphs\.map/);
+
   assert.match(explanationSource, /explanation\.sourceUrls\.map/);
   assert.match(explanationSource, /modelBenchmarkExplanationVerifiedAt/);
   assert.match(routeSource, /initialView="model-explanation"/);
-  assert.match(styles, /\.model-explanation-body \{[^}]*grid-template-columns:/);
+  assert.doesNotMatch(explanationSource, /<aside|<h2|<dl|<details/);
 });
 
 test("keeps the benchmark catalog heading and cards minimal", async () => {
@@ -751,7 +755,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.doesNotMatch(source, /基准分组仅用于浏览/);
   assert.match(source, /useState<PortalView>\(initialListLocation\?\.view \?\? initialView\)/);
   assert.match(source, /initialView="model-benchmarks"/);
-  assert.match(source, /href="\/model-benchmarks"/);
+  assert.match(source, /href=\{localizedHref\(`\$\{localPreview \? "\/local-preview" : ""\}\/model-benchmarks`, language\)\}/);
   assert.match(source, /BenchmarkOverview/);
   assert.match(source, /BenchmarkDetail/);
   assert.match(source, /<VendorInteractionTimeline interactions=\{selectedVendor\.interactions\}[\s\S]*<VendorHarborTasks categories=\{landscape\?\.categories \?\? \[\]\} downloadHref=[\s\S]*vendor=\{selectedVendor\} \/>[\s\S]*className="submission-history"/);
@@ -1272,3 +1276,23 @@ function tarEntries(bytes) {
   }
   return entries;
 }
+
+
+test("catalog, guide, and task routes render the requested or saved language", async () => {
+  const app = await worker();
+  const paths = ["/model-benchmarks", "/model-benchmarks/gdpval-aa-v2", "/model-benchmarks/gdpval-aa-v2/tasks/gdpval-afc-audit-sample"];
+  for (const path of paths) {
+    for (const [search, saved, expected] of [["?lang=en", "zh", "en"], ["?lang=zh", "en", "zh"], ["", "en", "en"]]) {
+      const response = await app.fetch(
+        new Request(`http://localhost${path}${search}`, { headers: { accept: "text/html", cookie: `${sessionCookie()}; portal-language=${saved}` } }),
+        { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+        { waitUntil() {}, passThroughOnException() {} },
+      );
+      assert.equal(response.status, 200, path);
+      const html = await response.text();
+      assert.ok(html.includes(`class="language-switch" type="button">${expected === "en" ? "中" : "EN"}</button>`), `${path}: ${expected} should be selected`);
+      assert.ok(html.includes(`/model-benchmarks${expected === "en" ? "?lang=en" : "?lang=zh"}`), `${path}: catalog link should preserve language`);
+      assert.ok(!html.includes("This page couldn’t load"));
+    }
+  }
+});

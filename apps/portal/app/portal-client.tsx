@@ -1,5 +1,6 @@
 "use client";
 
+import { localizedHref, portalLanguageCookie, resolvePortalLanguage } from "./portal-language";
 import { sampleGroup, sampleCapability, capabilityLabel } from "./sample-classification";
 import Image from "next/image";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
@@ -208,8 +209,9 @@ const phaseLabels: Record<HarborCheckPhase, string> = {
 const TASK_GROUP_THRESHOLD = 100;
 const TASK_BATCH_SIZE = 50;
 
-export default function PortalClient({ user, initialCatalog, localPreview = false, initialView = "benchmarks", initialModelBenchmarkId, initialModelExplanation, initialModelTask, initialVendorTaskId, initialListLocation, initialTaskOrigin }: {
+export default function PortalClient({ user, initialCatalog, localPreview = false, initialView = "benchmarks", initialModelBenchmarkId, initialModelExplanation, initialModelTask, initialVendorTaskId, initialListLocation, initialTaskOrigin, initialLanguage }: {
   user: PortalUser;
+  initialLanguage?: Language;
   initialCatalog?: CatalogSnapshot;
   localPreview?: boolean;
   initialView?: PortalView;
@@ -222,7 +224,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
 }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(initialCatalog ?? null);
   const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog || initialView === "model-benchmarks" || initialView === "model-explanation" || (initialView === "model-task" || initialView === "vendor-task") ? "ready" : "loading");
-  const [language, setLanguage] = useState<Language>(initialListLocation?.language ?? initialTaskOrigin?.language ?? "zh");
+  const [language, setLanguage] = useState<Language>(initialLanguage ?? initialListLocation?.language ?? initialTaskOrigin?.language ?? "zh");
   const [view, setView] = useState<PortalView>(initialListLocation?.view ?? initialView);
   const [vendorSectionSelection, setVendorSectionSelection] = useState<{ vendorId: string; section: VendorSection } | null>(null);
   const [query, setQuery] = useState(initialListLocation?.query ?? "");
@@ -239,7 +241,16 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
 
   useEffect(() => {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-  }, [language]);
+    document.cookie = `${portalLanguageCookie}=${language}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    const url = localizedHref(window.location.href, language);
+    window.history.replaceState(window.history.state, "", url);
+  }, [language, view]);
+
+  useEffect(() => {
+    const syncLanguage = () => setLanguage(resolvePortalLanguage(new URLSearchParams(window.location.search).get("lang")));
+    window.addEventListener("popstate", syncLanguage);
+    return () => window.removeEventListener("popstate", syncLanguage);
+  }, []);
 
   useEffect(() => {
     if (initialCatalog || catalog || view === "model-benchmarks" || view === "model-explanation" || (view === "model-task" || view === "vendor-task")) return;
@@ -343,8 +354,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
       <nav aria-label={t.title} className="market-switch">
         <button className={view === "benchmarks" || (view === "vendor-task" && taskOrigin?.view === "benchmarks") ? "active" : ""} onClick={showBenchmarks} type="button">{t.benchmarks}</button>
         <button className={view === "vendors" || (view === "vendor-task" && taskOrigin?.view !== "benchmarks") ? "active" : ""} onClick={() => showVendors()} type="button">{t.byVendor}</button>
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a className={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? "active" : ""} href="/model-benchmarks" onClick={(event) => { event.preventDefault(); showModelBenchmarks(); }}>{t.modelBenchmarks}</a>
+        <a className={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? "active" : ""} href={localizedHref(`${localPreview ? "/local-preview" : ""}/model-benchmarks`, language)} onClick={(event) => { event.preventDefault(); showModelBenchmarks(); }}>{t.modelBenchmarks}</a>
       </nav>
       <div className="header-tools">
         <label className={`global-search${view === "model-explanation" || view === "model-task" || view === "vendor-task" ? " model-task-search" : ""}`}><span aria-hidden>⌕</span><input aria-label={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? t.searchModelBenchmarks : t.search} disabled={view === "model-explanation" || view === "model-task" || view === "vendor-task"} onChange={(event) => setQuery(event.target.value)} placeholder={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? t.searchModelBenchmarks : t.search} value={query} /></label>
@@ -787,7 +797,8 @@ function scrollToTop() {
 }
 
 function updatePortalPath(path: string, localPreview: boolean) {
-  if (!localPreview && window.location.pathname !== path) window.history.replaceState(null, "", path);
+  const destination = localPreview ? `/local-preview${path === "/" ? "" : path}` : path;
+  if (window.location.pathname !== destination) window.history.replaceState(window.history.state, "", destination);
 }
 
 function friendlySubmissionSource(submission: CatalogSubmission, language: Language): string {
@@ -1023,6 +1034,6 @@ export function LocalDownloadPreview({ initialListLocation }: { initialListLocat
   return <PortalClient initialListLocation={initialListLocation} initialCatalog={previewCatalog} localPreview user={{ name: "Researcher" }} />;
 }
 
-export function LocalModelBenchmarkPreview() {
-  return <PortalClient initialView="model-benchmarks" localPreview user={{ name: "Researcher" }} />;
+export function LocalModelBenchmarkPreview({ initialLanguage }: { initialLanguage?: Language }) {
+  return <PortalClient initialLanguage={initialLanguage} initialView="model-benchmarks" localPreview user={{ name: "Researcher" }} />;
 }
