@@ -36,6 +36,7 @@ import { previewTaskExamples } from "./local-preview/preview-task-examples";
 import { MiniMaxMark } from "./minimax-mark";
 
 type Language = "zh" | "en";
+type VendorSection = "tasks" | "submissions" | "timeline";
 const TaskListContext = createContext({ returnTo: "/", localPreview: false });
 
 type PortalView = "benchmarks" | "vendors" | "model-benchmarks" | "model-explanation" | "model-task" | "vendor-task";
@@ -223,7 +224,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog || initialView === "model-benchmarks" || initialView === "model-explanation" || (initialView === "model-task" || initialView === "vendor-task") ? "ready" : "loading");
   const [language, setLanguage] = useState<Language>(initialListLocation?.language ?? initialTaskOrigin?.language ?? "zh");
   const [view, setView] = useState<PortalView>(initialListLocation?.view ?? initialView);
-  const [vendorSection, setVendorSection] = useState<"tasks" | "submissions" | "timeline">("tasks");
+  const [vendorSectionSelection, setVendorSectionSelection] = useState<{ vendorId: string; section: VendorSection } | null>(null);
   const [query, setQuery] = useState(initialListLocation?.query ?? "");
   const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(initialListLocation?.benchmark ?? null);
   const [selectedVendorId, setSelectedVendorId] = useState(initialListLocation?.vendor || vendorsForDisplay(initialCatalog?.vendors ?? [])[0]?.id || "");
@@ -298,6 +299,9 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     return vendors.filter((vendor) => vendorSearchText(vendor).includes(normalized));
   }, [query, vendors]);
   const selectedVendor = matchingVendors.find((vendor) => vendor.id === selectedVendorId) ?? matchingVendors[0];
+  const vendorSection = vendorSectionSelection && vendorSectionSelection.vendorId === selectedVendor?.id
+    ? vendorSectionSelection.section
+    : defaultVendorSection(selectedVendor);
   const selectedBenchmarkCategory = landscape?.categories.find((category) => category.id === selectedBenchmark?.categoryId);
   const initialModelBenchmark = initialModelTask
     ? findModelBenchmark(initialModelTask.benchmarkId)
@@ -317,7 +321,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   function showVendors(vendorId?: string) {
     if (!catalog) setState("loading");
     setView("vendors");
-    setVendorSection("tasks");
+    setVendorSectionSelection(null);
     setSelectedBenchmarkId(null);
     setQuery("");
     if (vendorId) setSelectedVendorId(vendorId);
@@ -386,12 +390,12 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     {state === "ready" && view === "vendors" && selectedVendor && <div className="portal-grid">
       <aside className="vendor-sidebar" aria-label={t.vendors}>
         <div className="sidebar-head"><strong>{t.vendorRecords}</strong></div>
-        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => { setSelectedVendorId(vendor.id); setVendorSection("tasks"); }} type="button"><span><strong>{vendor.name}</strong><small>{vendorRecordSummary(vendor, language)}</small></span></button>)}</div>
+        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => { setSelectedVendorId(vendor.id); setVendorSectionSelection(null); }} type="button"><span><strong>{vendor.name}</strong><small>{vendorRecordSummary(vendor, language)}</small></span></button>)}</div>
       </aside>
       <section className="vendor-main">
         <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h1>{selectedVendor.name}</h1><div className="vendor-meta">{selectedVendor.submissions.length > 0 && <><span>{selectedVendor.submissions.length} {countLabel(selectedVendor.submissions.length, language, "submission", t.submissions.toLowerCase())}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></>}{selectedVendor.interactions.length > 0 && <span>{selectedVendor.interactions.length} {t.interactions}</span>}</div></header>
         <nav className="vendor-section-nav" aria-label={language === "zh" ? "供应商内容" : "Vendor sections"}>
-          {(["tasks", "submissions", "timeline"] as const).map((section) => <button type="button" key={section} aria-pressed={vendorSection === section} onClick={() => setVendorSection(section)}>{section === "tasks" ? t.tasks : section === "submissions" ? t.submissions : language === "zh" ? "时间线" : "Timeline"}</button>)}
+          {(["tasks", "submissions", "timeline"] as const).map((section) => <button type="button" key={section} aria-pressed={vendorSection === section} onClick={() => setVendorSectionSelection({ vendorId: selectedVendor.id, section })}>{section === "tasks" ? t.tasks : section === "submissions" ? t.submissions : language === "zh" ? "时间线" : "Timeline"}</button>)}
         </nav>
         {vendorSection === "timeline" && (selectedVendor.interactions.length ? <VendorInteractionTimeline interactions={selectedVendor.interactions} language={language} /> : <StateCard>{language === "zh" ? "暂无往来记录。" : "No interactions recorded yet."}</StateCard>)}
         {vendorSection === "tasks" && <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />}
@@ -715,6 +719,11 @@ function HarborChecks({ task, language }: { task: CatalogTask; language: Languag
       <span aria-hidden className="check-mark">{mark}</span>
     </span>;
   })}</div>;
+}
+
+function defaultVendorSection(vendor?: CatalogVendor): VendorSection {
+  if (vendor?.submissions.some((submission) => submission.tasks.some((task) => task.kind === "task" && task.format === "harbor"))) return "tasks";
+  return vendor?.submissions.length ? "submissions" : "timeline";
 }
 
 function hasVendorRecord(vendor: CatalogVendor): boolean {
