@@ -612,15 +612,36 @@ function FilesystemBrowser({ filesystem, language }: {
   language: BenchmarkReferenceLanguage;
 }) {
   const t = copy[language];
-  const initialEntry = filesystem.entries.find((entry) => entry.path === "instruction.md") ?? filesystem.entries.find((entry) => entry.kind === "file") ?? filesystem.entries[0];
+  const fileCount = filesystem.entries.filter((entry) => entry.kind === "file").length;
+  const directoryCount = filesystem.entries.length - fileCount;
+  const totalSize = filesystem.entries.reduce((total, entry) => total + (entry.sizeBytes ?? 0), 0);
+  return <section className="task-files-panel">
+    <header className="task-files-meta">
+      <div><span>{t.repository}</span><strong>{filesystem.repository}</strong></div>
+      <div><span>{t.snapshot}</span><code>{filesystem.treeSha.slice(0, 12)}</code></div>
+      <div><span>{t.verified}</span><strong>{filesystem.verifiedAt}</strong></div>
+      <div><span>{t.filesystem}</span><strong>{fileCount} {t.files} · {directoryCount} {t.directories} · {formatBytes(totalSize)}</strong></div>
+    </header>
+    <TaskFileBrowser entries={filesystem.entries} rootName={filesystem.repositoryPath.split("/").at(-1) ?? ""} language={language}
+      contentUrl={(entry) => upstreamFilesystemEntryContentUrl(filesystem, entry)} sourceUrl={(entry) => upstreamFilesystemEntryUrl(filesystem, entry)} />
+  </section>;
+}
+
+export function TaskFileBrowser({ entries, rootName, language, contentUrl, sourceUrl, privateFiles = false }: {
+  entries: UpstreamTaskFilesystemEntry[];
+  rootName: string;
+  language: BenchmarkReferenceLanguage;
+  contentUrl: (entry: UpstreamTaskFilesystemEntry) => string;
+  sourceUrl?: (entry: UpstreamTaskFilesystemEntry) => string;
+  privateFiles?: boolean;
+}) {
+  const t = copy[language];
+  const initialEntry = entries.find((entry) => entry.path === "instruction.md") ?? entries.find((entry) => entry.kind === "file") ?? entries[0];
   const [selectedPath, setSelectedPath] = useState(initialEntry?.path ?? "");
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
-  const selectedEntry = filesystem.entries.find((entry) => entry.path === selectedPath) ?? initialEntry;
+  const selectedEntry = entries.find((entry) => entry.path === selectedPath) ?? initialEntry;
   const selectedFile = selectedEntry?.kind === "file" ? selectedEntry : undefined;
-  const visibleEntries = filesystem.entries.filter((entry) => entryAncestors(entry.path).every((ancestor) => expandedDirectories.has(ancestor)));
-  const fileCount = filesystem.entries.filter((entry) => entry.kind === "file").length;
-  const directoryCount = filesystem.entries.filter((entry) => entry.kind === "directory").length;
-  const totalSize = filesystem.entries.reduce((total, entry) => total + (entry.sizeBytes ?? 0), 0);
+  const visibleEntries = entries.filter((entry) => entryAncestors(entry.path).every((ancestor) => expandedDirectories.has(ancestor)));
 
   function selectEntry(entry: UpstreamTaskFilesystemEntry) {
     if (entry.kind === "directory") {
@@ -635,16 +656,9 @@ function FilesystemBrowser({ filesystem, language }: {
     setSelectedPath(entry.path);
   }
 
-  return <section className="task-files-panel">
-    <header className="task-files-meta">
-      <div><span>{t.repository}</span><strong>{filesystem.repository}</strong></div>
-      <div><span>{t.snapshot}</span><code>{filesystem.treeSha.slice(0, 12)}</code></div>
-      <div><span>{t.verified}</span><strong>{filesystem.verifiedAt}</strong></div>
-      <div><span>{t.filesystem}</span><strong>{fileCount} {t.files} · {directoryCount} {t.directories} · {formatBytes(totalSize)}</strong></div>
-    </header>
-    <div className="task-file-browser">
+  return <div className="task-file-browser">
       <aside aria-label={t.filesystem} className="task-file-tree">
-        <div className="task-file-tree-root"><span aria-hidden>⌂</span><code>{filesystem.repositoryPath.split("/").at(-1)}</code></div>
+        <div className="task-file-tree-root"><span aria-hidden>⌂</span><code>{rootName}</code></div>
         <div role="tree">
           {visibleEntries.map((entry) => {
             const depth = entry.path.split("/").length - 1;
@@ -669,10 +683,9 @@ function FilesystemBrowser({ filesystem, language }: {
         </div>
       </aside>
       <div className="task-file-preview">
-        {selectedFile ? <FilePreview entry={selectedFile} filesystem={filesystem} key={selectedFile.path} language={language} /> : <p>{t.selectFile}</p>}
+        {selectedFile ? <FilePreview entry={selectedFile} contentUrl={contentUrl(selectedFile)} sourceUrl={sourceUrl?.(selectedFile)} privateFiles={privateFiles} key={selectedFile.path} language={language} /> : <p>{t.selectFile}</p>}
       </div>
-    </div>
-  </section>;
+    </div>;
 }
 
 type FilePreviewState =
@@ -680,14 +693,17 @@ type FilePreviewState =
   | { status: "ready"; objectUrl?: string; text?: string }
   | { status: "error" };
 
-function FilePreview({ entry, filesystem, language }: {
+function FilePreview({ entry, contentUrl, sourceUrl, language, privateFiles = false }: {
   entry: UpstreamTaskFilesystemEntry;
-  filesystem: NonNullable<(typeof modelBenchmarkTaskFilesystems)[string]>;
+  contentUrl: string;
+  sourceUrl?: string;
+  privateFiles?: boolean;
   language: BenchmarkReferenceLanguage;
 }) {
   const t = copy[language];
-  const contentUrl = upstreamFilesystemEntryContentUrl(filesystem, entry);
-  const previewKind = filePreviewKind(entry.path);
+  const kind = filePreviewKind(entry.path);
+  const previewKind = privateFiles && (kind === "office" || (entry.sizeBytes ?? 0) > 8 * 1024 * 1024 || /\.(zip|gz|zst|tar|parquet|sqlite|db|bin|exe|woff2?|mp[34]|wav|npy|npz|pkl|pickle)$/i.test(entry.path)) ? "binary" : kind;
+  const rawUrl = privateFiles ? `${contentUrl}&download=1` : contentUrl;
   const [preview, setPreview] = useState<FilePreviewState>(previewKind === "image" || previewKind === "office" || previewKind === "binary" ? { status: "ready" } : { status: "loading" });
 
   useEffect(() => {
@@ -700,7 +716,7 @@ function FilePreview({ entry, filesystem, language }: {
 
     void (async () => {
       try {
-        const response = await fetch(contentUrl, { cache: "force-cache", signal: controller.signal });
+        const response = await fetch(contentUrl, { cache: privateFiles ? "no-store" : "force-cache", signal: controller.signal });
         if (!response.ok) throw new Error(`Publisher returned ${response.status}`);
         if (previewKind === "pdf") {
           objectUrl = URL.createObjectURL(await response.blob());
@@ -717,32 +733,32 @@ function FilePreview({ entry, filesystem, language }: {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [contentUrl, previewKind]);
+  }, [contentUrl, previewKind, privateFiles]);
 
   return <>
     <header className="task-file-preview-bar">
       <div className="task-file-preview-path">
         <span aria-hidden>{fileIcon(entry.path)}</span>
-        <div><small>{t.previewSource}</small><code>{entry.path}</code></div>
+        <div><small>{privateFiles ? (language === "zh" ? "任务文件" : "Task file") : t.previewSource}</small><code>{entry.path}</code></div>
       </div>
       <div className="task-file-preview-facts">
         <span>{t.roles[entry.role]}</span>
         <span>{entry.sizeBytes === null ? "—" : formatBytes(entry.sizeBytes)}</span>
       </div>
-      <nav aria-label={t.previewSource} className="task-file-preview-actions">
-        <a href={contentUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a>
-        <a href={upstreamFilesystemEntryUrl(filesystem, entry)} rel="noreferrer" target="_blank">{t.openUpstream} ↗</a>
+      <nav aria-label={privateFiles ? (language === "zh" ? "任务文件" : "Task file") : t.previewSource} className="task-file-preview-actions">
+        <a href={rawUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a>
+        {sourceUrl ? <a href={sourceUrl} rel="noreferrer" target="_blank">{t.openUpstream} ↗</a> : null}
       </nav>
     </header>
     <div aria-busy={preview.status === "loading"} className={`task-file-preview-content ${previewKind}`}>
       {preview.status === "loading" ? <div className="task-file-preview-state"><span className="task-file-preview-spinner" /><p>{t.loadingPreview}</p></div> : null}
-      {preview.status === "error" ? <div className="task-file-preview-state"><strong>{t.previewError}</strong><a href={contentUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
+      {preview.status === "error" ? <div className="task-file-preview-state"><strong>{t.previewError}</strong><a href={rawUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
       {preview.status === "ready" && previewKind === "text" ? <pre><code>{preview.text}</code></pre> : null}
-      {/* eslint-disable-next-line @next/next/no-img-element -- Upstream task images are publisher-hosted and must not be proxied. */}
-      {preview.status === "ready" && previewKind === "image" ? <img alt={entry.path} src={contentUrl} /> : null}
+      {/* eslint-disable-next-line @next/next/no-img-element -- Public images stay publisher-hosted; private task images use the authenticated file endpoint. */}
+      {preview.status === "ready" && previewKind === "image" ? <img alt={entry.path} onError={() => setPreview({ status: "error" })} src={contentUrl} /> : null}
       {preview.status === "ready" && previewKind === "office" ? <iframe allowFullScreen loading="lazy" src={officeViewerUrl(contentUrl)} title={entry.path} /> : null}
-      {preview.status === "ready" && previewKind === "pdf" && preview.objectUrl ? <iframe src={`${preview.objectUrl}#view=FitH`} title={entry.path} /> : null}
-      {preview.status === "ready" && previewKind === "binary" ? <div className="task-file-preview-state"><strong>{t.binaryPreview}</strong><a href={contentUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
+      {preview.status === "ready" && previewKind === "pdf" && preview.objectUrl ? <iframe sandbox={privateFiles ? "allow-same-origin" : undefined} src={`${preview.objectUrl}#view=FitH`} title={entry.path} /> : null}
+      {preview.status === "ready" && previewKind === "binary" ? <div className="task-file-preview-state"><strong>{t.binaryPreview}</strong><a href={rawUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
     </div>
   </>;
 }

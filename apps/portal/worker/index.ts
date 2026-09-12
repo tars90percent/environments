@@ -15,6 +15,7 @@ import {
 import { originalSubmissionArchive } from "../app/original-submission-archive";
 import { originalSubmissionArchiveFilename, originalSubmissionArtifacts, type OriginalSubmissionArtifact } from "../app/original-submission";
 import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-catalog";
+import { vendorTaskFiles } from "./vendor-task-files";
 import { buildBenchmarkLandscape } from "../app/benchmark-landscape";
 
 interface Env {
@@ -61,6 +62,26 @@ const worker = {
       if (runtimeEnv[key]) process.env[key] = runtimeEnv[key];
     }
     const registryUrl = caseRegistryUrl(runtimeEnv);
+
+    const taskFilesMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(files|file)$/);
+    if (taskFilesMatch) {
+      const headers = { "cache-control": "private, no-store" };
+      if (request.method !== "GET") return new Response("Method not allowed", { status: 405, headers });
+      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers });
+      const gatewayUrl = harborTaskGatewayUrl(runtimeEnv);
+      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN || !gatewayUrl || !runtimeEnv.HARBOR_TASK_GATEWAY_TOKEN) {
+        return Response.json({ error: "task_files_not_configured" }, { status: 503, headers });
+      }
+      try {
+        const upstream = await fetch(`${registryUrl}/v1/catalog`, {
+          headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
+        });
+        if (!upstream.ok) return registryErrorResponse(upstream, "task_files_unavailable");
+        return await vendorTaskFiles(request, decodeURIComponent(taskFilesMatch[1]), taskFilesMatch[2], normalizeCaseCatalog(await upstream.json()), gatewayUrl, runtimeEnv.HARBOR_TASK_GATEWAY_TOKEN);
+      } catch {
+        return Response.json({ error: "task_files_unavailable" }, { status: 502, headers });
+      }
+    }
 
     const vendorHarborDownloadMatch = url.pathname.match(/^\/api\/vendors\/([^/]+)\/harbor-download$/);
     const benchmarkHarborDownloadMatch = url.pathname.match(/^\/api\/benchmarks\/([^/]+)\/harbor-download$/);

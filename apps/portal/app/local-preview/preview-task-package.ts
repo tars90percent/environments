@@ -6,7 +6,7 @@ export const previewTasks: Record<string, PreviewTask> = {
   "repair-cache": { title: "Repair cache invalidation", expected: "cache repaired" },
 };
 
-export async function previewTaskPackage(taskKey: string): Promise<ArrayBuffer | null> {
+export function previewTaskFiles(taskKey: string): Array<{ path: string; bytes: Uint8Array; mode?: number }> | null {
   const task = previewTasks[taskKey];
   if (!task) return null;
   const encode = (value: string) => new TextEncoder().encode(value);
@@ -33,13 +33,19 @@ network_mode = "none"
 os = "linux"
 build_timeout_sec = 300.0
 `;
-  const tar = tarBytes([
+  return [
     { path: "task.toml", bytes: encode(taskToml) },
     { path: "instruction.md", bytes: encode(`# ${task.title}\n\nCreate /app/submission/result.txt containing exactly: ${task.expected}\n`) },
     { path: "environment/Dockerfile", bytes: encode("FROM alpine:3.21\nRUN mkdir -p /app/submission\nWORKDIR /app/submission\n") },
     { path: "solution/solve.sh", bytes: encode(`#!/usr/bin/env sh\nset -eu\nprintf '%s\\n' '${task.expected}' > /app/submission/result.txt\n`), mode: 0o755 },
     { path: "tests/test.sh", bytes: encode(`#!/usr/bin/env sh\nset -eu\ntest "$(cat /app/submission/result.txt)" = '${task.expected}'\n`), mode: 0o755 },
-  ]);
-  const compressed = new Blob([tar]).stream().pipeThrough(new CompressionStream("gzip"));
+  ];
+}
+
+export async function previewTaskPackage(taskKey: string): Promise<ArrayBuffer | null> {
+  const files = previewTaskFiles(taskKey);
+  if (!files) return null;
+  const tar = tarBytes(files);
+  const compressed = new Blob([new Uint8Array(tar)]).stream().pipeThrough(new CompressionStream("gzip"));
   return await new Response(compressed).arrayBuffer();
 }

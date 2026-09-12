@@ -296,7 +296,7 @@ function safeFilenameSegment(value: string, fallback: string): string {
   return value.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || fallback;
 }
 
-function harborTaskBucketPrefix(vendorId: string, submissionId: string, sourcePath: string | null, taskId: string): string {
+export function harborTaskBucketPrefix(vendorId: string, submissionId: string, sourcePath: string | null, taskId: string): string {
   const path = requiredTaskSourcePath(sourcePath, taskId).replace(/\\/g, "/");
   const parts = path.split("/").filter((part) => part && part !== ".");
   let taskName = parts.at(-1)!;

@@ -20,7 +20,7 @@ const sharedRootEntries: UpstreamTaskFilesystemEntry[] = [
 
 type HarborFileSpec = readonly [path: string, sizeBytes: number];
 
-function harborEntryRole(path: string): UpstreamTaskFilesystemEntry["role"] {
+export function harborEntryRole(path: string): UpstreamTaskFilesystemEntry["role"] {
   if (path === "instruction.md") return "task-instruction";
   if (path === "task.toml") return "task-config";
   if (path === "README.md") return "documentation";
