@@ -829,11 +829,12 @@ main { min-height: 100vh; padding-top: 78px; background: var(--bg); }
 .vendor-task-provenance summary { cursor: pointer; }
 .vendor-task-provenance dl { display: grid; gap: 12px; }
 .vendor-task-link { color: inherit; text-decoration: none; }
-.task-record-clickable { position: relative; isolation: isolate; }
+.task-record-clickable { position: relative; isolation: isolate; display: flow-root; }
 .vendor-task-link::after { content: ""; position: absolute; inset: 0; z-index: 1; }
-.task-record-clickable:hover .task-row { background: var(--burgundy-soft); }
+.task-record-clickable .task-row { background: transparent; }
+.task-record-clickable:has(.vendor-task-link:hover), .task-record-clickable:has(.vendor-task-link:focus-visible) { background: var(--burgundy-soft); }
 .vendor-task-link:focus-visible { outline: none; }
 .vendor-task-link:focus-visible::after { outline: 2px solid var(--burgundy); outline-offset: -2px; border-radius: 6px; }
-.task-record-clickable .task-actions a { position: relative; z-index: 2; }
+.task-record-clickable .task-actions a, .task-record-clickable .task-findings { position: relative; z-index: 2; }
 .vendor-task-unavailable { padding: 20px; color: var(--muted); }
 @media (max-width: 760px) { .vendor-task-facts { grid-template-columns: 1fr 1fr; gap: 16px; } }

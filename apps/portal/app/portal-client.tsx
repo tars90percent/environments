@@ -691,7 +691,7 @@ function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task
     <div className="task-checks">
       {task.format === "harbor" ? <HarborChecks language={language} task={task} /> : null}
     </div>
-    <div className="task-actions">{task.kind === "task" && task.format === "harbor" ? <a href={taskHref}>{language === "zh" ? "查看文件" : "View files"}</a> : null}{task.artifactId && <a href={`/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
+    <div className="task-actions">{task.artifactId && <a href={`/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
     </div>
     {task.findings.length > 0 && <div className="task-findings"><div className="finding-title">{t.findings}</div><div className="task-finding-list">{task.findings.map((finding) => <div className="task-finding" key={finding.id}><strong>{phaseLabels[finding.phase]}</strong><p>{finding.finding}</p></div>)}</div></div>}
   </article>;
