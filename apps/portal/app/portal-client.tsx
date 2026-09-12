@@ -2,7 +2,7 @@
 
 import { sampleGroup, sampleCapability, capabilityLabel } from "./sample-classification";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type {
   CatalogSnapshot,
   CatalogSubmission,
@@ -31,9 +31,12 @@ import { VendorTaskDetail } from "./vendor-task-detail";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
 import { benchmarkDeliveries } from "./benchmark-deliveries";
 import { latestVendorInventory } from "./vendor-inventory";
+import { taskListHref, readTaskListLocation, type TaskListLocation } from "./task-navigation";
 import { MiniMaxMark } from "./minimax-mark";
 
 type Language = "zh" | "en";
+const TaskListContext = createContext({ returnTo: "/", localPreview: false });
+
 type PortalView = "benchmarks" | "vendors" | "model-benchmarks" | "model-explanation" | "model-task" | "vendor-task";
 
 export type PortalUser = {
@@ -203,7 +206,7 @@ const phaseLabels: Record<HarborCheckPhase, string> = {
 const TASK_GROUP_THRESHOLD = 100;
 const TASK_BATCH_SIZE = 50;
 
-export default function PortalClient({ user, initialCatalog, localPreview = false, initialView = "benchmarks", initialModelBenchmarkId, initialModelExplanation, initialModelTask, initialVendorTaskId }: {
+export default function PortalClient({ user, initialCatalog, localPreview = false, initialView = "benchmarks", initialModelBenchmarkId, initialModelExplanation, initialModelTask, initialVendorTaskId, initialListLocation, initialTaskOrigin }: {
   user: PortalUser;
   initialCatalog?: CatalogSnapshot;
   localPreview?: boolean;
@@ -212,15 +215,24 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   initialModelExplanation?: ModelBenchmarkExplanation;
   initialModelTask?: { benchmarkId: string; sampleId: string };
   initialVendorTaskId?: string;
+  initialListLocation?: TaskListLocation | null;
+  initialTaskOrigin?: TaskListLocation | null;
 }) {
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(initialCatalog ?? null);
   const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog || initialView === "model-benchmarks" || initialView === "model-explanation" || (initialView === "model-task" || initialView === "vendor-task") ? "ready" : "loading");
-  const [language, setLanguage] = useState<Language>("zh");
-  const [view, setView] = useState<PortalView>(initialView);
-  const [query, setQuery] = useState("");
-  const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(null);
-  const [selectedVendorId, setSelectedVendorId] = useState(vendorsForDisplay(initialCatalog?.vendors ?? [])[0]?.id ?? "");
+  const [language, setLanguage] = useState<Language>(initialListLocation?.language ?? initialTaskOrigin?.language ?? "zh");
+  const [view, setView] = useState<PortalView>(initialListLocation?.view ?? initialView);
+  const [query, setQuery] = useState(initialListLocation?.query ?? "");
+  const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(initialListLocation?.benchmark ?? null);
+  const [selectedVendorId, setSelectedVendorId] = useState(initialListLocation?.vendor || vendorsForDisplay(initialCatalog?.vendors ?? [])[0]?.id || "");
   const t = text[language];
+  const returnTo = taskListHref({ view: view === "vendors" ? "vendors" : "benchmarks", benchmark: selectedBenchmarkId, vendor: selectedVendorId, query, language }, localPreview);
+  const taskReturnTo = initialTaskOrigin ? taskListHref(initialTaskOrigin, localPreview) : null;
+  const taskOrigin = taskReturnTo ? readTaskListLocation(taskReturnTo, localPreview) : null;
+
+  useEffect(() => {
+    if (view === "benchmarks" || view === "vendors") window.history.replaceState(window.history.state, "", returnTo);
+  }, [view, returnTo]);
 
   useEffect(() => {
     document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
@@ -323,12 +335,12 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     scrollToTop();
   }
 
-  return <div className="app-shell">
+  return <TaskListContext.Provider value={{ returnTo, localPreview }}><div className="app-shell">
     <header className="global-header">
       <a aria-label={t.landscapeTitle} className="wordmark" href="#top" onClick={showBenchmarks}><MiniMaxMark /></a>
       <nav aria-label={t.title} className="market-switch">
-        <button className={view === "benchmarks" ? "active" : ""} onClick={showBenchmarks} type="button">{t.benchmarks}</button>
-        <button className={view === "vendors" || view === "vendor-task" ? "active" : ""} onClick={() => showVendors()} type="button">{t.byVendor}</button>
+        <button className={view === "benchmarks" || (view === "vendor-task" && taskOrigin?.view === "benchmarks") ? "active" : ""} onClick={showBenchmarks} type="button">{t.benchmarks}</button>
+        <button className={view === "vendors" || (view === "vendor-task" && taskOrigin?.view !== "benchmarks") ? "active" : ""} onClick={() => showVendors()} type="button">{t.byVendor}</button>
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a className={view === "model-benchmarks" || view === "model-explanation" || view === "model-task" ? "active" : ""} href="/model-benchmarks" onClick={(event) => { event.preventDefault(); showModelBenchmarks(); }}>{t.modelBenchmarks}</a>
       </nav>
@@ -367,7 +379,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     {view !== "model-benchmarks" && view !== "model-explanation" && view !== "model-task" && state === "unavailable" && <StateCard>{t.unavailable}</StateCard>}
     {view === "model-benchmarks" && <ModelBenchmarkReferencePage language={language} localPreview={localPreview} query={query} />}
     {view === "model-explanation" && initialModelBenchmark && initialModelExplanation && <ModelBenchmarkExplanationPage benchmark={initialModelBenchmark} explanation={initialModelExplanation} language={language} localPreview={localPreview} />}
-    {view === "vendor-task" && initialVendorTaskId && <VendorTaskDetail key={initialVendorTaskId} taskId={initialVendorTaskId} language={language} onBack={showVendors} localPreview={localPreview} />}
+    {view === "vendor-task" && initialVendorTaskId && <VendorTaskDetail key={initialVendorTaskId} taskId={initialVendorTaskId} language={language} onBack={showVendors} returnTo={taskReturnTo} fromBenchmark={taskOrigin?.view === "benchmarks"} localPreview={localPreview} />}
     {view === "model-task" && initialModelBenchmark && initialModelSample && <ModelBenchmarkTaskDetail benchmark={initialModelBenchmark} language={language} localPreview={localPreview} sample={initialModelSample} />}
     {state === "ready" && view === "benchmarks" && landscape && !selectedBenchmark && <BenchmarkOverview categories={matchingBenchmarkCategories} language={language} onSelect={(benchmarkId) => { setSelectedBenchmarkId(benchmarkId); setQuery(""); scrollToTop(); }} />}
     {state === "ready" && view === "benchmarks" && selectedBenchmark && <BenchmarkDetail vendors={vendors} benchmark={selectedBenchmark} downloadHref={localPreview ? `/local-preview/vendor-harbor-download?benchmark=${encodeURIComponent(selectedBenchmark.id)}` : `/api/benchmarks/${encodeURIComponent(selectedBenchmark.id)}/harbor-download`} language={language} onOpenVendor={showVendors} records={matchingBenchmarkRecords} />}
@@ -388,7 +400,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     </div>
     </main>
 
-  </div>;
+  </div></TaskListContext.Provider>;
 }
 
 function BenchmarkOverview({ categories, language, onSelect }: { categories: BenchmarkCategoryGroup[]; language: Language; onSelect: (benchmarkId: string) => void }) {
@@ -659,10 +671,12 @@ function OriginalSubmissionPanel({ submission, language }: { submission: Catalog
 
 function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task: CatalogTask; language: Language; contextLabel?: string; hideBenchmark?: boolean }) {
   const t = text[language];
-  return <article className="task-record">
+  const { returnTo, localPreview } = useContext(TaskListContext);
+  const taskHref = `${localPreview ? "/local-preview" : ""}/tasks/${encodeURIComponent(task.id)}?returnTo=${encodeURIComponent(returnTo)}`;
+  return <article className={`task-record${task.kind === "task" && task.format === "harbor" ? " task-record-clickable" : ""}`}>
     <div className="task-row">
     <div className="task-main">
-      <h5>{task.kind === "task" && task.format === "harbor" ? <a className="vendor-task-link" href={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}<span aria-hidden> ↗</span></a> : task.title}</h5>
+      <h5>{task.kind === "task" && task.format === "harbor" ? <a className="vendor-task-link" href={taskHref}>{task.title}</a> : task.title}</h5>
       <div className="task-meta">
         {contextLabel && <span>{contextLabel}</span>}
         {!hideBenchmark && (task.classification || task.benchmark.id !== "unspecified") && <span>{sampleGroup(task).displayName}</span>}
@@ -677,7 +691,7 @@ function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task
     <div className="task-checks">
       {task.format === "harbor" ? <HarborChecks language={language} task={task} /> : null}
     </div>
-    <div className="task-actions">{task.kind === "task" && task.format === "harbor" ? <a href={`/tasks/${encodeURIComponent(task.id)}`}>{language === "zh" ? "查看文件" : "View files"}</a> : null}{task.artifactId && <a href={`/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
+    <div className="task-actions">{task.kind === "task" && task.format === "harbor" ? <a href={taskHref}>{language === "zh" ? "查看文件" : "View files"}</a> : null}{task.artifactId && <a href={`/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
     </div>
     {task.findings.length > 0 && <div className="task-findings"><div className="finding-title">{t.findings}</div><div className="task-finding-list">{task.findings.map((finding) => <div className="task-finding" key={finding.id}><strong>{phaseLabels[finding.phase]}</strong><p>{finding.finding}</p></div>)}</div></div>}
   </article>;
@@ -962,7 +976,7 @@ function previewAttempt(phase: HarborCheckPhase, status: "blocked" | "inconclusi
   return { id: `attempt:${phase}`, phase, status, summary: `${phase} was attempted but did not produce a conclusive result`, completedAt: "2026-08-20T10:00:00.000Z" };
 }
 
-export function LocalDownloadPreview() {
+export function LocalDownloadPreview({ initialListLocation }: { initialListLocation?: TaskListLocation | null }) {
   const previewCatalog: CatalogSnapshot = {
     generatedAt: "2026-08-20T10:00:00.000Z",
     vendors: [
@@ -972,7 +986,7 @@ export function LocalDownloadPreview() {
     ],
     totals: { vendors: 3, submissions: 2, tasks: 10, harborTasks: 9 },
   };
-  return <PortalClient initialCatalog={previewCatalog} localPreview user={{ name: "Researcher" }} />;
+  return <PortalClient initialListLocation={initialListLocation} initialCatalog={previewCatalog} localPreview user={{ name: "Researcher" }} />;
 }
 
 export function LocalModelBenchmarkPreview() {

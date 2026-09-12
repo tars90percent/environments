@@ -12,11 +12,13 @@ export type VendorTaskDetailData = {
   available: boolean;
 };
 
-export function VendorTaskDetail({ taskId, language, onBack, localPreview = false }: {
+export function VendorTaskDetail({ taskId, language, onBack, returnTo, fromBenchmark = false, localPreview = false }: {
   taskId: string;
   language: "zh" | "en";
   onBack: (vendorId?: string) => void;
   localPreview?: boolean;
+  returnTo?: string | null;
+  fromBenchmark?: boolean;
 }) {
   const zh = language === "zh";
   const [data, setData] = useState<VendorTaskDetailData | null>(null);
@@ -36,7 +38,7 @@ export function VendorTaskDetail({ taskId, language, onBack, localPreview = fals
 
   return <article className="model-task-detail vendor-task-detail">
     <header className="model-task-browser-head">
-      <button className="model-task-back" onClick={() => localPreview ? window.location.assign("/local-preview") : onBack(data?.vendor.id)} type="button">← {zh ? "返回供应商任务" : "Back to vendor tasks"}</button>
+      <button className="model-task-back" onClick={() => returnTo ? window.location.assign(returnTo) : localPreview ? window.location.assign("/local-preview") : onBack(data?.vendor.id)} type="button">← {fromBenchmark ? (zh ? "返回基准任务" : "Back to benchmark tasks") : (zh ? "返回供应商任务" : "Back to vendor tasks")}</button>
       {data ? <>
         <div className="model-task-breadcrumb"><span>{data.vendor.name}</span><span>/</span><span>{data.submission.label}</span><span>/</span><code>{data.task.title}</code></div>
         <div className="model-task-title-row">

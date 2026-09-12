@@ -749,7 +749,7 @@ test("keeps the researcher UI on the narrow CASE record", async () => {
   assert.doesNotMatch(source, /Model benchmarks|模型基准/);
   assert.doesNotMatch(source, /Benchmark directions are grouped for navigation only/);
   assert.doesNotMatch(source, /基准分组仅用于浏览/);
-  assert.match(source, /useState<PortalView>\(initialView\)/);
+  assert.match(source, /useState<PortalView>\(initialListLocation\?\.view \?\? initialView\)/);
   assert.match(source, /initialView="model-benchmarks"/);
   assert.match(source, /href="\/model-benchmarks"/);
   assert.match(source, /BenchmarkOverview/);
