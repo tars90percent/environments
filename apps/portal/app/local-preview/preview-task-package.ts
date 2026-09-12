@@ -34,6 +34,7 @@ os = "linux"
 build_timeout_sec = 300.0
 `;
   return [
+    { path: "._solution", bytes: Uint8Array.from([0, 5, 22, 7, 0, 2, 0, 0, ...encode("Mac OS X        ")]) },
     { path: "task.toml", bytes: encode(taskToml) },
     { path: "instruction.md", bytes: encode(`# ${task.title}\n\nCreate /app/submission/result.txt containing exactly: ${task.expected}\n`) },
     { path: "environment/Dockerfile", bytes: encode("FROM alpine:3.21\nRUN mkdir -p /app/submission\nWORKDIR /app/submission\n") },

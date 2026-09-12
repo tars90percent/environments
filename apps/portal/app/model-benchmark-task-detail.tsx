@@ -1,3 +1,4 @@
+import { decodeTaskText, isMacMetadataPath } from "./task-file-preview";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import type { BenchmarkReferenceLanguage, ModelBenchmarkReference } from "./model-benchmark-data";
@@ -636,12 +637,15 @@ export function TaskFileBrowser({ entries, rootName, language, contentUrl, sourc
   privateFiles?: boolean;
 }) {
   const t = copy[language];
-  const initialEntry = entries.find((entry) => entry.path === "instruction.md") ?? entries.find((entry) => entry.kind === "file") ?? entries[0];
+  const [showMetadata, setShowMetadata] = useState(false);
+  const metadataCount = entries.filter((entry) => entry.kind === "file" && isMacMetadataPath(entry.path)).length;
+  const browseEntries = showMetadata ? entries : entries.filter((entry) => !isMacMetadataPath(entry.path));
+  const initialEntry = browseEntries.find((entry) => entry.path === "instruction.md") ?? browseEntries.find((entry) => entry.kind === "file") ?? browseEntries[0];
   const [selectedPath, setSelectedPath] = useState(initialEntry?.path ?? "");
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
-  const selectedEntry = entries.find((entry) => entry.path === selectedPath) ?? initialEntry;
+  const selectedEntry = browseEntries.find((entry) => entry.path === selectedPath) ?? initialEntry;
   const selectedFile = selectedEntry?.kind === "file" ? selectedEntry : undefined;
-  const visibleEntries = entries.filter((entry) => entryAncestors(entry.path).every((ancestor) => expandedDirectories.has(ancestor)));
+  const visibleEntries = browseEntries.filter((entry) => entryAncestors(entry.path).every((ancestor) => expandedDirectories.has(ancestor)));
 
   function selectEntry(entry: UpstreamTaskFilesystemEntry) {
     if (entry.kind === "directory") {
@@ -656,7 +660,9 @@ export function TaskFileBrowser({ entries, rootName, language, contentUrl, sourc
     setSelectedPath(entry.path);
   }
 
-  return <div className="task-file-browser">
+  return <>
+    {metadataCount > 0 ? <div className="task-file-metadata-toggle"><span>{language === "zh" ? `${metadataCount} 个 macOS 元数据文件` : `${metadataCount} macOS metadata files`}</span><button type="button" aria-pressed={showMetadata} onClick={() => setShowMetadata((current) => !current)}>{language === "zh" ? (showMetadata ? "隐藏元数据" : "显示元数据") : (showMetadata ? "Hide metadata" : "Show metadata")}</button></div> : null}
+    <div className="task-file-browser">
       <aside aria-label={t.filesystem} className="task-file-tree">
         <div className="task-file-tree-root"><span aria-hidden>⌂</span><code>{rootName}</code></div>
         <div role="tree">
@@ -685,12 +691,13 @@ export function TaskFileBrowser({ entries, rootName, language, contentUrl, sourc
       <div className="task-file-preview">
         {selectedFile ? <FilePreview entry={selectedFile} contentUrl={contentUrl(selectedFile)} sourceUrl={sourceUrl?.(selectedFile)} privateFiles={privateFiles} key={selectedFile.path} language={language} /> : <p>{t.selectFile}</p>}
       </div>
-    </div>;
+    </div>
+  </>;
 }
 
 type FilePreviewState =
   | { status: "loading" }
-  | { status: "ready"; objectUrl?: string; text?: string }
+  | { status: "ready"; objectUrl?: string; text?: string; binary?: boolean }
   | { status: "error" };
 
 function FilePreview({ entry, contentUrl, sourceUrl, language, privateFiles = false }: {
@@ -701,8 +708,9 @@ function FilePreview({ entry, contentUrl, sourceUrl, language, privateFiles = fa
   language: BenchmarkReferenceLanguage;
 }) {
   const t = copy[language];
+  const metadata = isMacMetadataPath(entry.path);
   const kind = filePreviewKind(entry.path);
-  const previewKind = privateFiles && (kind === "office" || (entry.sizeBytes ?? 0) > 8 * 1024 * 1024 || /\.(zip|gz|zst|tar|parquet|sqlite|db|bin|exe|woff2?|mp[34]|wav|npy|npz|pkl|pickle)$/i.test(entry.path)) ? "binary" : kind;
+  const previewKind = metadata || privateFiles && (kind === "office" || (entry.sizeBytes ?? 0) > 8 * 1024 * 1024 || /\.(zip|gz|zst|tar|parquet|sqlite|db|bin|exe|woff2?|mp[34]|wav|npy|npz|pkl|pickle)$/i.test(entry.path)) ? "binary" : kind;
   const rawUrl = privateFiles ? `${contentUrl}&download=1` : contentUrl;
   const [preview, setPreview] = useState<FilePreviewState>(previewKind === "image" || previewKind === "office" || previewKind === "binary" ? { status: "ready" } : { status: "loading" });
 
@@ -722,7 +730,8 @@ function FilePreview({ entry, contentUrl, sourceUrl, language, privateFiles = fa
           objectUrl = URL.createObjectURL(await response.blob());
           setPreview({ objectUrl, status: "ready" });
         } else {
-          setPreview({ status: "ready", text: await response.text() });
+          const text = decodeTaskText(new Uint8Array(await response.arrayBuffer()));
+          setPreview(text === null ? { status: "ready", binary: true } : { status: "ready", text });
         }
       } catch {
         if (!controller.signal.aborted) setPreview({ status: "error" });
@@ -753,12 +762,12 @@ function FilePreview({ entry, contentUrl, sourceUrl, language, privateFiles = fa
     <div aria-busy={preview.status === "loading"} className={`task-file-preview-content ${previewKind}`}>
       {preview.status === "loading" ? <div className="task-file-preview-state"><span className="task-file-preview-spinner" /><p>{t.loadingPreview}</p></div> : null}
       {preview.status === "error" ? <div className="task-file-preview-state"><strong>{t.previewError}</strong><a href={rawUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
-      {preview.status === "ready" && previewKind === "text" ? <pre><code>{preview.text}</code></pre> : null}
+      {preview.status === "ready" && previewKind === "text" && !preview.binary ? <pre><code>{preview.text}</code></pre> : null}
       {/* eslint-disable-next-line @next/next/no-img-element -- Public images stay publisher-hosted; private task images use the authenticated file endpoint. */}
       {preview.status === "ready" && previewKind === "image" ? <img alt={entry.path} onError={() => setPreview({ status: "error" })} src={contentUrl} /> : null}
       {preview.status === "ready" && previewKind === "office" ? <iframe allowFullScreen loading="lazy" src={officeViewerUrl(contentUrl)} title={entry.path} /> : null}
       {preview.status === "ready" && previewKind === "pdf" && preview.objectUrl ? <iframe sandbox={privateFiles ? "allow-same-origin" : undefined} src={`${preview.objectUrl}#view=FitH`} title={entry.path} /> : null}
-      {preview.status === "ready" && previewKind === "binary" ? <div className="task-file-preview-state"><strong>{t.binaryPreview}</strong><a href={rawUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
+      {preview.status === "ready" && (previewKind === "binary" || preview.binary) ? <div className="task-file-preview-state"><strong>{metadata ? (language === "zh" ? "macOS 元数据文件" : "macOS metadata file") : t.binaryPreview}</strong>{metadata ? <p>{language === "zh" ? "这是原始交付中附带的文件属性信息。请打开 instruction.md 查看任务说明，或展开 solution 文件夹查看解法文件。" : "This stores file attributes bundled with the original delivery. Open instruction.md for the assignment, or expand the solution folder for solution files."}</p> : preview.binary ? <p>{language === "zh" ? "该文件包含二进制数据或不支持的文本编码，可下载后查看。" : "This file contains binary data or an unsupported text encoding. Download it to inspect it."}</p> : null}<a href={rawUrl} rel="noreferrer" target="_blank">{t.openRaw} ↗</a></div> : null}
     </div>
   </>;
 }
