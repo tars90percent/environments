@@ -637,9 +637,7 @@ export function TaskFileBrowser({ entries, rootName, language, contentUrl, sourc
   privateFiles?: boolean;
 }) {
   const t = copy[language];
-  const [showMetadata, setShowMetadata] = useState(false);
-  const metadataCount = entries.filter((entry) => entry.kind === "file" && isMacMetadataPath(entry.path)).length;
-  const browseEntries = showMetadata ? entries : entries.filter((entry) => !isMacMetadataPath(entry.path));
+  const browseEntries = entries.filter((entry) => !isMacMetadataPath(entry.path));
   const initialEntry = browseEntries.find((entry) => entry.path === "instruction.md") ?? browseEntries.find((entry) => entry.kind === "file") ?? browseEntries[0];
   const [selectedPath, setSelectedPath] = useState(initialEntry?.path ?? "");
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set());
@@ -660,9 +658,7 @@ export function TaskFileBrowser({ entries, rootName, language, contentUrl, sourc
     setSelectedPath(entry.path);
   }
 
-  return <>
-    {metadataCount > 0 ? <div className="task-file-metadata-toggle"><span>{language === "zh" ? `${metadataCount} 个 macOS 元数据文件` : `${metadataCount} macOS metadata files`}</span><button type="button" aria-pressed={showMetadata} onClick={() => setShowMetadata((current) => !current)}>{language === "zh" ? (showMetadata ? "隐藏元数据" : "显示元数据") : (showMetadata ? "Hide metadata" : "Show metadata")}</button></div> : null}
-    <div className="task-file-browser">
+  return <div className="task-file-browser">
       <aside aria-label={t.filesystem} className="task-file-tree">
         <div className="task-file-tree-root"><span aria-hidden>⌂</span><code>{rootName}</code></div>
         <div role="tree">
@@ -691,8 +687,7 @@ export function TaskFileBrowser({ entries, rootName, language, contentUrl, sourc
       <div className="task-file-preview">
         {selectedFile ? <FilePreview entry={selectedFile} contentUrl={contentUrl(selectedFile)} sourceUrl={sourceUrl?.(selectedFile)} privateFiles={privateFiles} key={selectedFile.path} language={language} /> : <p>{t.selectFile}</p>}
       </div>
-    </div>
-  </>;
+    </div>;
 }
 
 type FilePreviewState =

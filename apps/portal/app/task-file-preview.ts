@@ -1,4 +1,4 @@
-/** Archive sidecars are preserved for download, but hidden from the task tree by default. */
+/** Archive sidecars are preserved for download, but omitted from the task tree. */
 export function isMacMetadataPath(path: string): boolean {
   return path.split("/").some((part) => part.startsWith("._") || part === ".DS_Store" || part === "__MACOSX");
 }
