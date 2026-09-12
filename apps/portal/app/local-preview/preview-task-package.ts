@@ -1,8 +1,12 @@
+import { previewTaskExamples } from "./preview-task-examples";
 import { tarBytes } from "../dataset-archive";
 
 type PreviewTask = { title: string; expected: string };
 
 export const previewTasks: Record<string, PreviewTask> = {
+  ...Object.fromEntries(previewTaskExamples.map((task) => [task.id, { title: task.title, expected: "preview completed" }])),
+  "preview-harbor": { title: "Repair cache invalidation", expected: "cache repaired" },
+  "preview-terminal-two": { title: "Rebuild a damaged package index", expected: "index repaired" },
   "repair-cache": { title: "Repair cache invalidation", expected: "cache repaired" },
 };
 

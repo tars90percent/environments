@@ -1,0 +1,21 @@
+// Synthetic records for reviewing dense task lists; never registry data.
+export const previewTaskExamples = [
+  { id: "preview-log-rotation", vendor: "one", title: "Repair log rotation without dropping active writes", summary: "Rotate service logs under concurrent writes while preserving file permissions and retention limits.", state: "pass" },
+  { id: "preview-sqlite-recovery", vendor: "one", title: "Recover a partially corrupted SQLite database", summary: "Reconstruct readable records from a damaged database and export a consistent recovery report.", state: "findings" },
+  { id: "preview-build-toolchain", vendor: "one", title: "Fix a legacy CMake toolchain", summary: "Resolve compiler and linker failures in a multi-library project using the existing build configuration.", state: "pass" },
+  { id: "preview-json-stream", vendor: "one", title: "Parse a large stream of nested JSON events", summary: "Normalize malformed event records with bounded memory and preserve their original ordering.", state: "pending" },
+  { id: "preview-dns-resolution", vendor: "one", title: "Diagnose intermittent DNS resolution", summary: "Find why service discovery fails between containers and restore reliable hostname resolution.", state: "blocked" },
+  { id: "preview-file-permissions", vendor: "one", title: "Restore file ownership after a failed migration", summary: "Repair ownership and access modes while preserving symbolic links and shared directories.", state: "pass" },
+  { id: "preview-test-isolation", vendor: "one", title: "Eliminate shared-state failures in a parallel test suite", summary: "Make the tests deterministic across different execution orders without disabling concurrency.", state: "findings" },
+  { id: "preview-csv-normalization", vendor: "one", title: "Normalize inconsistent CSV exports", summary: "Combine exports with mixed delimiters, encodings, date formats, and escaped multiline fields.", state: "pass" },
+  { id: "preview-memory-leak", vendor: "one", title: "Trace a memory leak in a long-running worker", summary: "Identify the retained objects and keep memory usage stable across repeated processing batches.", state: "attempted" },
+  { id: "preview-archive-recovery", vendor: "one", title: "Reassemble a fragmented archive", summary: "Recover the original files from unordered archive fragments and verify every recovered checksum.", state: "pass" },
+  { id: "preview-shell-quoting", vendor: "one", title: "Make a deployment script handle unusual filenames", summary: "Correct quoting and argument handling for paths containing spaces, Unicode, and shell metacharacters.", state: "pending" },
+  { id: "preview-two-http-cache", vendor: "two", title: "Correct HTTP cache revalidation", summary: "Implement conditional requests and expiration handling for cached resources with changing validators.", state: "pass" },
+  { id: "preview-two-query-plan", vendor: "two", title: "Optimize a slow reporting query", summary: "Reduce execution time while preserving results for duplicate rows, null values, and empty groups.", state: "findings" },
+  { id: "preview-two-scheduler", vendor: "two", title: "Repair timezone handling in a job scheduler", summary: "Keep recurring jobs consistent across daylight-saving transitions and non-hour timezone offsets.", state: "pass" },
+  { id: "preview-two-container", vendor: "two", title: "Restore a broken container startup sequence", summary: "Diagnose a failing entrypoint and ensure the service starts with the expected environment and user.", state: "blocked" },
+  { id: "preview-two-binary-format", vendor: "two", title: "Decode an undocumented binary format", summary: "Infer the record structure from supplied examples and convert the data into validated JSON.", state: "pending" },
+  { id: "preview-two-git-history", vendor: "two", title: "Recover a repository after an interrupted rebase", summary: "Restore the intended commit order and working tree without discarding unrelated local changes.", state: "pass" },
+  { id: "preview-two-process-lock", vendor: "two", title: "Prevent stale locks from blocking a background service", summary: "Recover safely from abandoned lock files while preventing two workers from processing the same job.", state: "attempted" },
+] as const;

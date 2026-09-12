@@ -32,6 +32,7 @@ import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
 import { benchmarkDeliveries } from "./benchmark-deliveries";
 import { latestVendorInventory } from "./vendor-inventory";
 import { taskListHref, readTaskListLocation, type TaskListLocation } from "./task-navigation";
+import { previewTaskExamples } from "./local-preview/preview-task-examples";
 import { MiniMaxMark } from "./minimax-mark";
 
 type Language = "zh" | "en";
@@ -222,6 +223,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog || initialView === "model-benchmarks" || initialView === "model-explanation" || (initialView === "model-task" || initialView === "vendor-task") ? "ready" : "loading");
   const [language, setLanguage] = useState<Language>(initialListLocation?.language ?? initialTaskOrigin?.language ?? "zh");
   const [view, setView] = useState<PortalView>(initialListLocation?.view ?? initialView);
+  const [vendorSection, setVendorSection] = useState<"tasks" | "submissions" | "timeline">("tasks");
   const [query, setQuery] = useState(initialListLocation?.query ?? "");
   const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(initialListLocation?.benchmark ?? null);
   const [selectedVendorId, setSelectedVendorId] = useState(initialListLocation?.vendor || vendorsForDisplay(initialCatalog?.vendors ?? [])[0]?.id || "");
@@ -302,11 +304,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     : initialModelBenchmarkId ? findModelBenchmark(initialModelBenchmarkId) : undefined;
   const initialModelSample = initialModelTask && initialModelBenchmark ? modelBenchmarkSamples[initialModelBenchmark.id]?.find((sample) => sample.id === initialModelTask.sampleId) : undefined;
   const headerTitle = view === "model-benchmarks" ? t.modelBenchmarks : view === "benchmarks" ? selectedBenchmark?.displayName ?? t.landscapeTitle : t.title;
-  const headerIntro = view === "benchmarks" && selectedBenchmark
-    ? selectedBenchmark.shortlist
-      ? selectedBenchmark.shortlist.vendorIds.map((id) => vendors.find((vendor) => vendor.id === id)?.name).filter(Boolean).join(" · ")
-      : `${selectedBenchmark.taskCount} ${t.taskRecords} · ${selectedBenchmark.vendorCount} ${t.vendors.toLowerCase()}`
-    : null;
 
   function showBenchmarks() {
     if (!catalog) setState("loading");
@@ -320,6 +317,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   function showVendors(vendorId?: string) {
     if (!catalog) setState("loading");
     setView("vendors");
+    setVendorSection("tasks");
     setSelectedBenchmarkId(null);
     setQuery("");
     if (vendorId) setSelectedVendorId(vendorId);
@@ -335,7 +333,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     scrollToTop();
   }
 
-  return <TaskListContext.Provider value={{ returnTo, localPreview }}><div className="app-shell">
+  return <TaskListContext.Provider value={{ returnTo, localPreview }}><div className={`app-shell view-${view}`}>
     <header className="global-header">
       <a aria-label={t.landscapeTitle} className="wordmark" href="#top" onClick={showBenchmarks}><MiniMaxMark /></a>
       <nav aria-label={t.title} className="market-switch">
@@ -352,11 +350,12 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     </header>
 
     <main id="top">
-    {view !== "vendor-task" && view !== "model-task" && view !== "model-explanation" && <section className={`registry-header${view === "model-benchmarks" ? " model-benchmark-header" : ""}`}>
+    {view !== "vendors" && view !== "vendor-task" && view !== "model-task" && view !== "model-explanation" && <section className={`registry-header${view === "model-benchmarks" ? " model-benchmark-header" : ""}`}>
       {view === "benchmarks" && selectedBenchmark && <button className="landscape-back registry-back" onClick={showBenchmarks} type="button"><span aria-hidden>←</span>{t.backToLandscape}</button>}
       {view !== "model-benchmarks" && <div className="eyebrow">{view === "benchmarks" && selectedBenchmarkCategory ? selectedBenchmarkCategory.label[language] : t.eyebrow}</div>}
-      <h1>{headerTitle}</h1>
-      {headerIntro && <p className="registry-intro">{headerIntro}</p>}
+      <div className="registry-title-row"><h1>{headerTitle}</h1>
+        {view === "benchmarks" && selectedBenchmark && !selectedBenchmark.shortlist && <HarborDownloadToolbar hideCount downloadHref={localPreview ? `/local-preview/vendor-harbor-download?benchmark=${encodeURIComponent(selectedBenchmark.id)}` : `/api/benchmarks/${encodeURIComponent(selectedBenchmark.id)}/harbor-download`} key={selectedBenchmark.id} language={language} taskCount={selectedBenchmark.taskCount} />}
+      </div>
       {view === "benchmarks" && !selectedBenchmark && <p className="landscape-summary">
         <strong className="landscape-task-total">{landscape?.taskCount ?? "—"}</strong>
         {language === "zh" ? " 个 Harbor 任务，来自 " : " Harbor tasks from "}
@@ -387,13 +386,17 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     {state === "ready" && view === "vendors" && selectedVendor && <div className="portal-grid">
       <aside className="vendor-sidebar" aria-label={t.vendors}>
         <div className="sidebar-head"><strong>{t.vendorRecords}</strong></div>
-        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => setSelectedVendorId(vendor.id)} type="button"><span><strong>{vendor.name}</strong><small>{vendorRecordSummary(vendor, language)}</small></span></button>)}</div>
+        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => { setSelectedVendorId(vendor.id); setVendorSection("tasks"); }} type="button"><span><strong>{vendor.name}</strong><small>{vendorRecordSummary(vendor, language)}</small></span></button>)}</div>
       </aside>
       <section className="vendor-main">
-        <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h2>{selectedVendor.name}</h2><div className="vendor-meta">{selectedVendor.submissions.length > 0 && <><span>{selectedVendor.submissions.length} {t.submissions.toLowerCase()}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></>}{selectedVendor.interactions.length > 0 && <span>{selectedVendor.interactions.length} {t.interactions}</span>}</div></header>
-        <VendorInteractionTimeline interactions={selectedVendor.interactions} language={language} />
-        <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />
-        {selectedVendor.submissions.length > 0 && <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
+        <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h1>{selectedVendor.name}</h1><div className="vendor-meta">{selectedVendor.submissions.length > 0 && <><span>{selectedVendor.submissions.length} {countLabel(selectedVendor.submissions.length, language, "submission", t.submissions.toLowerCase())}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></>}{selectedVendor.interactions.length > 0 && <span>{selectedVendor.interactions.length} {t.interactions}</span>}</div></header>
+        <nav className="vendor-section-nav" aria-label={language === "zh" ? "供应商内容" : "Vendor sections"}>
+          {(["tasks", "submissions", "timeline"] as const).map((section) => <button type="button" key={section} aria-pressed={vendorSection === section} onClick={() => setVendorSection(section)}>{section === "tasks" ? t.tasks : section === "submissions" ? t.submissions : language === "zh" ? "时间线" : "Timeline"}</button>)}
+        </nav>
+        {vendorSection === "timeline" && (selectedVendor.interactions.length ? <VendorInteractionTimeline interactions={selectedVendor.interactions} language={language} /> : <StateCard>{language === "zh" ? "暂无往来记录。" : "No interactions recorded yet."}</StateCard>)}
+        {vendorSection === "tasks" && <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />}
+        {vendorSection === "submissions" && selectedVendor.submissions.length === 0 && <StateCard>{t.noTasks}</StateCard>}
+        {vendorSection === "submissions" && selectedVendor.submissions.length > 0 && <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
         <div className="submission-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>}
       </section>
     </div>}
@@ -452,9 +455,8 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
   const download = <div className="benchmark-catalog-download">{shortlist && <h3>{t.allCatalogSamples}</h3>}<HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={benchmark.taskCount} /><p className="benchmark-download-note">{t.benchmarkDownloadNote}</p></div>;
   return <div className="benchmark-detail">
     {benchmark.categoryId === "active-procurement" && <BenchmarkDeliveryTimeline vendors={primaryVendors} benchmarkId={benchmark.id} capabilityId={benchmark.capabilityId} language={language} onOpenVendor={onOpenVendor} />}
-    {!shortlist && download}
     <section className="benchmark-task-section">
-      <div className="section-title"><div><h3>{shortlist ? t.shortlistedVendors : t.benchmarkTasks}</h3><p>{shortlist ? t.shortlistedSamples : t.benchmarkTaskNote}</p></div><span>{primaryRecords.length} {t.taskRecords}</span></div>
+      {shortlist && <div className="section-title"><div><h3>{t.shortlistedVendors}</h3><p>{t.shortlistedSamples}</p></div><span>{primaryRecords.length} {t.taskRecords}</span></div>}
       {shortlist && <div className="benchmark-scope-download">
         <HarborDownloadToolbar downloadHref={`${downloadHref}${downloadHref.includes("?") ? "&" : "?"}scope=shortlisted`} language={language} taskCount={benchmarkSampleCount(benchmark)} buttonLabel={t.downloadShortlisted} />
         <p className="benchmark-download-note">{language === "en" ? `All ${benchmarkSampleCount(benchmark)} Harbor tasks from ${vendorNames}.` : `来自${vendorNames}的全部 ${benchmarkSampleCount(benchmark)} 个 Harbor 任务。`}</p>
@@ -477,8 +479,8 @@ function BenchmarkVendorSamples({ records, benchmark, language, onOpenVendor }: 
   const vendorGroups = groupRecordsByVendor(records);
   const inventoryDirectionId = benchmark.inventoryDirectionId ?? (benchmark.id.startsWith("benchmark:") ? undefined : benchmark.id);
   return vendorGroups.length === 0 ? <StateCard>{t.noMatch}</StateCard> : <div className="benchmark-vendor-list">{vendorGroups.map(({ vendor, records: vendorRecords }) => <section className="benchmark-vendor-group" key={vendor.id}>
-    <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : "Harbor samples"}<b aria-hidden>→</b></span></button>{benchmark.categoryId === "active-procurement" && inventoryDirectionId && <VendorInventory vendor={vendor} benchmarkId={inventoryDirectionId} language={language} />}</header>
-    <div className="task-list">{vendorRecords.map((record) => <TaskRow contextLabel={`${record.submission.label} · ${formatDate(record.submission.date, language)}`} hideBenchmark={benchmark.categoryId !== "active-procurement"} key={record.task.id} language={language} task={record.task} />)}</div>
+    <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : countLabel(vendorRecords.length, language, "Harbor sample", "Harbor samples")}<b aria-hidden>→</b></span></button>{benchmark.categoryId === "active-procurement" && inventoryDirectionId && <VendorInventory vendor={vendor} benchmarkId={inventoryDirectionId} language={language} />}</header>
+    <div className="task-list"><TaskColumnHeadings language={language} />{vendorRecords.map((record) => <TaskRow contextLabel={`${record.submission.label} · ${formatDate(record.submission.date, language)}`} hideBenchmark={benchmark.categoryId !== "active-procurement"} key={record.task.id} language={language} task={record.task} />)}</div>
   </section>)}</div>;
 }
 
@@ -540,17 +542,17 @@ function VendorHarborTasks({ vendor, categories, downloadHref, language }: { ven
     records: category.groups.flatMap((group) => group.records).filter((record) => record.vendor.id === vendor.id),
   })).filter((group) => group.records.length > 0);
   const taskCount = groups.reduce((sum, group) => sum + group.records.length, 0);
-  if (taskCount === 0) return null;
+  if (taskCount === 0) return <StateCard>{language === "zh" ? "尚未收到 Harbor 任务。" : "No Harbor tasks received yet."}</StateCard>;
   return <section className="vendor-harbor-tasks">
     <HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={taskCount} />
     <div className="vendor-harbor-category-list">{groups.map((group) => <section className="vendor-harbor-category" key={group.category.id}>
       <header className="vendor-harbor-category-header"><h3>{group.category.label[language]}</h3></header>
-      <div className="task-list">{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>
+      <div className="task-list"><TaskColumnHeadings language={language} />{group.records.map(({ task }) => <TaskRow key={task.id} language={language} task={task} />)}</div>
     </section>)}</div>
   </section>;
 }
 
-function HarborDownloadToolbar({ downloadHref, language, taskCount, buttonLabel }: { downloadHref: string; language: Language; taskCount: number; buttonLabel?: string }) {
+function HarborDownloadToolbar({ downloadHref, language, taskCount, buttonLabel, hideCount = false }: { downloadHref: string; language: Language; taskCount: number; buttonLabel?: string; hideCount?: boolean }) {
   const t = text[language];
   const [downloadState, setDownloadState] = useState<"idle" | "preparing" | "error">("idle");
   const prepareDownload = async () => {
@@ -576,7 +578,7 @@ function HarborDownloadToolbar({ downloadHref, language, taskCount, buttonLabel 
       setDownloadState("error");
     }
   };
-  return <div className="vendor-harbor-toolbar"><span>{taskCount} {t.harbor}</span><button disabled={downloadState === "preparing" || taskCount === 0} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : buttonLabel ?? t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>;
+  return <div className="vendor-harbor-toolbar">{!hideCount && <span>{taskCount} {t.harbor}</span>}<button disabled={downloadState === "preparing" || taskCount === 0} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : buttonLabel ?? t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>;
 }
 
 function VendorInteractionTimeline({ interactions, language }: { interactions: CatalogVendorInteraction[]; language: Language }) {
@@ -618,8 +620,8 @@ function SubmissionCard({ submission, open, latest, language, datasetHref }: { s
 
 function SubmissionTaskList({ tasks, language }: { tasks: CatalogTask[]; language: Language }) {
   const t = text[language];
-  if (tasks.length === 0) return <div className="task-list"><p className="empty-task-list">{t.noTasks}</p></div>;
-  if (tasks.length <= TASK_GROUP_THRESHOLD) return <div className="task-list">{tasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>;
+  if (tasks.length === 0) return <div className="task-list"><TaskColumnHeadings language={language} /><p className="empty-task-list">{t.noTasks}</p></div>;
+  if (tasks.length <= TASK_GROUP_THRESHOLD) return <div className="task-list"><TaskColumnHeadings language={language} />{tasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>;
   return <div className="task-group-list">{groupSubmissionTasks(tasks).map((group) => <FoldedTaskGroup group={group} key={group.id} language={language} />)}</div>;
 }
 
@@ -637,7 +639,7 @@ function FoldedTaskGroup({ group, language }: { group: SubmissionTaskGroup; lang
       <span aria-hidden className="disclosure">▾</span>
     </summary>
     {expanded && <div className="task-group-body">
-      <div className="task-list">{visibleTasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>
+      <div className="task-list"><TaskColumnHeadings language={language} />{visibleTasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>
       {remaining > 0 && <div className="task-group-more"><span>{showingLabel(visibleTasks.length, group.tasks.length, language)}</span><button onClick={() => setVisibleCount((count) => count + TASK_BATCH_SIZE)} type="button">{showMoreLabel(nextCount, language)}</button></div>}
     </div>}
   </details>;
@@ -669,6 +671,10 @@ function OriginalSubmissionPanel({ submission, language }: { submission: Catalog
   </div></section>;
 }
 
+function TaskColumnHeadings({ language }: { language: Language }) {
+  return <div className="task-column-headings" aria-hidden="true"><span>{text[language].task}</span><div><span>Environment</span><span>Oracle</span><span>Nop</span></div><span /></div>;
+}
+
 function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task: CatalogTask; language: Language; contextLabel?: string; hideBenchmark?: boolean }) {
   const t = text[language];
   const { returnTo, localPreview } = useContext(TaskListContext);
@@ -677,23 +683,22 @@ function TaskRow({ task, language, contextLabel, hideBenchmark = false }: { task
     <div className="task-row">
     <div className="task-main">
       <h5>{task.kind === "task" && task.format === "harbor" ? <a className="vendor-task-link" href={taskHref}>{task.title}</a> : task.title}</h5>
+      {task.summary && <p>{task.summary}</p>}
       <div className="task-meta">
         {contextLabel && <span>{contextLabel}</span>}
         {!hideBenchmark && (task.classification || task.benchmark.id !== "unspecified") && <span>{sampleGroup(task).displayName}</span>}
         {task.classification && <span>{capabilityLabel(sampleCapability(task).displayName, language)}</span>}
-        <span>{task.format === "harbor" ? "Harbor" : t.nonHarbor}</span>
+        {task.format !== "harbor" && <span>{t.nonHarbor}</span>}
         {task.gpuRequired && <span>{t.gpuRequired}</span>}
         {task.kind === "trace" && <span>{t.trace}</span>}
-        {task.sourcePath && <code>{displayArchivePath(task.sourcePath)}</code>}
       </div>
-      {task.summary && <p>{task.summary}</p>}
     </div>
     <div className="task-checks">
       {task.format === "harbor" ? <HarborChecks language={language} task={task} /> : null}
     </div>
-    <div className="task-actions">{task.artifactId && <a href={`/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
+    <div className="task-actions">{task.artifactId && <a href={localPreview && task.format === "harbor" ? `/local-preview/tasks/${encodeURIComponent(task.id)}/download` : `/api/artifacts/${encodeURIComponent(task.artifactId)}/download`}>{t.taskDownload}</a>}</div>
     </div>
-    {task.findings.length > 0 && <div className="task-findings"><div className="finding-title">{t.findings}</div><div className="task-finding-list">{task.findings.map((finding) => <div className="task-finding" key={finding.id}><strong>{phaseLabels[finding.phase]}</strong><p>{finding.finding}</p></div>)}</div></div>}
+    {task.findings.length > 0 && <details className="task-findings"><summary className="finding-title"><span>{task.findings.length} {language === "zh" ? "条发现" : task.findings.length === 1 ? "finding" : "findings"}</span><span className="finding-phases">{[...new Set(task.findings.map((finding) => phaseLabels[finding.phase]))].join(" · ")}</span><span className="finding-chevron" aria-hidden>⌄</span></summary><div className="task-finding-list">{task.findings.map((finding) => <div className="task-finding" key={finding.id}><strong>{phaseLabels[finding.phase]}</strong><p>{finding.finding}</p></div>)}</div></details>}
   </article>;
 }
 
@@ -723,7 +728,7 @@ function vendorsForDisplay(vendors: CatalogVendor[]): CatalogVendor[] {
 
 function vendorRecordSummary(vendor: CatalogVendor, language: Language): string {
   const submissionSummary = vendor.submissions.length > 0
-    ? `${vendor.submissions.length} ${text[language].submissions.toLowerCase()} · ${vendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} ${text[language].taskRecords}`
+    ? `${vendor.submissions.length} ${countLabel(vendor.submissions.length, language, "submission", text[language].submissions.toLowerCase())} · ${vendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} ${text[language].taskRecords}`
     : "";
   const interactionSummary = vendor.interactions.length > 0 ? `${vendor.interactions.length} ${text[language].interactions}` : "";
   return [submissionSummary, interactionSummary].filter(Boolean).join(" · ");
@@ -923,7 +928,8 @@ const previewSubmission: CatalogSubmission = {
   formats: ["harbor", "non_harbor"],
   sourceEvents: [{ id: "preview-source", channel: "upload", externalRef: "", sender: "Vendor", receivedAt: "2026-08-20T09:30:00.000Z", rawArtifactId: "artifact:preview:raw", rawArtifact: { id: "artifact:preview:raw", kind: "source_payload", contentSha256: "0".repeat(64), sizeBytes: 5242880, contentType: "application/zip", originalName: "original-payload.zip" }, items: [{ id: "preview-file", kind: "archive", displayName: "original-payload.zip", locator: null, mediaType: "application/zip", artifactId: "artifact:preview:raw", artifactKind: "source_payload", contentSha256: "0".repeat(64), sizeBytes: 5242880 }] }],
   tasks: [
-    previewHarborTask("preview-harbor", "Repair cache invalidation", "terminal-bench", "Terminal-Bench", { artifactId: "artifact:preview:task", checks: { environment: previewCheck("environment", "pass"), nop: previewCheck("nop", "fail") }, attempts: { oracle: previewAttempt("oracle", "inconclusive") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] }),
+    previewHarborTask("preview-harbor", "Repair cache invalidation", "terminal-bench", "Terminal-Bench", { summary: "Restore consistent cache behavior across updates, invalidation, and concurrent reads.", artifactId: "artifact:preview:task", checks: { environment: previewCheck("environment", "pass"), nop: previewCheck("nop", "fail") }, attempts: { oracle: previewAttempt("oracle", "inconclusive") }, findings: [{ id: "finding:nop", phase: "nop", checkRunId: "check:nop", finding: "Nop received score 1." }] }),
+    ...expandedPreviewTasks("one"),
     previewHarborTask("preview-swe", "Implement resumable repository migration", "deep-swe", "DeepSWE"),
     previewHarborTask("preview-network", "Add adaptive backend concurrency", "network-engineering", "Network Engineering"),
     previewHarborTask("preview-browser", "Complete multi-store browser workflow", "browser-automation-ecommerce", "Browser Automation E-commerce"),
@@ -942,10 +948,29 @@ const previewSecondSubmission: CatalogSubmission = {
   formats: ["harbor"],
   sourceEvents: [],
   tasks: [
-    previewHarborTask("preview-terminal-two", "Rebuild a damaged package index", "terminal-bench", "Terminal-Bench"),
+    previewHarborTask("preview-terminal-two", "Rebuild a damaged package index", "terminal-bench", "Terminal-Bench", { summary: "Recover the package index and restore dependency resolution without losing installed packages." }),
+    ...expandedPreviewTasks("two"),
     previewHarborTask("preview-swe-two", "Repair cross-service event ordering", "deep-swe", "DeepSWE"),
   ],
 };
+
+function expandedPreviewTasks(vendor: "one" | "two"): CatalogTask[] {
+  return previewTaskExamples.filter((example) => example.vendor === vendor).map((example) => {
+    const checks: CatalogTask["checks"] = example.state === "pending" ? {} : { environment: previewCheck("environment", example.state === "blocked" ? "fail" : "pass") };
+    if (example.state === "pass") Object.assign(checks, { oracle: previewCheck("oracle", "pass"), nop: previewCheck("nop", "pass") });
+    if (example.state === "findings") Object.assign(checks, { oracle: previewCheck("oracle", "fail"), nop: previewCheck("nop", "fail") });
+    return previewHarborTask(example.id, example.title, "terminal-bench", "Terminal-Bench", {
+      summary: example.summary,
+      artifactId: `artifact:${example.id}`,
+      checks,
+      attempts: example.state === "attempted" ? { oracle: previewAttempt("oracle", "inconclusive") } : {},
+      findings: example.state === "findings" ? [
+        { id: `${example.id}:oracle`, phase: "oracle", checkRunId: `${example.id}:oracle-run`, finding: "Synthetic preview finding: the reference solution completed, but the verifier timed out after 300 seconds without producing a reward." },
+        { id: `${example.id}:nop`, phase: "nop", checkRunId: `${example.id}:nop-run`, finding: "Synthetic preview finding: the baseline received a passing reward without modifying the task. The initial state may already satisfy part of the verification criteria." },
+      ] : [],
+    });
+  });
+}
 
 function previewHarborTask(id: string, title: string, benchmarkId: string, benchmarkName: string, overrides: Partial<CatalogTask> = {}): CatalogTask {
   return {
@@ -984,7 +1009,7 @@ export function LocalDownloadPreview({ initialListLocation }: { initialListLocat
       { id: "preview-vendor", name: "Example Vendor", short: "EV", hasTimeline: false, interactions: [], submissions: [previewSubmission] },
       { id: "preview-vendor-two", name: "Second Vendor", short: "SV", hasTimeline: false, interactions: [], submissions: [previewSecondSubmission] },
     ],
-    totals: { vendors: 3, submissions: 2, tasks: 10, harborTasks: 9 },
+    totals: { vendors: 3, submissions: 2, tasks: 10 + previewTaskExamples.length, harborTasks: 9 + previewTaskExamples.length },
   };
   return <PortalClient initialListLocation={initialListLocation} initialCatalog={previewCatalog} localPreview user={{ name: "Researcher" }} />;
 }

@@ -1,4 +1,4 @@
-import { previewTaskFiles } from "../../../preview-task-package";
+import { previewTaskFiles, previewTasks, previewTaskPackage } from "../../../preview-task-package";
 import { harborEntryRole } from "../../../../model-benchmark-filesystems";
 
 export async function GET(request: Request, { params }: { params: Promise<{ taskId: string; action: string }> }) {
@@ -6,6 +6,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ task
   const { taskId, action } = await params;
   const files = previewTaskFiles(taskId);
   if (!files) return new Response("Not found", { status: 404 });
+  if (action === "download") {
+    return new Response(await previewTaskPackage(taskId), { headers: {
+      "content-type": "application/gzip",
+      "content-disposition": `attachment; filename="${taskId}.tar.gz"`,
+    } });
+  }
   if (action === "file") {
     const file = files.find((entry) => entry.path === new URL(request.url).searchParams.get("path"));
     return file ? new Response(new TextDecoder().decode(file.bytes), { headers: { "content-type": "text/plain; charset=utf-8" } }) : new Response("Not found", { status: 404 });
@@ -13,8 +19,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ task
   if (action !== "files") return new Response("Not found", { status: 404 });
   const directories = [...new Set(files.flatMap((file) => file.path.includes("/") ? [file.path.split("/")[0]] : []))];
   return Response.json({
-    task: { id: taskId, title: "Repair cache invalidation", summary: "A synthetic Harbor task for inspecting the vendor task browser.", sourcePath: `tasks/${taskId}`, format: "harbor", kind: "task", artifactId: null, contentSha256: null },
-    vendor: { id: "preview-vendor", name: "Example Vendor" },
+    task: { id: taskId, title: previewTasks[taskId].title, summary: "A synthetic Harbor task for inspecting the vendor task browser.", sourcePath: `tasks/${taskId}`, format: "harbor", kind: "task", artifactId: null, contentSha256: null },
+    vendor: (taskId === "preview-terminal-two" || taskId.startsWith("preview-two-")) ? { id: "preview-vendor-two", name: "Second Vendor" } : { id: "preview-vendor", name: "Example Vendor" },
     submission: { id: "preview-submission", label: "Harbor task samples", date: "2026-09-12" },
     available: true,
     entries: [
