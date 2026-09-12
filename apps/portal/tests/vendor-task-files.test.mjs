@@ -17,7 +17,7 @@ function cookie() {
   const payload = Buffer.from(JSON.stringify({ openId: "ou_test", tenantKey: env.FEISHU_ALLOWED_TENANT_KEY, name: "Test", expiresAt: Date.now() + 60_000 })).toString("base64url");
   return `env_portal_session=${payload}.${createHmac("sha256", env.PORTAL_SESSION_SECRET).update(payload).digest("base64url")}`;
 }
-const task = { id: "task-a", title: "Shared name", stableKey: "task-a", sourcePath: "tasks/shared", kind: "task", format: "harbor", artifactId: "artifact-a", benchmark: { id: "terminal-bench", displayName: "Terminal-Bench" }, checks: {}, attempts: {}, findings: [] };
+const task = { id: "task:a", title: "Shared name", stableKey: "task:a", sourcePath: "tasks/shared", kind: "task", format: "harbor", artifactId: "artifact-a", benchmark: { id: "terminal-bench", displayName: "Terminal-Bench" }, checks: {}, attempts: {}, findings: [] };
 const catalog = { vendors: [{ id: "vendor-a", name: "Vendor A", submissions: [{ id: "delivery-a", label: "First delivery", date: "2026-09-12", tasks: [task, { ...task, id: "native", format: "non_harbor" }] }, { id: "delivery-b", tasks: [{ ...task, id: "task-b" }] }] }] };
 const root = "vendor-a/delivery-a/shared/";
 const entry = (path, sizeBytes = 12) => ({ type: "file", path: root + path, sizeBytes });
@@ -39,12 +39,12 @@ test("task files require a researcher session and resolve the exact submission b
       : Response.json({ entries: [entry("instruction.md"), entry("task.toml")], nextCursor: "next-page" });
   };
   try {
-    assert.equal((await request("task-a/files", false)).status, 401);
-    assert.equal((await request("task-a/files", true, "POST")).status, 405);
+    assert.equal((await request("task%3Aa/files", false)).status, 401);
+    assert.equal((await request("task%3Aa/files", true, "POST")).status, 405);
     assert.equal(calls.length, 0);
     assert.equal((await request("native/files")).status, 404);
     assert.equal((await request("missing/files")).status, 404);
-    const result = await request("task-a/files");
+    const result = await request("task%3Aa/files");
     assert.equal(result.status, 200);
     assert.equal(result.headers.get("cache-control"), "private, no-store");
     const data = await result.json();
@@ -74,16 +74,16 @@ test("file reads reject traversal, isolate gateway credentials, and serve execut
     return new Response("<script>alert('test')</script>", { headers: { "content-type": "text/html" } });
   };
   try {
-    assert.equal((await request("task-a/file?path=instruction.md", false)).status, 401);
+    assert.equal((await request("task%3Aa/file?path=instruction.md", false)).status, 401);
     for (const path of ["../other/file", "/absolute", "environment/../../secret", "foo\\bar", "foo//bar", "foo/./bar", "bad\u0000name"]) {
-      assert.equal((await request("task-a/file?path=" + encodeURIComponent(path))).status, 400, path);
+      assert.equal((await request("task%3Aa/file?path=" + encodeURIComponent(path))).status, 400, path);
     }
     assert.equal(gatewayCalls, 0);
-    const response = await request("task-a/file?path=environment%2Fpage.html");
+    const response = await request("task%3Aa/file?path=environment%2Fpage.html");
     assert.equal(response.headers.get("content-type"), "text/plain; charset=utf-8");
     assert.match(response.headers.get("content-security-policy"), /sandbox/);
     assert.equal(await response.text(), "<script>alert('test')</script>");
-    const download = await request("task-a/file?path=environment%2Fpage.html&download=1");
+    const download = await request("task%3Aa/file?path=environment%2Fpage.html&download=1");
     assert.match(download.headers.get("content-disposition"), /attachment/);
     assert.equal(download.headers.get("content-type"), "application/octet-stream");
     assert.equal(storageCalls, 2);
@@ -101,8 +101,8 @@ test("missing mirrors, invalid pagination and foreign paths never produce a misl
     return Response.json({ entries: [entry("task.toml"), entry("task.toml")] });
   };
   try {
-    assert.equal((await (await request("task-a/files")).json()).available, false);
-    for (mode of ["foreign", "repeat", "duplicate"]) assert.equal((await request("task-a/files")).status, 502);
+    assert.equal((await (await request("task%3Aa/files")).json()).available, false);
+    for (mode of ["foreign", "repeat", "duplicate"]) assert.equal((await request("task%3Aa/files")).status, 502);
   } finally { globalThis.fetch = original; }
 });
 
@@ -119,11 +119,11 @@ test("oversized previews are bounded, while raw downloads and storage errors rem
     return new Response("large file", { headers: { "content-length": String(9 * 1024 * 1024) } });
   };
   try {
-    assert.equal((await request("task-a/file?path=large.txt")).status, 413);
-    assert.equal((await request("task-a/file?path=large.txt&download=1")).status, 200);
+    assert.equal((await request("task%3Aa/file?path=large.txt")).status, 413);
+    assert.equal((await request("task%3Aa/file?path=large.txt&download=1")).status, 200);
     mode = "missing";
-    assert.equal((await request("task-a/file?path=missing.txt")).status, 404);
+    assert.equal((await request("task%3Aa/file?path=missing.txt")).status, 404);
     mode = "stream";
-    await assert.rejects(() => request("task-a/file?path=large.txt").then((response) => response.arrayBuffer()), /Preview too large/);
+    await assert.rejects(() => request("task%3Aa/file?path=large.txt").then((response) => response.arrayBuffer()), /Preview too large/);
   } finally { globalThis.fetch = original; }
 });

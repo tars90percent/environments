@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function VendorTaskPage({ params }: { params: Promise<{ taskId: string }> }) {
   const user = await getPortalSession();
   if (!user) redirect("/auth/login");
-  const { taskId } = await params;
+  // Vinext preserves percent-encoding in page params; decode before building API URLs.
+  const taskId = decodeURIComponent((await params).taskId);
   return <PortalClient initialVendorTaskId={taskId} initialView="vendor-task" user={{ name: user.name, avatarUrl: user.avatarUrl ?? undefined }} />;
 }
