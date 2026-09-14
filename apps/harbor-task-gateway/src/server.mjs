@@ -3,6 +3,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -10,6 +11,7 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { createGatewayHandler } from "./app.mjs";
 import { taskArchiveChunks } from "./task-archive.mjs";
 import { createVendorArchiveCache } from "./vendor-archive-cache.mjs";
+import { createSubmissionArchiveService } from "./submission-archives.mjs";
 
 const configuration = loadConfiguration(process.env);
 const client = new S3Client({
@@ -112,6 +114,40 @@ const prepareZipArchive = createVendorArchiveCache({
   signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
 });
 
+const submissionArchives = createSubmissionArchiveService({
+  listSourceObjects: listObjects,
+  readSourceObject: async (key, {ifMatch}) => {
+    const object = await client.send(new GetObjectCommand({Bucket: configuration.bucket, Key: key, IfMatch: ifMatch}));
+    return {body: object.Body, contentLength: object.ContentLength, etag: object.ETag,
+      sha256: object.Metadata?.sha256, mode: object.Metadata?.mode, artifactSha256: object.Metadata?.["task-artifact-sha256"]};
+  },
+  headCacheObject: headArchiveObject,
+  readCacheJson: async key => {
+    try {
+      const object = await archiveClient.send(new GetObjectCommand({Bucket: configuration.archive.bucket, Key: key}));
+      if (!object.ContentLength || object.ContentLength > 1_000_000) {object.Body?.destroy?.(); throw new Error("invalid archive receipt length");}
+      return JSON.parse(await object.Body.transformToString());
+    } catch (error) {
+      if (error?.name === "NoSuchKey" || error?.name === "NotFound" || error?.$metadata?.httpStatusCode === 404) return null;
+      throw error;
+    }
+  },
+  writeCacheJson: async (key, value) => {
+    await archiveClient.send(new PutObjectCommand({Bucket: configuration.archive.bucket, Key: key, Body: JSON.stringify(value), ContentType: "application/json"}));
+  },
+  uploadCacheObject: async ({key, body, contentType, metadata}) => {
+    await new Upload({client: archiveClient, params: {Bucket: configuration.archive.bucket, Key: key, Body: body, ContentType: contentType, Metadata: metadata},
+      queueSize: 2, partSize: 8 * 1024 * 1024, leavePartsOnError: false}).done();
+  },
+  signCacheObject: async ({key, filename, expiresInSeconds}) => getSignedUrl(archiveClient,
+    new GetObjectCommand({Bucket: configuration.archive.bucket, Key: key, ResponseContentDisposition: contentDisposition(filename)}), {expiresIn: expiresInSeconds}),
+  readCacheObject: async (key, range) => {
+    const object = await archiveClient.send(new GetObjectCommand({Bucket: configuration.archive.bucket, Key: key, ...(range ? {Range: range} : {})}));
+    return {body: object.Body, contentLength: object.ContentLength, contentRange: object.ContentRange};
+  },
+  signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
+});
+
 const handler = createGatewayHandler({
   authToken: configuration.authToken,
   signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
@@ -126,6 +162,7 @@ const handler = createGatewayHandler({
     },
   }),
   prepareZipArchive,
+  submissionArchives,
   signGetObject: async ({ key, expiresInSeconds, downloadName }) => getSignedUrl(
     client,
     new GetObjectCommand({

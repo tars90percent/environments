@@ -48,6 +48,11 @@ export function documentationHtml() {
   --data '{"roots":["vendor/submission/task"],"manifest":{"schemaVersion":"example.v1"},"filename":"vendor-harbor-tasks.zip"}' \
   "${productionBaseUrl}/zip-archives"</code></pre>
 
+    <h2>Prepare an exact submission archive</h2>
+    <p><code>POST /submission-archives</code> accepts <code>vendorId</code>, <code>storageVendorId</code>, <code>submissionId</code>, and 1–1000 tasks, each with <code>taskVersionId</code>, <code>name</code>, and the immutable source <code>artifactSha256</code> from CASE. It returns HTTP 202 while building or busy, HTTP 200 when ready, or HTTP 409 after an integrity failure. Poll the same request; use <code>retry: true</code> deliberately to retry a failed build.</p>
+    <p>This profile contains task directories at the ZIP root and a checksummed <code>manifest.json</code>. ZIP64 supports large archives. Every source file is checked against its recorded SHA-256, artifact identity, length, ETag, and original mode. The cache revision includes exact task versions and excludes evaluation notes. Other archive profiles keep their existing layout.</p>
+    <p>The ready response includes <code>revision</code>, <code>sha256</code>, <code>sizeBytes</code>, <code>manifestSha256</code>, task and file counts, and a signed URL. Authenticated <code>GET /submission-archives/{revision}.zip</code> also streams the archive, supports a single <code>Range: bytes=N-</code>, and returns <code>X-Content-SHA256</code>. A receipt is published only after the archive upload completes. This operation does not import or evaluate anything in Beagle.</p>
+
     <h2>Download a file</h2>
     <p>File requests return a temporary <code>302</code> redirect. Clients must follow redirects.</p>
     <pre><code>curl -L -H "Authorization: Bearer $HARBOR_TASKS_TOKEN" \
@@ -72,6 +77,23 @@ export function openApiDocument() {
     servers: [{ url: productionBaseUrl }],
     security: [{ bearerAuth: [] }],
     paths: {
+      "/submission-archives": {
+        post: {
+          summary: "Prepare a checksum-verified ZIP of exact CASE task versions in one submission",
+          requestBody: {required: true, content: {"application/json": {schema: {type: "object", required: ["vendorId", "storageVendorId", "submissionId", "tasks"], properties: {
+            vendorId: {type: "string"}, storageVendorId: {type: "string"}, submissionId: {type: "string"}, retry: {type: "boolean"},
+            tasks: {type: "array", minItems: 1, maxItems: 1000, items: {type: "object", required: ["taskVersionId", "name", "artifactSha256"], properties: {
+              taskVersionId: {type: "string"}, name: {type: "string"}, artifactSha256: {type: "string", pattern: "^[a-f0-9]{64}$"},
+            }}},
+          }}}}},
+          responses: {"200": {description: "Ready: revision, sha256, sizeBytes, manifestSha256, counts, downloadPath and signed downloadUrl"}, "202": {description: "Building or busy; poll after Retry-After"}, "400": {description: "Invalid request"}, "401": {description: "Unauthorized"}, "409": {description: "Build failed; explicit retry required"}, "502": {description: "Cache or source request failed"}},
+        },
+      },
+      "/submission-archives/{revision}.zip": {
+        parameters: [{name: "revision", in: "path", required: true, schema: {type: "string", pattern: "^[a-f0-9]{64}$"}}],
+        get: {summary: "Stream a ready submission archive", parameters: [{name: "Range", in: "header", schema: {type: "string", pattern: "^bytes=[0-9]+-[0-9]*$"}}], responses: {"200": {description: "ZIP bytes and X-Content-SHA256"}, "206": {description: "Partial ZIP bytes with Content-Range"}, "404": {description: "Not ready"}, "416": {description: "Invalid range"}}},
+        head: {summary: "Inspect a ready submission archive", responses: {"200": {description: "Archive length and SHA-256"}, "404": {description: "Not ready"}}},
+      },
       "/healthz": {
         get: {
           summary: "Service health",
