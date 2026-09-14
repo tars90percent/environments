@@ -14,6 +14,7 @@ import type { ArtifactStore } from "./registry/artifacts.js";
 import { localArtifactStore, openLocalRepository } from "./registry/local.js";
 import type { RegistryRepository } from "./registry/repository.js";
 import { registryFileReferences } from "./registry/file-references.js";
+import { parseRenameVendorId } from "./registry/vendor-identity.js";
 import { migrateFiles, planFileFiling, pruneOldFileCopies } from "./registry/file-migration.js";
 import type { FileContext } from "./registry/file-names.js";
 import {
@@ -104,12 +105,16 @@ if (command === "operations") {
         output(await repository.deleteVendorTimeline(parseVendorTimelineDelete(await jsonFile(argument))));
         break;
       case "vendor": {
-        const vendorId = required(argument, "vendor id");
+        const requestedId = required(argument, "vendor id");
+        const vendorId = await repository.resolveVendorId(requestedId) ?? requestedId;
         const vendor = (await repository.sampleCatalogSnapshot()).vendors.find((candidate) => candidate.id === vendorId);
         if (!vendor) fail(`Vendor not found: ${vendorId}`);
         output(vendor);
         break;
       }
+      case "rename-vendor-id":
+        output(await repository.renameVendorId(parseRenameVendorId(await jsonFile(argument))));
+        break;
       case "submission": {
         const submissionId = required(argument, "submission id");
         const submission = await repository.getSampleSubmission(submissionId);
@@ -423,6 +428,11 @@ function operationSchemas() {
       note: "Deletes the active timeline and its entries while retaining a complete audit snapshot. The vendor record is not deleted.",
     },
     vendor: { arguments: ["<vendor-id>"] },
+    "rename-vendor-id": {
+      arguments: ["<rename.json>"],
+      fields: ["vendorId", "newVendorId", "actor", "reason"],
+      note: "Atomically changes the vendor ID and linked ownership, retaining an audit record and reserving the old ID. New IDs use lowercase hyphenated words. Existing task/submission IDs, file references, history and Harbor storage paths stay stable; vendor reads accept retired IDs. Deploy consumers that honor harborStorageId before renaming a vendor with published Harbor tasks.",
+    },
     submission: { arguments: ["<submission-id>"] },
     task: { arguments: ["<task-id>"] },
     "source-event": { arguments: ["<source-event-id>"] },
