@@ -50,7 +50,7 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(p.api('GET', 'https://example.test/v1/catalog', 'Bearer test'), {'vendors': []})
 
     def test_catalog_resolves_direct_and_legacy_artifacts_without_incidental_notes(self):
-        task = {'id': 'version:1', 'kind': 'task', 'format': 'harbor', 'sourcePath': 'delivered/task/payload', 'contentSha256': 'a' * 64}
+        task = {'id': 'version:1', 'kind': 'task', 'format': 'harbor', 'sourcePath': 'delivered/task/payload', 'artifactId': 'task.tar.gz', 'contentSha256': 'a' * 64}
         submission = {'id': 'delivery', 'tasks': [task], 'sourceEvents': []}
         catalog = {'vendors': [{'id': 'vendor', 'submissions': [submission]}]}
         self.assertEqual(p.requests_from_catalog(catalog), [request()])
@@ -58,9 +58,12 @@ class PublisherTests(unittest.TestCase):
         task['classification'] = {'note': 'changed'}
         self.assertEqual(p.requests_from_catalog(catalog), [request()])
         task['contentSha256'] = None
+        task['artifactId'] = None
         task['sourceItemIds'] = ['whole', 'named']
         submission['sourceEvents'] = [{'items': [{'id': 'whole', 'artifactId': 'whole.zip', 'displayName': 'whole.zip', 'contentSha256': 'b' * 64},
                                                 {'id': 'named', 'artifactId': 'task.zip', 'displayName': 'task.zip', 'contentSha256': 'a' * 64}]}]
+        self.assertEqual(p.requests_from_catalog(catalog), [request()])
+        task['contentSha256'] = 'c' * 64  # Legacy task-content digest, not archive SHA.
         self.assertEqual(p.requests_from_catalog(catalog), [request()])
         submission['sourceEvents'][0]['items'][1]['displayName'] = 'ambiguous.zip'
         with self.assertRaisesRegex(ValueError, 'unambiguous'):
