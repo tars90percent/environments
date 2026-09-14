@@ -8,14 +8,17 @@ import base64
 import contextlib
 import concurrent.futures
 import fcntl
+import functools
 import gzip
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -41,6 +44,7 @@ EVE_CONFIG = Path('/home/TARS/.config/harbor-tasks-mirror/eve.json')
 EVE_API = 'https://transfer.xaminim.com/api/v1'
 SHA = re.compile(r'^[a-f0-9]{64}$')
 CHUNK_BYTES = 16 * 1024 * 1024
+BUILDER = Path('/usr/local/lib/harbor-task-archives')
 
 
 def now():
@@ -296,6 +300,152 @@ def verify_archive(path, receipt, request, raw=None, deadline=None):
             if actual != set(paths):
                 raise ValueError('Raw mirror inventory differs from archive')
     return len(files)
+
+
+class ArchiveRangeReader(io.RawIOBase):
+    """Seekable, checksum-bound HTTP ranges for ZIP64 metadata, not task bytes."""
+    def __init__(self, config, receipt, request, deadline):
+        self.url = config['gateway_url'] + '/submission-archives/' + revision(request) + '.zip'
+        self.auth = 'Bearer ' + config['gateway_token']
+        self.receipt, self.deadline, self.position = receipt, deadline, 0
+        self.cached = []
+
+    def seekable(self):
+        return True
+
+    def readable(self):
+        return True
+
+    def tell(self):
+        return self.position
+
+    def seek(self, offset, whence=0):
+        target = offset + (self.position if whence == 1 else self.receipt['sizeBytes'] if whence == 2 else 0)
+        if whence not in (0, 1, 2) or target < 0:
+            raise ValueError('Invalid ZIP seek')
+        self.position = target
+        return target
+
+    def read(self, size=-1):
+        total = self.receipt['sizeBytes']
+        end = min(total, total if size < 0 else self.position + size)
+        if end <= self.position:
+            return b''
+        for start, data in self.cached:
+            if start <= self.position and end <= start + len(data):
+                result = data[self.position - start:end - start]
+                self.position = end
+                return result
+        # EOCD, ZIP64 records, and small central directories share one tail read.
+        start = min(self.position, max(0, total - 65536))
+        stop = min(total, max(end, start + 65536))
+        if stop - start > 128 * 1024 * 1024:
+            raise ValueError('Archive metadata range is too large')
+        data = bytearray()
+        for attempt in range(4):
+            check_deadline(self.deadline)
+            offset = start + len(data)
+            if offset == stop:
+                break
+            req = urllib.request.Request(self.url, headers={'Authorization': self.auth, 'Range': 'bytes=' + str(offset) + '-' + str(stop - 1)})
+            try:
+                with OPENER.open(req, timeout=45) as response:
+                    expected = 'bytes ' + str(offset) + '-' + str(stop - 1) + '/' + str(total)
+                    if response.status != 206 or response.headers.get('Content-Range') != expected or response.headers.get('X-Content-SHA256') != self.receipt['sha256']:
+                        raise ValueError('Metadata range does not match immutable archive')
+                    while len(data) < stop - start:
+                        check_deadline(self.deadline)
+                        chunk = response.read1(min(65536, stop - start - len(data)))
+                        if not chunk:
+                            break
+                        data.extend(chunk)
+                if len(data) != stop - start:
+                    raise OSError('Truncated metadata range')
+            except (urllib.error.URLError, OSError):
+                check_deadline(self.deadline)
+                if attempt == 3:
+                    raise
+        if len(data) != stop - start:
+            raise OSError('Incomplete archive metadata')
+        result = bytes(data[self.position - start:end - start])
+        self.position = end
+        self.cached.append((start, bytes(data)))
+        self.cached = self.cached[-3:]
+        return result
+
+
+def checked_manifest(data, receipt, request):
+    if len(data) > 128 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != receipt['manifestSha256']:
+        raise ValueError('Manifest checksum mismatch')
+    manifest = json.loads(data)
+    if any(manifest.get(key) != value for key, value in request.items()) or manifest.get('revision') != revision(request):
+        raise ValueError('Manifest does not match exact CASE task versions')
+    tasks = {task['name'] for task in request['tasks']}
+    paths = set()
+    prefix = request['storageVendorId'] + '/' + request['submissionId'] + '/'
+    for item in manifest['files']:
+        safe_path(Path('/unused'), item['path'])
+        if item['path'].split('/')[0] not in tasks or item['sourceKey'] != prefix + item['path'] or item['path'] in paths:
+            raise ValueError('Manifest source path mismatch')
+        if not SHA.fullmatch(item['sha256']) or not re.fullmatch('[0-7]{3}', item['mode']) or not isinstance(item['sizeBytes'], int) or item['sizeBytes'] < 0:
+            raise ValueError('Invalid manifest file metadata')
+        paths.add(item['path'])
+    if len(paths) != receipt['fileCount'] or len(tasks) != receipt['taskCount'] or not {name + '/task.toml' for name in tasks}.issubset(paths):
+        raise ValueError('Manifest counts or task completion markers differ')
+    return manifest
+
+
+@functools.lru_cache(maxsize=1)
+def builder_identity():
+    return hashlib.sha256(''.join(file_hash(BUILDER / path) for path in ('runtime/bin/node', 'rebuild.mjs', 'package-lock.json')).encode()).hexdigest()
+
+
+def rebuild_from_jfs(config, receipt, request, deadline):
+    """Reproduce the cached ZIP locally; equivalent-but-different ZIPs fall back."""
+    node, helper = BUILDER / 'runtime/bin/node', BUILDER / 'rebuild.mjs'
+    if not node.is_file() or not helper.is_file():
+        return None
+    rev = revision(request)
+    identity = {'builder': builder_identity(), 'archiveSha256': receipt['sha256']}
+    skipped = STATE / 'rebuild-fallback' / (rev + '.json')
+    if read(skipped) == identity:
+        return None
+    manifest_path = STATE / 'manifests' / (rev + '.json')
+    if not manifest_path.exists() or file_hash(manifest_path, deadline) != receipt['manifestSha256']:
+        with ArchiveRangeReader(config, receipt, request, deadline) as stream, zipfile.ZipFile(stream) as archive:
+            if archive.getinfo('manifest.json').file_size > 128 * 1024 * 1024:
+                raise ValueError('Archive manifest too large')
+            data = archive.read('manifest.json')
+        checked_manifest(data, receipt, request)
+        atomic(manifest_path, data)
+    else:
+        checked_manifest(manifest_path.read_bytes(), receipt, request)
+    path = safe_path(STAGING, archive_path(request))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix('.rebuild-' + uuid.uuid4().hex)
+    try:
+        with lock(RAW_STATE / 'run.lock'):
+            raw_ready(request)
+            check_deadline(deadline)
+            log('rebuilding_from_jfs', submission=request['submissionId'], source_bytes=receipt['sourceBytes'])
+            try:
+                result = subprocess.run([str(node), str(helper), str(manifest_path), str(RAW), str(temporary), receipt['sha256']], capture_output=True, text=True, timeout=max(1, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                raise TimeoutError('Local archive build reached run budget') from None
+        if result.returncode == 2:
+            atomic(skipped, identity)
+            log('rebuild_encoding_differs', submission=request['submissionId'], fallback='verified gateway download')
+            return None
+        if result.returncode != 0:
+            raise ValueError('Local archive build failed source checks; raw mirror retained')
+        if temporary.stat().st_size != receipt['sizeBytes'] or file_hash(temporary, deadline) != receipt['sha256']:
+            raise ValueError('Rebuilt archive differs from cached ZIP')
+        os.replace(temporary, path)
+        log('rebuilt_identical_archive', submission=request['submissionId'], bytes=receipt['sizeBytes'])
+        return path
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def download(config, receipt, request, deadline):
@@ -664,7 +814,7 @@ def run(args):
                     if result['status'] == 'ready':
                         receipt = {key: result[key] for key in ('schemaVersion', 'revision', 'sha256', 'sizeBytes', 'sourceBytes', 'fileCount', 'taskCount', 'manifestSha256')}
                         if not path.exists() or path.stat().st_size != receipt['sizeBytes'] or file_hash(path, deadline) != receipt['sha256']:
-                            path = download(config, receipt, request, deadline)
+                            path = rebuild_from_jfs(config, receipt, request, deadline) or download(config, receipt, request, deadline)
                         with lock(RAW_STATE / 'run.lock'):
                             raw_ready(request)
                             verify_archive(path, receipt, request, RAW, deadline)
