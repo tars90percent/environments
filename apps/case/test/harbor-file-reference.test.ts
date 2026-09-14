@@ -29,6 +29,7 @@ test("short-reference Harbor tasks publish exact files and leave intermixed trac
     const task: TaskRegistrationInput = { id: "task-example", stableKey: "example", title: "Example", kind: "task", format: "harbor", benchmarkId: "unspecified", sourcePath: "mixed/tasks/example", artifactId: "file-12", sourceItemIds: ["original-mixed-delivery"] };
     const artifact = { id: "file-12", reference: "file-12", kind: "source_payload", storageKey: "files/file-12/mixed.zip", sha256, sizeBytes: (await stat(archive)).size, contentType: "application/zip", metadata: { originalName: "mixed.zip" }, createdAt: new Date().toISOString() };
     const repository = {
+    harborStorage: { async withPublicationLock<T>(operation: () => Promise<T>) { return operation(); } },
       async getArtifact(id: string) { assert.equal(id, "file-12"); return artifact; },
       async sampleCatalogSnapshot() { return { vendors: [{ id: "vendor-a", submissions: [{ id: "september-delivery", sourceEvents: [], tasks: [
         { ...task, contentSha256: sha256 },

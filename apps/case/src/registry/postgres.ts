@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { runRegistryMigrations } from "./migrations.js";
 import { FileFilingRepository } from "./file-filing.js";
+import { HarborStorageRepository } from "./harbor-storage.js";
 import { renameVendorId, resolveVendorId, type RenameVendorIdInput, type RenameVendorIdResult } from "./vendor-identity.js";
 import { PROCUREMENT_EVENT_KINDS, procurementSummaryFromEvent } from "./procurement-summary.js";
 import type { RegistryRepository } from "./repository.js";
@@ -378,10 +379,12 @@ type ArtifactRow = {
 export class PostgresRegistry implements RegistryRepository {
   private readonly pool: Pool;
   readonly files: FileFilingRepository;
+  readonly harborStorage: HarborStorageRepository;
 
   constructor(databaseUrl: string) {
     this.pool = new Pool({ connectionString: databaseUrl, max: 10 });
     this.files = new FileFilingRepository(this.pool);
+    this.harborStorage = new HarborStorageRepository(this.pool);
   }
 
   async initialize(): Promise<void> {
