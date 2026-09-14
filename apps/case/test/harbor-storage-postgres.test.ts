@@ -17,7 +17,8 @@ test("Harbor storage migration resumes copies and retirement, blocks publication
       vendor: { id: "old-vendor", name: "Vendor", short: "Vendor", description: "Fixture" },
       submission: { id: "delivery", date: "2026-09-14", label: "Sample", sourceLabel: "Email", formats: [] },
       artifacts: [], actor: "test",
-      sources: [{ sourceEvent: { id: "email", channel: "email", externalRef: "email://fixture", receivedAt: "2026-09-14T00:00:00Z" }, items: [] }],
+      sources: [{ sourceEvent: { id: "email", channel: "email", externalRef: "email://fixture", receivedAt: "2026-09-14T00:00:00Z" },
+        items: [{ id: "message", kind: "message", displayName: "Delivery message", locator: "email://fixture", fetchStatus: "external_only", parseStatus: "not_requested", mutable: false }] }],
     });
     await repository.renameVendorId({ vendorId: "old-vendor", newVendorId: "vendor", actor: "test", reason: "Company ID" });
     const before = await repository.sampleCatalogSnapshot();
