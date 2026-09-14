@@ -1929,6 +1929,46 @@ export const registryMigrations: readonly Migration[] = [
         SELECT DISTINCT ON (task_version_id) * FROM registry_task_classifications ORDER BY task_version_id, id DESC;
     `,
   },
+  {
+    id: "028_vendor_id_renames",
+    sql: `
+      ALTER TABLE registry_vendors ADD COLUMN harbor_storage_id text UNIQUE;
+
+      -- Existing relationships follow a renamed primary key, including the timeline's own key.
+      DO $$ DECLARE fk record;
+      BEGIN
+        FOR fk IN
+          SELECT conrelid::regclass AS relation, conname, pg_get_constraintdef(oid) AS definition
+          FROM pg_constraint
+          WHERE contype = 'f' AND confrelid IN ('registry_vendors'::regclass, 'registry_vendor_timelines'::regclass)
+            AND confupdtype = 'a'
+        LOOP
+          EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', fk.relation, fk.conname);
+          EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I %s ON UPDATE CASCADE', fk.relation, fk.conname, fk.definition);
+        END LOOP;
+      END $$;
+
+      CREATE TABLE registry_vendor_id_changes (
+        old_id text PRIMARY KEY,
+        new_id text NOT NULL,
+        vendor_id text NOT NULL REFERENCES registry_vendors(id) ON UPDATE CASCADE,
+        actor text NOT NULL CHECK (length(trim(actor)) > 0),
+        reason text NOT NULL CHECK (length(trim(reason)) > 0),
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      COMMENT ON TABLE registry_vendor_id_changes IS
+        'Audited vendor ID changes. old_id/new_id preserve each rename; vendor_id follows the current identity and reserves retired IDs.';
+      CREATE FUNCTION registry_reject_retired_vendor_id() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM registry_vendor_id_changes WHERE old_id = NEW.id) THEN
+          RAISE EXCEPTION 'Vendor ID % is retired; use its current ID from registry_vendor_id_changes', NEW.id;
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER registry_reject_retired_vendor_id BEFORE INSERT OR UPDATE OF id ON registry_vendors
+        FOR EACH ROW EXECUTE FUNCTION registry_reject_retired_vendor_id();
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

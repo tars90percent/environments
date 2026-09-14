@@ -262,7 +262,7 @@ test("refuses to publish a Harbor task without task.toml", async () => {
   }
 });
 
-test("prunes only inactive task prefixes for one submission and is idempotent", async () => {
+for (const renamed of [false, true]) test(`prunes only inactive task prefixes for one submission and is idempotent (renamed=${renamed})`, async () => {
   const objects = new Set([
     "vendor-a/submission-1/active/instruction.md",
     "vendor-a/submission-1/active/task.toml",
@@ -275,7 +275,8 @@ test("prunes only inactive task prefixes for one submission and is idempotent", 
       return {
         generatedAt: "2026-09-01T00:00:00.000Z",
         vendors: [{
-          id: "vendor-a",
+          id: renamed ? "renamed-vendor" : "vendor-a",
+          ...(renamed ? { harborStorageId: "vendor-a" } : {}),
           name: "Vendor A",
           short: "A",
           submissions: [{

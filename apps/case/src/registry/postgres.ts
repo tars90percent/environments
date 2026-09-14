@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { runRegistryMigrations } from "./migrations.js";
 import { FileFilingRepository } from "./file-filing.js";
+import { renameVendorId, resolveVendorId, type RenameVendorIdInput, type RenameVendorIdResult } from "./vendor-identity.js";
 import { PROCUREMENT_EVENT_KINDS, procurementSummaryFromEvent } from "./procurement-summary.js";
 import type { RegistryRepository } from "./repository.js";
 import { deriveRuntimeVerification, type RuntimeCheckFact } from "./task-evidence.js";
@@ -693,6 +694,14 @@ export class PostgresRegistry implements RegistryRepository {
     } finally {
       client.release();
     }
+  }
+
+  async resolveVendorId(id: string): Promise<string | null> {
+    return resolveVendorId(this.pool, id);
+  }
+
+  async renameVendorId(input: RenameVendorIdInput): Promise<RenameVendorIdResult> {
+    return renameVendorId(this.pool, input);
   }
 
   async ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }> {
@@ -4151,8 +4160,8 @@ export class PostgresRegistry implements RegistryRepository {
   async sampleCatalogSnapshot(): Promise<SampleCatalogSnapshot> {
     const [classificationRows, vendorsResult, interactionsResult, submissionsResult, tasksResult, checksResult, attemptsResult, findingsResult, taskSourcesResult, sourceEventsResult, sourceItemsResult] = await Promise.all([
       taskClassifications(this.pool),
-      this.pool.query<VendorRow & { has_timeline: boolean }>(
-        `SELECT v.id, v.name, v.short, v.description,
+      this.pool.query<VendorRow & { has_timeline: boolean; harbor_storage_id: string | null }>(
+        `SELECT v.id, v.name, v.short, v.description, v.harbor_storage_id,
                 EXISTS (
                   SELECT 1 FROM registry_vendor_timelines timeline
                   WHERE timeline.vendor_id = v.id
@@ -4380,6 +4389,7 @@ export class PostgresRegistry implements RegistryRepository {
       name: row.name,
       short: row.short,
       hasTimeline: row.has_timeline,
+      ...(row.harbor_storage_id ? { harborStorageId: row.harbor_storage_id } : {}),
       interactions: (interactionsByVendor.get(row.id) ?? []).map((interaction) => ({
         id: interaction.id,
         kind: interaction.kind,

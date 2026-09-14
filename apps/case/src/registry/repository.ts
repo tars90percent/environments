@@ -1,5 +1,6 @@
 import type { SampleTaxonomy, RegisterSampleTaxonomyInput, ClassifyTasksInput, ClassifyTasksResult, TaskClassification } from "./sample-classification.js";
 import type { FileFilingRepository } from "./file-filing.js";
+import type { RenameVendorIdInput, RenameVendorIdResult } from "./vendor-identity.js";
 import type {
   ArtifactInput,
   ArtifactRecord,
@@ -83,6 +84,8 @@ export interface RegistryRepository {
   removeSubmission(input: SubmissionRemovalInput): Promise<SubmissionRemovalResult>;
   ingestSourceEnvelope(envelope: SourceEnvelopeInput): Promise<{ sourceEventId: string; created: boolean }>;
   vendorDirectory(includeArchived?: boolean): Promise<VendorDirectoryEntry[]>;
+  resolveVendorId(id: string): Promise<string | null>;
+  renameVendorId(input: RenameVendorIdInput): Promise<RenameVendorIdResult>;
   createVendorTimeline(input: VendorTimelineCreateInput): Promise<{ vendorId: string; created: boolean }>;
   getVendorTimeline(vendorId: string): Promise<VendorTimeline | null>;
   getVendorTimelineHistory(vendorId: string): Promise<VendorTimelineChange[]>;

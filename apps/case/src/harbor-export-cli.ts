@@ -246,7 +246,7 @@ export async function exportSubmissions(input: {
 
   const prefixes = new Map<string, string>();
   for (const { vendor, submission, task } of selected) {
-    const prefix = taskExportPrefix(vendor.id, submission.id, task.sourcePath);
+    const prefix = taskExportPrefix(vendor.harborStorageId ?? vendor.id, submission.id, task.sourcePath);
     const existing = prefixes.get(prefix);
     if (existing) throw new Error(`Export path collision between ${existing} and ${task.id}: ${prefix}`);
     prefixes.set(prefix, task.id);
@@ -296,10 +296,11 @@ export async function pruneInactiveSubmissionHarborTaskPrefixes(input: {
     .map((submission) => ({ vendor, submission })))[0];
   if (!match) throw new Error(`Catalog-visible submission not found: ${input.submissionId}`);
 
-  const basePrefix = submissionExportPrefix(match.vendor.id, match.submission.id);
+  const storageVendorId = match.vendor.harborStorageId ?? match.vendor.id;
+  const basePrefix = submissionExportPrefix(storageVendorId, match.submission.id);
   const activePrefixes = new Set(match.submission.tasks
     .filter((task) => task.kind === "task" && task.format === "harbor")
-    .map((task) => taskExportPrefix(match.vendor.id, match.submission.id, task.sourcePath)));
+    .map((task) => taskExportPrefix(storageVendorId, match.submission.id, task.sourcePath)));
   const keys = await input.destinationStore.listKeys(`${basePrefix}/`);
   const objectsByPrefix = new Map<string, string[]>();
   for (const key of keys) {
@@ -366,7 +367,7 @@ async function prepareAndMaybePublishTask(input: {
       }
     }
     if (!selected) throw new Error(`No linked artifact resolved task ${task.id}: ${failures.join("; ")}`);
-    const prefix = taskExportPrefix(vendor.id, submission.id, task.sourcePath);
+    const prefix = taskExportPrefix(vendor.harborStorageId ?? vendor.id, submission.id, task.sourcePath);
     const files = await harborTaskFiles(selected.taskRoot, prefix);
     const sizeBytes = files.reduce((sum, file) => sum + file.sizeBytes, 0);
     let status: "planned" | "published" | "unchanged" = "planned";

@@ -1131,6 +1131,7 @@ export type SampleCatalogSubmission = {
 
 export type SampleCatalogVendor = {
   id: string;
+  harborStorageId?: string;
   name: string;
   short: string;
   hasTimeline: boolean;
