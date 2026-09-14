@@ -198,6 +198,36 @@ class PublisherTests(unittest.TestCase):
 
 
 class RangeTests(unittest.TestCase):
+    def test_truncated_ranges_retry_from_written_prefix_and_resume_after_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original, receipt, _ = archive(root)
+            data = original.read_bytes()
+            staging = root / 'staging'
+            pieces = staging / '.downloads' / p.revision(request())
+            p.atomic(pieces / '0.tmp', data[:19])
+            p.atomic(pieces / '0.request.json', {'start': 0, 'end': 63, 'archiveSha256': receipt['sha256']})
+            ranges, cut = [], set()
+            class Response(io.BytesIO):
+                status = 206
+            def open_request(req, timeout):
+                start, end = map(int, req.headers['Range'][6:].split('-'))
+                ranges.append((start, end))
+                payload = data[start:end + 1]
+                index = start // 64
+                if index not in cut:
+                    cut.add(index)
+                    payload = payload[:7]
+                response = Response(payload)
+                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(len(data)), 'X-Content-SHA256': receipt['sha256']}
+                return response
+            with mock.patch.multiple(p, STAGING=staging, CHUNK_BYTES=64), mock.patch.object(p.OPENER, 'open', open_request), mock.patch.object(p.time, 'sleep'):
+                result = p.download_ranges({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None)
+            self.assertEqual(result.read_bytes(), data)
+            self.assertIn((19, 63), ranges)
+            self.assertIn((26, 63), ranges)
+            self.assertNotIn((0, 63), ranges)
+
     def test_parallel_ranges_resume_complete_pieces_and_verify_full_assembly(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

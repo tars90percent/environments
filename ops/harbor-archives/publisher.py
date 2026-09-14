@@ -353,38 +353,60 @@ def download_ranges(config, receipt, request, deadline):
         target = pieces / (str(index) + '.bin')
         metadata = pieces / (str(index) + '.json')
         previous = read(metadata)
-        if previous and target.exists() and target.stat().st_size == end - start + 1 and file_hash(target, deadline) == previous.get('sha256'):
+        if previous and previous.get('start') == start and previous.get('end') == end and target.exists() and target.stat().st_size == end - start + 1 and file_hash(target, deadline) == previous.get('sha256'):
             return target
-        check_deadline(deadline)
-        if stopped.is_set():
-            raise RuntimeError('Another range failed; complete pieces retained')
-        expected = 'bytes ' + str(start) + '-' + str(end) + '/' + str(receipt['sizeBytes'])
-        req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + config['gateway_token'], 'Range': 'bytes=' + str(start) + '-' + str(end)})
         tmp = target.with_suffix('.tmp')
-        digest = hashlib.sha256()
-        written = 0
-        with OPENER.open(req, timeout=45) as response:
-            if response.status != 206 or response.headers.get('Content-Range') != expected or response.headers.get('X-Content-SHA256') != receipt['sha256']:
-                raise ValueError('Range response does not match immutable archive')
-            with tmp.open('wb') as stream:
-                while True:
-                    check_deadline(deadline)
-                    if stopped.is_set():
-                        raise RuntimeError('Another range failed; complete pieces retained')
-                    chunk = response.read(256 * 1024)
-                    if not chunk:
-                        break
-                    stream.write(chunk)
-                    written += len(chunk)
-                    digest.update(chunk)
-                    if written > end - start + 1:
-                        raise ValueError('Range response exceeded expected length')
-                stream.flush()
-                os.fsync(stream.fileno())
-        if written != end - start + 1:
-            raise ValueError('Incomplete range response; piece not committed')
+        descriptor = target.with_suffix('.request.json')
+        identity = {'start': start, 'end': end, 'archiveSha256': receipt['sha256']}
+        if read(descriptor) != identity:
+            if tmp.exists():
+                tmp.unlink()
+            atomic(descriptor, identity)
+        if tmp.exists() and (not stat.S_ISREG(tmp.lstat().st_mode) or tmp.stat().st_size > end - start + 1):
+            raise ValueError('Invalid partial range file')
+        for attempt in range(4):
+            check_deadline(deadline)
+            if stopped.is_set():
+                raise RuntimeError('Another range failed; partial pieces retained')
+            written = tmp.stat().st_size if tmp.exists() else 0
+            if written == end - start + 1:
+                break
+            offset = start + written
+            expected = 'bytes ' + str(offset) + '-' + str(end) + '/' + str(receipt['sizeBytes'])
+            req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + config['gateway_token'], 'Range': 'bytes=' + str(offset) + '-' + str(end)})
+            try:
+                with OPENER.open(req, timeout=45) as response:
+                    if response.status != 206 or response.headers.get('Content-Range') != expected or response.headers.get('X-Content-SHA256') != receipt['sha256']:
+                        raise ValueError('Range response does not match immutable archive')
+                    # These prefixes are written sequentially by this program,
+                    # never preallocated. Final ZIP SHA-256 is still mandatory.
+                    with tmp.open('ab') as stream:
+                        while True:
+                            check_deadline(deadline)
+                            if stopped.is_set():
+                                raise RuntimeError('Another range failed; partial pieces retained')
+                            chunk = response.read(256 * 1024)
+                            if not chunk:
+                                break
+                            if written + len(chunk) > end - start + 1:
+                                raise ValueError('Range response exceeded expected length')
+                            stream.write(chunk)
+                            written += len(chunk)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                if written != end - start + 1:
+                    raise OSError('Incomplete range response; prefix retained')
+                break
+            except (urllib.error.URLError, OSError):
+                check_deadline(deadline)
+                if attempt == 3:
+                    raise
+                time.sleep(2 ** attempt)
+        if not tmp.exists() or tmp.stat().st_size != end - start + 1:
+            raise OSError('Range remains incomplete')
+        piece_sha = file_hash(tmp, deadline)
         os.replace(tmp, target)
-        atomic(metadata, {'start': start, 'end': end, 'sha256': digest.hexdigest()})
+        atomic(metadata, {'start': start, 'end': end, 'sha256': piece_sha})
         return target
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:

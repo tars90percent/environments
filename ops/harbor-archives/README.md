@@ -101,6 +101,8 @@ helper failures have at most three retries. A process restart resumes the saved
 operation before starting another publication. Small partial downloads resume
 with validated byte ranges. Archives larger than 32 MiB use eight concurrent
 16 MiB ranges; complete pieces receive local checksum receipts before reuse.
+Each interrupted range retains its sequentially written prefix, bound to its
+offsets and expected archive checksum, and retries at most four times per run.
 Assembly writes a contiguous file in order and checks the expected full-ZIP
 SHA-256 before promotion. Interrupted or sparse file lengths are never treated
 as evidence that all bytes arrived.
