@@ -28,6 +28,7 @@ function normalizeVendor(value: JsonRecord): CatalogVendor {
   const interactions = records(value.interactions).map(normalizeInteraction);
   return {
     id: text(value.id),
+    ...(text(value.harborStorageId) ? { harborStorageId: text(value.harborStorageId) } : {}),
     name: text(value.name),
     short: text(value.short, text(value.name)),
     hasTimeline: value.hasTimeline === true || interactions.length > 0,

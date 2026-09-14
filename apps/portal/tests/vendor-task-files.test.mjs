@@ -24,12 +24,16 @@ const entry = (path, sizeBytes = 12) => ({ type: "file", path: root + path, size
 const app = (await import("../dist/server/index.js")).default;
 const request = (suffix, authenticated = true, method = "GET") => app.fetch(new Request(`https://portal.example.com/api/tasks/${suffix}`, { method, headers: authenticated ? { cookie: cookie() } : {} }), env, {});
 
-test("task files require a researcher session and resolve the exact submission before listing every page", async () => {
+for (const renamed of [false, true]) test(`task files require a researcher session and resolve the exact submission before listing every page (renamed=${renamed})`, async () => {
   const original = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (input, init) => {
     calls.push(String(input));
-    if (input === "https://case.example/v1/catalog") return Response.json(catalog);
+    if (input === "https://case.example/v1/catalog") {
+      const responseCatalog = structuredClone(catalog);
+      if (renamed) Object.assign(responseCatalog.vendors[0], { id: "renamed-vendor", harborStorageId: "vendor-a" });
+      return Response.json(responseCatalog);
+    }
     assert.equal(init.headers.authorization, "Bearer gateway-test");
     const url = new URL(input);
     assert.equal(url.pathname, "/" + root);
@@ -49,6 +53,7 @@ test("task files require a researcher session and resolve the exact submission b
     assert.equal(result.headers.get("cache-control"), "private, no-store");
     const data = await result.json();
     assert.equal(data.available, true);
+    assert.equal(data.vendor.id, renamed ? "renamed-vendor" : "vendor-a");
     assert.equal(data.submission.id, "delivery-a");
     assert.equal(data.task.artifactId, "artifact-a");
     assert.deepEqual(data.entries.filter((entry) => entry.kind === "directory").map((entry) => entry.path), ["environment", "environment/data", "tests"]);

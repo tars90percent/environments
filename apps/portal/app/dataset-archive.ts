@@ -150,7 +150,7 @@ function harborDatasetTask({ task, submission, vendor }: HarborTaskContext): Ven
     checks: task.checks,
     findings: task.findings,
     submission: { id: submission.id, date: submission.date, label: submission.label },
-    bucketPrefix: harborTaskBucketPrefix(vendor.id, submission.id, task.sourcePath, task.id),
+    bucketPrefix: harborTaskBucketPrefix(vendor.harborStorageId ?? vendor.id, submission.id, task.sourcePath, task.id),
   };
 }
 

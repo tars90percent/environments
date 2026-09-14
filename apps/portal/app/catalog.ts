@@ -116,6 +116,7 @@ export type CatalogVendorInteraction = {
 
 export type CatalogVendor = {
   id: string;
+  harborStorageId?: string;
   name: string;
   short: string;
   hasTimeline: boolean;
