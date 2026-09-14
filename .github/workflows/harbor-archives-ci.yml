@@ -1,0 +1,26 @@
+name: Harbor Archive Publisher CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ops/harbor-archives/**
+      - .github/workflows/harbor-archives-ci.yml
+  pull_request:
+    paths:
+      - ops/harbor-archives/**
+      - .github/workflows/harbor-archives-ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.9'
+      - run: python3 -m unittest discover -s ops/harbor-archives -p 'test_*.py' -v
