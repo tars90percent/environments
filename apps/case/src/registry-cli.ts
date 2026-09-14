@@ -11,7 +11,8 @@ import {
 } from "./harbor-publication.js";
 import { classifyHarborTaskRegistrations } from "./harbor-export-cli.js";
 import type { ArtifactStore } from "./registry/artifacts.js";
-import { localArtifactStore, openLocalRepository } from "./registry/local.js";
+import { localArtifactStore, localHarborTaskStore, openLocalRepository } from "./registry/local.js";
+import type { HarborStorageMoveInput } from "./registry/harbor-storage.js";
 import type { RegistryRepository } from "./registry/repository.js";
 import { registryFileReferences } from "./registry/file-references.js";
 import { parseRenameVendorId } from "./registry/vendor-identity.js";
@@ -114,6 +115,10 @@ if (command === "operations") {
       }
       case "rename-vendor-id":
         output(await repository.renameVendorId(parseRenameVendorId(await jsonFile(argument))));
+        break;
+      case "migrate-harbor-storage-prefix":
+        output(await repository.harborStorage.migrate(localHarborTaskStore(), await jsonFile(argument) as HarborStorageMoveInput,
+          (progress) => process.stderr.write(JSON.stringify(progress) + "\n")));
         break;
       case "submission": {
         const submissionId = required(argument, "submission id");
@@ -432,6 +437,10 @@ function operationSchemas() {
       arguments: ["<rename.json>"],
       fields: ["vendorId", "newVendorId", "actor", "reason"],
       note: "Atomically changes the vendor ID and linked ownership, retaining an audit record and reserving the old ID. New IDs use lowercase hyphenated words. Existing task/submission IDs, file references, history and Harbor storage paths stay stable; vendor reads accept retired IDs. Deploy consumers that honor harborStorageId before renaming a vendor with published Harbor tasks.",
+    },
+    "migrate-harbor-storage-prefix": {
+      arguments: ["<migration.json>"], fields: ["vendorId", "expectedStorageId", "actor", "reason"],
+      note: "Move Harbor distribution files to the canonical vendor prefix, verifying SHA-256 bytes before switching the mapping and retiring old objects. Retains an audited manifest; retry identical input after interruption. Publications and pruning share the migration lock and refuse unfinished moves. Coordinate external mirror locks before invoking. Original artifacts and task/submission identities remain unchanged.",
     },
     submission: { arguments: ["<submission-id>"] },
     task: { arguments: ["<task-id>"] },

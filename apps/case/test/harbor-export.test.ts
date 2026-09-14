@@ -91,6 +91,7 @@ test("retains a task rejected by Harbor's static validator and reclassifies it a
       sourceItemIds: ["source-item-1"],
     };
     const repository = {
+    harborStorage: { async withPublicationLock<T>(operation: () => Promise<T>) { return operation(); } },
       async getArtifact() {
         return {
           id: task.artifactId,
@@ -156,6 +157,7 @@ test("retains a task with no task.toml and classifies it as non-Harbor", { skip:
       sourceItemIds: ["source-item-1"],
     };
     const repository = {
+    harborStorage: { async withPublicationLock<T>(operation: () => Promise<T>) { return operation(); } },
       async getArtifact() {
         return {
           id: task.artifactId,
@@ -271,6 +273,7 @@ for (const renamed of [false, true]) test(`prunes only inactive task prefixes fo
     "vendor-a/submission-2/unrelated/task.toml",
   ]);
   const repository = {
+    harborStorage: { async withPublicationLock<T>(operation: () => Promise<T>) { return operation(); } },
     async sampleCatalogSnapshot() {
       return {
         generatedAt: "2026-09-01T00:00:00.000Z",

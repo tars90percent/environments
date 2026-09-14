@@ -1969,6 +1969,25 @@ export const registryMigrations: readonly Migration[] = [
         FOR EACH ROW EXECUTE FUNCTION registry_reject_retired_vendor_id();
     `,
   },
+  {
+    id: "029_harbor_storage_moves",
+    sql: `
+      CREATE TABLE registry_harbor_storage_moves (
+        id bigserial PRIMARY KEY,
+        vendor_id text NOT NULL REFERENCES registry_vendors(id) ON UPDATE CASCADE,
+        from_id text NOT NULL,
+        to_id text NOT NULL,
+        manifest jsonb NOT NULL,
+        actor text NOT NULL,
+        reason text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        switched_at timestamptz,
+        retired_at timestamptz,
+        UNIQUE(vendor_id,from_id,to_id),
+        CHECK (from_id <> to_id)
+      );
+    `,
+  },
 ];
 
 export async function runRegistryMigrations(client: PoolClient): Promise<void> {

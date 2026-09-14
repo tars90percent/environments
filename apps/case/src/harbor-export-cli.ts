@@ -228,6 +228,10 @@ export async function exportSubmissions(input: {
   continueOnError?: boolean;
   onProgress?: (event: Record<string, unknown>) => void;
 }): Promise<HarborExportResult> {
+  return input.repository.harborStorage.withPublicationLock(() => exportSubmissionsUnlocked(input));
+}
+
+async function exportSubmissionsUnlocked(input: Parameters<typeof exportSubmissions>[0]): Promise<HarborExportResult> {
   const requested = new Set(input.submissionIds);
   if (requested.size !== input.submissionIds.length) throw new Error("Submission IDs must not be repeated");
   const snapshot = await input.repository.sampleCatalogSnapshot();
@@ -290,6 +294,10 @@ export async function pruneInactiveSubmissionHarborTaskPrefixes(input: {
   destinationStore: Pick<ArtifactStore, "listKeys" | "deleteObject">;
   submissionId: string;
 }): Promise<HarborPruneResult> {
+  return input.repository.harborStorage.withPublicationLock(() => pruneInactiveSubmissionHarborTaskPrefixesUnlocked(input));
+}
+
+async function pruneInactiveSubmissionHarborTaskPrefixesUnlocked(input: Parameters<typeof pruneInactiveSubmissionHarborTaskPrefixes>[0]): Promise<HarborPruneResult> {
   const snapshot = await input.repository.sampleCatalogSnapshot();
   const match = snapshot.vendors.flatMap((vendor) => vendor.submissions
     .filter((submission) => submission.id === input.submissionId)

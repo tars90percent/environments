@@ -1,5 +1,6 @@
 import type { SampleTaxonomy, RegisterSampleTaxonomyInput, ClassifyTasksInput, ClassifyTasksResult, TaskClassification } from "./sample-classification.js";
 import type { FileFilingRepository } from "./file-filing.js";
+import type { HarborStorageRepository } from "./harbor-storage.js";
 import type { RenameVendorIdInput, RenameVendorIdResult } from "./vendor-identity.js";
 import type {
   ArtifactInput,
@@ -61,6 +62,7 @@ import type {
 
 export interface RegistryRepository {
   readonly files: FileFilingRepository;
+  readonly harborStorage: HarborStorageRepository;
   initialize(): Promise<void>;
   close(): Promise<void>;
   captureSubmission(input: CaptureSubmissionInput): Promise<CaptureSubmissionResult>;
