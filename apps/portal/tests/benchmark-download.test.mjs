@@ -67,6 +67,33 @@ test("benchmark downloads select exact Harbor roots across vendors and submissio
   }
 });
 
+test("vendor and benchmark downloads retain published roots after a vendor ID rename", async () => {
+  const app = (await import("../dist/server/index.js")).default;
+  const renamed = structuredClone(catalog);
+  renamed.vendors[0].id = "renamed-vendor";
+  renamed.vendors[0].harborStorageId = "vendor-a";
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (url === "https://case.example/v1/catalog") return Response.json(renamed);
+    assert.equal(url, "https://gateway.example/zip-archives");
+    const body = JSON.parse(init.body);
+    requests.push(body);
+    return Response.json({ status: "ready", downloadUrl: "https://cache.example/vendor.zip", filename: body.filename, sizeBytes: 100, taskCount: body.roots.length, expiresInSeconds: 900 });
+  };
+  try {
+    for (const route of ["vendors/renamed-vendor", "benchmarks/terminal-bench"]) {
+      const response = await app.fetch(new Request(`https://portal.example.com/api/${route}/harbor-download`, { method: "POST", headers: { cookie: cookie() } }), env, {});
+      assert.equal(response.status, 200);
+    }
+    assert.deepEqual(new Set(requests[0].roots), new Set(["vendor-a/new/same-name", "vendor-a/old/same-name"]));
+    assert.deepEqual(new Set(requests[1].roots), new Set(["vendor-a/new/same-name", "vendor-a/old/same-name", "vendor-b/delivery/same-name"]));
+    assert.equal(requests[0].manifest.vendor.id, "renamed-vendor");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("benchmark downloads require login and reject unknown benchmarks and invalid archives", async () => {
   const app = (await import("../dist/server/index.js")).default;
   const originalFetch = globalThis.fetch;

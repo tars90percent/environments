@@ -22,7 +22,7 @@ export async function vendorTaskFiles(request: Request, taskId: string, action: 
     submission: { id: submission.id, label: submission.label, date: submission.date },
   };
   if (!task.sourcePath) return Response.json({ ...details, entries: [], available: false }, { status: action === "files" ? 200 : 404, headers });
-  const root = harborTaskBucketPrefix(vendor.id, submission.id, task.sourcePath, task.id);
+  const root = harborTaskBucketPrefix(vendor.harborStorageId ?? vendor.id, submission.id, task.sourcePath, task.id);
   const rootUrl = `${gatewayUrl}/${root.split("/").map(encodeURIComponent).join("/")}/`;
   const auth = { authorization: `Bearer ${gatewayToken}` };
 
