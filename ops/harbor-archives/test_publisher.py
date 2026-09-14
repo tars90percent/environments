@@ -197,5 +197,50 @@ class PublisherTests(unittest.TestCase):
                 self.assertEqual(sum(method == 'POST' for method, _ in calls), 1)
 
 
+class RangeTests(unittest.TestCase):
+    def test_parallel_ranges_resume_complete_pieces_and_verify_full_assembly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original, receipt, _ = archive(root)
+            data = original.read_bytes()
+            staging = root / 'staging'
+            pieces = staging / '.downloads' / p.revision(request())
+            p.atomic(pieces / '0.bin', data[:64])
+            p.atomic(pieces / '0.json', {'start': 0, 'end': 63, 'sha256': hashlib.sha256(data[:64]).hexdigest()})
+            ranges = []
+            class Response(io.BytesIO):
+                status = 206
+            def open_request(req, timeout):
+                start, end = map(int, req.headers['Range'][6:].split('-'))
+                ranges.append((start, end))
+                response = Response(data[start:end + 1])
+                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(len(data)), 'X-Content-SHA256': receipt['sha256']}
+                return response
+            with mock.patch.multiple(p, STAGING=staging, CHUNK_BYTES=64), mock.patch.object(p.OPENER, 'open', open_request):
+                path = p.download_ranges({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None)
+            self.assertEqual(path.read_bytes(), data)
+            self.assertFalse(pieces.exists())
+            self.assertNotIn((0, 63), ranges)
+            self.assertEqual(sorted(ranges), [(start, min(start + 64, len(data)) - 1) for start in range(64, len(data), 64)])
+
+    def test_invalid_range_cannot_commit_an_archive_and_completed_pieces_survive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original, receipt, _ = archive(root)
+            data = original.read_bytes()
+            staging = root / 'staging'
+            pieces = staging / '.downloads' / p.revision(request())
+            p.atomic(pieces / '0.bin', data[:64])
+            p.atomic(pieces / '0.json', {'sha256': hashlib.sha256(data[:64]).hexdigest()})
+            class Response(io.BytesIO):
+                status = 200
+                headers = {}
+            with mock.patch.multiple(p, STAGING=staging, CHUNK_BYTES=64), mock.patch.object(p.OPENER, 'open', lambda *a, **k: Response(data)):
+                with self.assertRaises((ValueError, RuntimeError)):
+                    p.download_ranges({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None)
+            self.assertFalse((staging / p.archive_path(request())).exists())
+            self.assertEqual((pieces / '0.bin').read_bytes(), data[:64])
+
+
 if __name__ == '__main__':
     unittest.main()

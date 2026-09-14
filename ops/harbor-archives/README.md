@@ -98,8 +98,12 @@ is reconciled against EVE's task listing by its unique source/destination paths;
 it is never blindly duplicated. A lost promotion POST may be retried because the
 helper is locked, idempotent and generation-guarded. Known transfer failures and
 helper failures have at most three retries. A process restart resumes the saved
-operation before starting another publication. Partial downloads resume with
-validated byte ranges and a final SHA-256 check.
+operation before starting another publication. Small partial downloads resume
+with validated byte ranges. Archives larger than 32 MiB use eight concurrent
+16 MiB ranges; complete pieces receive local checksum receipts before reuse.
+Assembly writes a contiguous file in order and checks the expected full-ZIP
+SHA-256 before promotion. Interrupted or sparse file lengths are never treated
+as evidence that all bytes arrived.
 
 For an uncertain transfer with zero or multiple matching tasks, inspect EVE using
 the recorded operation identity and resolve it before retrying. Do not delete

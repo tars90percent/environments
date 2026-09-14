@@ -6,6 +6,7 @@ Python standard library only. See README.md for installation, recovery and bound
 import argparse
 import base64
 import contextlib
+import concurrent.futures
 import fcntl
 import gzip
 import hashlib
@@ -16,6 +17,7 @@ import re
 import shutil
 import stat
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -38,6 +40,7 @@ CONFIG = Path('/home/TARS/.config/harbor-task-archives/config.json')
 EVE_CONFIG = Path('/home/TARS/.config/harbor-tasks-mirror/eve.json')
 EVE_API = 'https://transfer.xaminim.com/api/v1'
 SHA = re.compile(r'^[a-f0-9]{64}$')
+CHUNK_BYTES = 16 * 1024 * 1024
 
 
 def now():
@@ -294,6 +297,8 @@ def verify_archive(path, receipt, request, raw=None, deadline=None):
 
 
 def download(config, receipt, request, deadline):
+    if receipt['sizeBytes'] > 2 * CHUNK_BYTES:
+        return download_ranges(config, receipt, request, deadline)
     path = safe_path(STAGING, archive_path(request))
     path.parent.mkdir(parents=True, exist_ok=True)
     part = path.with_suffix('.part')
@@ -324,6 +329,96 @@ def download(config, receipt, request, deadline):
         part.unlink()
         raise ValueError('Downloaded archive checksum mismatch; partial discarded')
     os.replace(part, path)
+    return path
+
+
+def download_ranges(config, receipt, request, deadline):
+    """Bounded parallel HTTP ranges, committed as separate verified pieces.
+
+    Never use a sparse file's length as proof of a resumable prefix. Only complete
+    pieces get receipts; assembly is sequential and the entire ZIP is hashed.
+    """
+    rev = revision(request)
+    path = safe_path(STAGING, archive_path(request))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pieces = safe_path(STAGING, '.downloads/' + rev)
+    pieces.mkdir(parents=True, exist_ok=True)
+    stopped = threading.Event()
+    count = (receipt['sizeBytes'] + CHUNK_BYTES - 1) // CHUNK_BYTES
+    url = config['gateway_url'] + '/submission-archives/' + rev + '.zip'
+
+    def fetch_piece(index):
+        start = index * CHUNK_BYTES
+        end = min(start + CHUNK_BYTES, receipt['sizeBytes']) - 1
+        target = pieces / (str(index) + '.bin')
+        metadata = pieces / (str(index) + '.json')
+        previous = read(metadata)
+        if previous and target.exists() and target.stat().st_size == end - start + 1 and file_hash(target, deadline) == previous.get('sha256'):
+            return target
+        check_deadline(deadline)
+        if stopped.is_set():
+            raise RuntimeError('Another range failed; complete pieces retained')
+        expected = 'bytes ' + str(start) + '-' + str(end) + '/' + str(receipt['sizeBytes'])
+        req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + config['gateway_token'], 'Range': 'bytes=' + str(start) + '-' + str(end)})
+        tmp = target.with_suffix('.tmp')
+        digest = hashlib.sha256()
+        written = 0
+        with OPENER.open(req, timeout=45) as response:
+            if response.status != 206 or response.headers.get('Content-Range') != expected or response.headers.get('X-Content-SHA256') != receipt['sha256']:
+                raise ValueError('Range response does not match immutable archive')
+            with tmp.open('wb') as stream:
+                while True:
+                    check_deadline(deadline)
+                    if stopped.is_set():
+                        raise RuntimeError('Another range failed; complete pieces retained')
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    stream.write(chunk)
+                    written += len(chunk)
+                    digest.update(chunk)
+                    if written > end - start + 1:
+                        raise ValueError('Range response exceeded expected length')
+                stream.flush()
+                os.fsync(stream.fileno())
+        if written != end - start + 1:
+            raise ValueError('Incomplete range response; piece not committed')
+        os.replace(tmp, target)
+        atomic(metadata, {'start': start, 'end': end, 'sha256': digest.hexdigest()})
+        return target
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(fetch_piece, i) for i in range(count)]
+        try:
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+        except Exception:
+            stopped.set()
+            for future in futures:
+                future.cancel()
+            raise
+    part = path.with_suffix('.part')
+    digest = hashlib.sha256()
+    with part.open('wb') as stream:
+        for index in range(count):
+            with (pieces / (str(index) + '.bin')).open('rb') as source:
+                while True:
+                    check_deadline(deadline)
+                    chunk = source.read(4 * 1024 * 1024)
+                    if not chunk:
+                        break
+                    stream.write(chunk)
+                    digest.update(chunk)
+        stream.flush()
+        os.fsync(stream.fileno())
+    if part.stat().st_size != receipt['sizeBytes'] or digest.hexdigest() != receipt['sha256']:
+        # Individual range receipts prove local completion, not remote identity.
+        # The complete expected ZIP checksum remains the acceptance boundary.
+        shutil.rmtree(pieces)
+        part.unlink()
+        raise ValueError('Assembled archive checksum mismatch; pieces discarded')
+    os.replace(part, path)
+    shutil.rmtree(pieces)
     return path
 
 
