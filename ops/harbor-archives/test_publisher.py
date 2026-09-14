@@ -1,4 +1,5 @@
 import copy
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -39,6 +40,15 @@ def archive(root, req=None):
 
 
 class PublisherTests(unittest.TestCase):
+    def test_api_negotiates_and_decodes_compressed_catalog(self):
+        class Response(io.BytesIO):
+            headers = {'Content-Encoding': 'gzip'}
+        def open_request(req, timeout):
+            self.assertEqual(req.headers['Accept-encoding'], 'gzip')
+            return Response(gzip.compress(b'{"vendors": []}'))
+        with mock.patch.object(p.OPENER, 'open', open_request):
+            self.assertEqual(p.api('GET', 'https://example.test/v1/catalog', 'Bearer test'), {'vendors': []})
+
     def test_catalog_resolves_direct_and_legacy_artifacts_without_incidental_notes(self):
         task = {'id': 'version:1', 'kind': 'task', 'format': 'harbor', 'sourcePath': 'delivered/task/payload', 'contentSha256': 'a' * 64}
         submission = {'id': 'delivery', 'tasks': [task], 'sourceEvents': []}

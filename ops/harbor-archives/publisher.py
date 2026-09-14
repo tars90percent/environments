@@ -7,6 +7,7 @@ import argparse
 import base64
 import contextlib
 import fcntl
+import gzip
 import hashlib
 import json
 import os
@@ -189,9 +190,12 @@ def api(method, url, auth, payload=None, query=None):
     if query:
         url += '?' + urllib.parse.urlencode(query)
     req = urllib.request.Request(url, method=method, data=json_bytes(payload) if payload is not None else None,
-                                 headers={'Authorization': auth, 'Content-Type': 'application/json'})
+                                 headers={'Authorization': auth, 'Content-Type': 'application/json', 'Accept-Encoding': 'gzip'})
     try:
         with OPENER.open(req, timeout=45) as response:
+            if response.headers.get('Content-Encoding') == 'gzip':
+                with gzip.GzipFile(fileobj=response) as stream:
+                    return json.load(stream)
             return json.load(response)
     except urllib.error.HTTPError as exc:
         # Gateway build failures are structured and do not contain credentials.
