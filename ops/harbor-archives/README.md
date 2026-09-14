@@ -48,6 +48,8 @@ EVE credentials are reused in place from
 `/home/TARS/.config/harbor-tasks-mirror/eve.json`. Secrets are not passed on the
 command line or copied into JFS archives. The publisher ignores signed URLs and
 uses the authenticated, resumable gateway download endpoint.
+Catalog/API reads negotiate gzip compression; the full CASE catalog is large
+and uncompressed transfers from Railway to the dev machine are slow.
 
 Keep the existing raw-mirror cron and executable intact. Add a separate TARS cron
 entry, offset from the raw mirror's minute 17 schedule:
