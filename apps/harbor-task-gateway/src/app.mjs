@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { basename } from "node:path/posix";
 import { documentationHtml, openApiDocument } from "./docs.mjs";
+import { normalizeSubmissionRequest } from "./submission-archives.mjs";
 
 const defaultPageSize = 200;
 const maximumPageSize = 1_000;
@@ -11,6 +12,7 @@ export function createGatewayHandler({
   headObject,
   archiveRoots,
   prepareZipArchive,
+  submissionArchives,
   signGetObject,
   signedUrlTtlSeconds,
 }) {
@@ -55,6 +57,48 @@ export function createGatewayHandler({
       response.setHeader("WWW-Authenticate", 'Bearer realm="harbor-tasks"');
       response.setHeader("Link", '</docs>; rel="help"; type="text/html", </openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"');
       return json(response, { error: "unauthorized", documentation: "/docs", openapi: "/openapi.json" });
+    }
+
+    if (url.pathname === "/submission-archives") {
+      if (request.method !== "POST") return methodNotAllowed(response, ["POST"]);
+      if (!submissionArchives) {response.statusCode = 503; return json(response, {error: "submission archives unavailable"});}
+      let body;
+      try {body = await readJsonBody(request); normalizeSubmissionRequest(body);}
+      catch (error) {response.statusCode = 400; return json(response, {error: error.message});}
+      try {
+        const result = await submissionArchives.prepare(body);
+        response.statusCode = result.status === "ready" ? 200 : result.status === "failed" ? 409 : 202;
+        if (response.statusCode === 202) response.setHeader("Retry-After", "15");
+        return json(response, result);
+      } catch (error) {
+        console.error(JSON.stringify({message: "submission archive request failed", error: error.message}));
+        response.statusCode = 502; return json(response, {error: "submission archive request failed"});
+      }
+    }
+
+    const submissionDownload = url.pathname.match(/^\/submission-archives\/([a-f0-9]{64})\.zip$/);
+    if (submissionDownload) {
+      if (request.method !== "GET" && request.method !== "HEAD") return methodNotAllowed(response, ["GET", "HEAD"]);
+      if (!submissionArchives) {response.statusCode = 503; return json(response, {error: "submission archives unavailable"});}
+      const range = request.headers.range;
+      if (range && !/^bytes=\d+-\d*$/.test(range)) {response.statusCode = 416; return json(response, {error: "only a single byte range is supported"});}
+      try {
+        const object = await submissionArchives.download(submissionDownload[1], range);
+        if (!object) {response.statusCode = 404; return json(response, {error: "archive is not ready"});}
+        response.statusCode = object.contentRange ? 206 : 200;
+        response.setHeader("Content-Type", "application/zip");
+        response.setHeader("Content-Length", String(object.contentLength));
+        response.setHeader("Accept-Ranges", "bytes");
+        response.setHeader("X-Content-SHA256", object.sha256);
+        if (object.contentRange) response.setHeader("Content-Range", object.contentRange);
+        if (request.method === "HEAD") {object.body?.destroy?.(); return response.end();}
+        try {for await (const chunk of object.body) await writeChunk(response, chunk); return response.end();}
+        finally {object.body?.destroy?.();}
+      } catch (error) {
+        if (response.headersSent) return response.destroy(error);
+        response.statusCode = error?.$metadata?.httpStatusCode === 416 ? 416 : 502;
+        return json(response, {error: "archive download failed"});
+      }
     }
 
     if (url.pathname === "/archives") {

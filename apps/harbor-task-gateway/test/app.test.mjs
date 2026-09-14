@@ -6,6 +6,28 @@ import { createGatewayHandler } from "../src/app.mjs";
 
 const token = "test-token-that-is-at-least-thirty-two-characters";
 
+test('submission preparation and resumable downloads retain authentication and error status', async () => {
+  const revision = 'a'.repeat(64);
+  const calls = [];
+  const app = await fixture({submissionArchives: {
+    prepare: async () => ({status: 'building', revision}),
+    download: async (id, range) => {calls.push({id, range}); return {body: (async function* () {yield Buffer.from('zip');})(), contentLength: 3, contentRange: range ? 'bytes 4-6/7' : undefined, sha256: 'b'.repeat(64)};},
+  }});
+  try {
+    const path = app.baseUrl + '/submission-archives/' + revision + '.zip';
+    assert.equal((await fetch(path)).status, 401);
+    const headers = {Authorization: 'Bearer ' + token};
+    const response = await fetch(path, {headers: {...headers, Range: 'bytes=4-'}});
+    assert.equal(response.status, 206); assert.equal(await response.text(), 'zip');
+    assert.equal(response.headers.get('content-range'), 'bytes 4-6/7');
+    assert.equal(response.headers.get('x-content-sha256'), 'b'.repeat(64));
+    assert.deepEqual(calls, [{id: revision, range: 'bytes=4-'}]);
+    assert.equal((await fetch(path, {headers: {...headers, Range: 'bytes=1-2,4-5'}})).status, 416);
+    const prepared = await fetch(app.baseUrl + '/submission-archives', {method: 'POST', headers: {...headers, 'Content-Type': 'application/json'}, body: JSON.stringify({vendorId: 'v', storageVendorId: 'v', submissionId: 's', tasks: [{taskVersionId: 't:1', name: 't', artifactSha256: revision}]})});
+    assert.equal(prepared.status, 202); assert.equal(prepared.headers.get('retry-after'), '15');
+  } finally {await app.close();}
+});
+
 async function fixture(overrides = {}) {
   const calls = { list: [], head: [], archive: [], zipArchive: [], sign: [] };
   const handler = createGatewayHandler({
@@ -53,6 +75,7 @@ async function fixture(overrides = {}) {
         expiresInSeconds: 900,
       };
     },
+    submissionArchives: overrides.submissionArchives,
     signGetObject: async (input) => {
       calls.sign.push(input);
       return "https://storage.example/signed";
