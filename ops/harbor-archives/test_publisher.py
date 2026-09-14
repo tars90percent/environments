@@ -1,4 +1,5 @@
 import copy
+import contextlib
 import gzip
 import hashlib
 import importlib.util
@@ -40,6 +41,25 @@ def archive(root, req=None):
 
 
 class PublisherTests(unittest.TestCase):
+    def test_audit_cli_verifies_both_copies_and_reports_success_with_its_timestamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, receipt, _ = archive(root)
+            state, staging, shared = root / 'state', root / 'staging', root / 'shared'
+            index = {'schemaVersion': p.INDEX_SCHEMA, 'submissions': [p.index_entry(request(), receipt)]}
+            for destination in (staging, shared):
+                p.atomic(destination / p.archive_path(request()), path.read_bytes())
+                p.atomic(destination / 'index.json', index)
+            output = io.StringIO()
+            with mock.patch.object(p, 'STATE', state), mock.patch.object(p, 'STAGING', staging), mock.patch.object(p, 'SHARED', shared), mock.patch.object(p.sys, 'argv', ['publisher', '--audit', '--seconds', '30']), contextlib.redirect_stdout(output):
+                p.main()
+            report = p.read(state / 'last-audit.json')
+            self.assertEqual(report['archives'], 1)
+            message = json.loads(output.getvalue())
+            self.assertEqual(message['event'], 'audit_success')
+            self.assertEqual(message['time'], report['time'])
+            self.assertFalse((state / 'last-error.json').exists())
+
     def test_zip_metadata_reader_supports_offsets_over_four_gib_and_truncated_prefixes(self):
         with tempfile.TemporaryDirectory() as directory:
             path, receipt, _ = archive(Path(directory))

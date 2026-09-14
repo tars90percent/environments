@@ -52,7 +52,7 @@ def now():
 
 
 def log(event, **fields):
-    print(json.dumps(dict(time=now(), event=event, **fields), ensure_ascii=False), flush=True)
+    print(json.dumps({'time': now(), **fields, 'event': event}, ensure_ascii=False), flush=True)
 
 
 def json_bytes(value):
