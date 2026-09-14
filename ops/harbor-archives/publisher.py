@@ -132,7 +132,9 @@ def task_name(source_path):
 
 def artifact_sha(task, submission):
     value = task.get('contentSha256')
-    if value and SHA.fullmatch(value):
+    # contentSha256 is the artifact hash only when a task artifact is linked.
+    # Older artifact-less records can carry a task-content digest in that field.
+    if task.get('artifactId') and value and SHA.fullmatch(value):
         return value
     # Follow CASE's exporter: prefer a linked archive named after the task,
     # otherwise accept only one unambiguous immutable source artifact.
