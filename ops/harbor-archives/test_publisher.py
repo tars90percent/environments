@@ -40,6 +40,59 @@ def archive(root, req=None):
 
 
 class PublisherTests(unittest.TestCase):
+    def test_zip_metadata_reader_supports_offsets_over_four_gib_and_truncated_prefixes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, receipt, _ = archive(Path(directory))
+            data = path.read_bytes()
+            prefix = 5 * 1024 ** 3
+            total = prefix + len(data)
+            receipt = dict(receipt, sizeBytes=total)
+            calls = []
+            def open_request(req, timeout):
+                start, end = map(int, req.headers['Range'].removeprefix('bytes=').split('-'))
+                calls.append((start, end))
+                self.assertGreater(start, 2 ** 32)
+                payload = b'\0' * max(0, prefix - start) + data[max(0, start - prefix):end + 1 - prefix]
+                if len(calls) == 1:
+                    payload = payload[:10000]
+                response = io.BytesIO(payload)
+                response.status = 206
+                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(total), 'X-Content-SHA256': receipt['sha256']}
+                return response
+            with mock.patch.object(p.OPENER, 'open', open_request):
+                with p.ArchiveRangeReader({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None) as reader, zipfile.ZipFile(reader) as archive_file:
+                    p.checked_manifest(archive_file.read('manifest.json'), receipt, request())
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[1][0], calls[0][0] + 10000)
+
+    def test_range_reader_loads_zip_manifest_and_rejects_wrong_archive_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, receipt, _ = archive(Path(directory))
+            data = path.read_bytes()
+            ranges = []
+            wrong = False
+            def open_request(req, timeout):
+                start, end = map(int, req.headers['Range'].removeprefix('bytes=').split('-'))
+                ranges.append((start, end))
+                response = io.BytesIO(data[start:end + 1])
+                response.status = 206
+                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(len(data)), 'X-Content-SHA256': '0' * 64 if wrong else receipt['sha256']}
+                return response
+            config = {'gateway_url': 'https://example.test', 'gateway_token': 'test'}
+            with mock.patch.object(p.OPENER, 'open', open_request):
+                with p.ArchiveRangeReader(config, receipt, request(), None) as reader, zipfile.ZipFile(reader) as archive_file:
+                    manifest = archive_file.read('manifest.json')
+                    self.assertEqual(p.checked_manifest(manifest, receipt, request())['revision'], p.revision(request()))
+                self.assertEqual(len(ranges), 1)
+                wrong = True
+                with self.assertRaisesRegex(ValueError, 'immutable archive'):
+                    p.ArchiveRangeReader(config, receipt, request(), None).read(1)
+            changed = json.loads(manifest)
+            changed['files'][0]['sourceKey'] = 'another/private/file'
+            altered = p.json_bytes(changed)
+            with self.assertRaisesRegex(ValueError, 'source path'):
+                p.checked_manifest(altered, dict(receipt, manifestSha256=hashlib.sha256(altered).hexdigest()), request())
+
     def test_api_negotiates_and_decodes_compressed_catalog(self):
         class Response(io.BytesIO):
             headers = {'Content-Encoding': 'gzip'}

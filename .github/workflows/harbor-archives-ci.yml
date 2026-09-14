@@ -24,3 +24,9 @@ jobs:
         with:
           python-version: '3.9'
       - run: python3 -m unittest discover -s ops/harbor-archives -p 'test_*.py' -v
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --prefix apps/harbor-task-gateway
+      - run: npm ci --ignore-scripts --prefix ops/harbor-archives
+      - run: npm test --prefix ops/harbor-archives

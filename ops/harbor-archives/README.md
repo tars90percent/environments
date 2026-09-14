@@ -51,6 +51,23 @@ uses the authenticated, resumable gateway download endpoint.
 Catalog/API reads negotiate gzip compression; the full CASE catalog is large
 and uncompressed transfers from Railway to the dev machine are slow.
 
+To avoid downloading large ZIPs over the external network, install an isolated
+Node 24 runtime at `/usr/local/lib/harbor-task-archives/runtime/`, and this
+directory's `rebuild.mjs`, `package.json`, `package-lock.json`, and production
+`node_modules` alongside it. Verify the official Node download SHA-256 and use
+`npm ci --ignore-scripts --omit=dev` with the committed lockfile. Keep this prefix
+root-owned; do not replace the machine's system Node installation.
+
+The optional builder reads just the cached ZIP's manifest through HTTP ranges,
+checks its expected checksum and exact task identities, then recreates the ZIP
+from the already completed raw JFS mirror using the gateway's pinned ZIP writer.
+Every source file is hashed during compression. The resulting ZIP is accepted
+only if its full SHA-256 is identical to the Railway cache receipt. A different
+compression encoding falls back to the verified gateway download; that fallback
+is remembered for the current runtime, helper, lockfile, and archive checksum.
+Source mismatches remain pending. The normal independent ZIP/member/raw checks
+still run before publication. No delivered code is executed.
+
 Keep the existing raw-mirror cron and executable intact. Add a separate TARS cron
 entry, offset from the raw mirror's minute 17 schedule:
 
@@ -60,7 +77,7 @@ entry, offset from the raw mirror's minute 17 schedule:
 
 Create the private state directory before installing cron. The program acquires
 its own nonblocking flock; concurrent invocations skip safely. It acquires the
-raw mirror's lock only for readiness/integrity checks, and never writes raw task
+raw mirror's lock for local builds and readiness/integrity checks, and never writes raw task
 files. The run budget leaves time before the next raw-mirror schedule. The outer
 timeout bounds stalled I/O as well. A stopped run retains recoverable progress.
 
@@ -133,4 +150,6 @@ Run tests locally with:
 ```sh
 python3 -m unittest discover -s ops/harbor-archives -p 'test_*.py' -v
 npm test --prefix apps/harbor-task-gateway
+npm ci --ignore-scripts --prefix ops/harbor-archives
+npm test --prefix ops/harbor-archives
 ```
