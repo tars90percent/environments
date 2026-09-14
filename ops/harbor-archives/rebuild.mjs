@@ -1,7 +1,7 @@
 import {createReadStream} from 'node:fs';
 import {readFile, lstat, unlink, open} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {Transform} from 'node:stream';
+import {Transform, Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {resolve, sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -30,14 +30,58 @@ function entry(zip, source, options) {
   });
 }
 
+async function checkedPath(root, file) {
+  const path = await sourcePath(root, file.sourceKey);
+  if (!Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 0 || (await lstat(path)).size !== file.sizeBytes || !/^[a-f0-9]{64}$/.test(file.sha256) || !/^[0-7]{3}$/.test(file.mode)) throw new Error('Source metadata mismatch');
+  return path;
+}
+
+async function* sources(files, root, prefetchBytes) {
+  let offset = 0;
+  while (offset < files.length) {
+    // Large files retain streaming verification and never enter the buffer pool.
+    if (files[offset].sizeBytes > prefetchBytes) {
+      const file = files[offset++];
+      yield {file, path: await checkedPath(root, file)};
+      continue;
+    }
+    const batch = [];
+    let bytes = 0;
+    while (offset < files.length && batch.length < 16 && bytes + files[offset].sizeBytes <= prefetchBytes) {
+      const file = files[offset++];
+      batch.push(file); bytes += file.sizeBytes;
+    }
+    if (!batch.length) throw new Error('Invalid source size');
+    const results = await Promise.allSettled(batch.map(async file => {
+      const path = await checkedPath(root, file), handle = await open(path, 'r');
+      try {
+        // Allocate only the expected bytes, even if a source changes mid-read.
+        const data = Buffer.alloc(file.sizeBytes);
+        let offset = 0;
+        while (offset < data.length) {
+          const {bytesRead} = await handle.read(data, offset, data.length - offset, null);
+          if (!bytesRead) throw new Error('Raw JFS source size mismatch');
+          offset += bytesRead;
+        }
+        if ((await handle.read(Buffer.alloc(1), 0, 1, null)).bytesRead || createHash('sha256').update(data).digest('hex') !== file.sha256) throw new Error('Raw JFS source checksum mismatch');
+        return {file, data};
+      } finally {await handle.close();}
+    }));
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
+    for (const result of results) yield result.value;
+  }
+}
+
 // Uses the gateway's pinned ZIP implementation, entry order, modes and dates.
 // Even an equivalent ZIP is rejected unless it matches the cached ZIP's SHA-256.
-export async function rebuild({manifestBytes, rawRoot, output, expectedSha256}) {
+export async function rebuild({manifestBytes, rawRoot, output, expectedSha256, prefetchBytes = 32 * 1024 * 1024}) {
   const manifest = JSON.parse(manifestBytes);
   if (manifest.schemaVersion !== 'case.submission-harbor-archive.v1' || !Array.isArray(manifest.files)) throw new Error('Unsupported archive manifest');
   if (!/^[a-f0-9]{64}$/.test(expectedSha256)) throw new Error('Invalid expected checksum');
+  if (!Number.isSafeInteger(prefetchBytes) || prefetchBytes < 1 || prefetchBytes > 32 * 1024 * 1024) throw new Error('Invalid prefetch bound');
   const names = new Set();
   for (const file of manifest.files) {
+    if (!Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 0 || !/^[a-f0-9]{64}$/.test(file.sha256) || !/^[0-7]{3}$/.test(file.mode)) throw new Error('Invalid source metadata');
     if (typeof file.path !== 'string' || file.path.split('/').some(p => !p || p === '.' || p === '..' || /[\x00-\x1f\x7f\\]/.test(p)) || file.path === 'manifest.json' || names.has(file.path)) throw new Error('Unsafe or duplicate archive path');
     names.add(file.path);
   }
@@ -50,9 +94,11 @@ export async function rebuild({manifestBytes, rawRoot, output, expectedSha256}) 
   const meter = new Transform({transform(chunk, encoding, callback) {digest.update(chunk); bytes += chunk.length; callback(null, chunk);}});
   const completion = pipeline(zip, meter, handle.createWriteStream()).then(() => null, error => error);
   try {
-    for (const file of manifest.files) {
-      const path = await sourcePath(rawRoot, file.sourceKey);
-      if ((await lstat(path)).size !== file.sizeBytes || !/^[a-f0-9]{64}$/.test(file.sha256) || !/^[0-7]{3}$/.test(file.mode)) throw new Error('Source metadata mismatch');
+    for await (const {file, path, data} of sources(manifest.files, rawRoot, prefetchBytes)) {
+      if (data !== undefined) {
+        await entry(zip, Readable.from([data]), {name: file.path, mode: parseInt(file.mode, 8)});
+        continue;
+      }
       const fileHash = createHash('sha256');
       let length = 0;
       const checked = new Transform({

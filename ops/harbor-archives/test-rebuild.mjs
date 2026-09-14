@@ -60,6 +60,10 @@ test('JFS builder reproduces gateway ZIP64 bytes and rejects changed sources, li
     await assert.rejects(rebuild(input), {code: 'EEXIST'});
     assert.deepEqual(await readFile(output), expected);
     await rm(output);
+    // Force the larger fixture through streaming and smaller bounded batches.
+    assert.equal((await rebuild({...input, prefetchBytes: 1024})).status, 'identical');
+    assert.deepEqual(await readFile(output), expected);
+    await rm(output);
     assert.equal((await rebuild({...input, expectedSha256: 'b'.repeat(64)})).status, 'different_encoding');
     await assert.rejects(readFile(output), {code: 'ENOENT'});
     const changed = 'vendor/delivery/task/task.toml';

@@ -67,6 +67,10 @@ compression encoding falls back to the verified gateway download; that fallback
 is remembered for the current runtime, helper, lockfile, and archive checksum.
 Source mismatches remain pending. The normal independent ZIP/member/raw checks
 still run before publication. No delivered code is executed.
+Small source files are read ahead in batches of at most 16 files and 32 MiB,
+with path, size and checksum checks before use. Larger files are streamed alone.
+This bounds memory while avoiding serial JFS latency for large file counts;
+archive order and the expected ZIP checksum remain unchanged.
 
 Keep the existing raw-mirror cron and executable intact. Add a separate TARS cron
 entry, offset from the raw mirror's minute 17 schedule:
