@@ -6,6 +6,34 @@ import { createGatewayHandler } from "../src/app.mjs";
 
 const token = "test-token-that-is-at-least-thirty-two-characters";
 
+test('submission manifests require auth and expose polling, failure and gzip contracts', async () => {
+  let result = {status: 'building', revision: 'a'.repeat(64)};
+  const app = await fixture({submissionManifests: {prepare: async () => result}});
+  const url = app.baseUrl + '/submission-manifest';
+  const headers = {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const body = JSON.stringify({vendorId: 'v', storageVendorId: 'v', submissionId: 's', tasks: [{taskVersionId: 't:1', name: 't', artifactSha256: 'b'.repeat(64)}]});
+  try {
+    assert.equal((await fetch(url, {method: 'POST', body})).status, 401);
+    assert.equal((await fetch(url, {headers})).status, 405);
+    assert.equal((await fetch(url, {method: 'POST', headers, body: '{}'})).status, 400);
+    let response = await fetch(url, {method: 'POST', headers, body});
+    assert.equal(response.status, 202);
+    assert.equal(response.headers.get('retry-after'), '15');
+    result = {...result, status: 'failed', error: 'invalid source'};
+    assert.equal((await fetch(url, {method: 'POST', headers, body})).status, 409);
+    result = {...result, status: 'ready', manifestJson: '{"files":[]}\n'};
+    delete result.error;
+    response = await fetch(url, {method: 'POST', headers: {...headers, 'Accept-Encoding': 'gzip'}, body});
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-encoding'), 'gzip');
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), result);
+    response = await fetch(url, {method: 'POST', headers: {...headers, 'Accept-Encoding': 'gzip;q=0'}, body});
+    assert.equal(response.headers.get('content-encoding'), null);
+    assert.deepEqual(await response.json(), result);
+  } finally {await app.close();}
+});
+
 test('submission preparation and resumable downloads retain authentication and error status', async () => {
   const revision = 'a'.repeat(64);
   const calls = [];
@@ -76,6 +104,7 @@ async function fixture(overrides = {}) {
       };
     },
     submissionArchives: overrides.submissionArchives,
+    submissionManifests: overrides.submissionManifests,
     signGetObject: async (input) => {
       calls.sign.push(input);
       return "https://storage.example/signed";

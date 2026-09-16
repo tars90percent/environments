@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { basename } from "node:path/posix";
 import { documentationHtml, openApiDocument } from "./docs.mjs";
 import { normalizeSubmissionRequest } from "./submission-archives.mjs";
+import { gzipSync } from "node:zlib";
 
 const defaultPageSize = 200;
 const maximumPageSize = 1_000;
@@ -13,6 +14,7 @@ export function createGatewayHandler({
   archiveRoots,
   prepareZipArchive,
   submissionArchives,
+  submissionManifests,
   signGetObject,
   signedUrlTtlSeconds,
 }) {
@@ -57,6 +59,30 @@ export function createGatewayHandler({
       response.setHeader("WWW-Authenticate", 'Bearer realm="harbor-tasks"');
       response.setHeader("Link", '</docs>; rel="help"; type="text/html", </openapi.json>; rel="service-desc"; type="application/vnd.oai.openapi+json"');
       return json(response, { error: "unauthorized", documentation: "/docs", openapi: "/openapi.json" });
+    }
+
+    if (url.pathname === "/submission-manifest") {
+      if (request.method !== "POST") return methodNotAllowed(response, ["POST"]);
+      if (!submissionManifests) {response.statusCode = 503; return json(response, {error: "submission manifests unavailable"});}
+      let body;
+      try {body = await readJsonBody(request); normalizeSubmissionRequest(body);}
+      catch (error) {response.statusCode = 400; return json(response, {error: error.message});}
+      try {
+        const result = await submissionManifests.prepare(body);
+        response.statusCode = result.status === "ready" ? 200 : result.status === "failed" ? 409 : 202;
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Vary", "Accept-Encoding");
+        if (response.statusCode === 202) response.setHeader("Retry-After", "15");
+        if (result.status === "ready" && (request.headers["accept-encoding"] ?? "").split(",").some(value => /^gzip(?:\s*;\s*q=(?:1(?:\.0*)?|0\.[0-9]*[1-9][0-9]*))?$/i.test(value.trim()))) {
+          response.setHeader("Content-Type", "application/json");
+          response.setHeader("Content-Encoding", "gzip");
+          return response.end(gzipSync(JSON.stringify(result)));
+        }
+        return json(response, result);
+      } catch (error) {
+        console.error(JSON.stringify({message: "submission manifest request failed", error: error.message}));
+        response.statusCode = 502; return json(response, {error: "submission manifest request failed"});
+      }
     }
 
     if (url.pathname === "/submission-archives") {
