@@ -1,5 +1,5 @@
 import {createReadStream} from 'node:fs';
-import {readFile, lstat, unlink, open} from 'node:fs/promises';
+import {readFile, lstat, unlink, open, realpath} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {Transform, Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
@@ -72,12 +72,10 @@ async function* sources(files, root, prefetchBytes) {
   }
 }
 
-// Uses the gateway's pinned ZIP implementation, entry order, modes and dates.
-// Even an equivalent ZIP is rejected unless it matches the cached ZIP's SHA-256.
-export async function rebuild({manifestBytes, rawRoot, output, expectedSha256, prefetchBytes = 32 * 1024 * 1024}) {
+// Build from a trusted CASE file manifest; archive identity is established here.
+export async function buildArchive({manifestBytes, rawRoot, output, prefetchBytes = 32 * 1024 * 1024}) {
   const manifest = JSON.parse(manifestBytes);
   if (manifest.schemaVersion !== 'case.submission-harbor-archive.v1' || !Array.isArray(manifest.files)) throw new Error('Unsupported archive manifest');
-  if (!/^[a-f0-9]{64}$/.test(expectedSha256)) throw new Error('Invalid expected checksum');
   if (!Number.isSafeInteger(prefetchBytes) || prefetchBytes < 1 || prefetchBytes > 32 * 1024 * 1024) throw new Error('Invalid prefetch bound');
   const names = new Set();
   for (const file of manifest.files) {
@@ -115,11 +113,7 @@ export async function rebuild({manifestBytes, rawRoot, output, expectedSha256, p
     const error = await completion;
     if (error) throw error;
     const sha256 = digest.digest('hex');
-    if (sha256 !== expectedSha256) {
-      await unlink(output);
-      return {status: 'different_encoding', sha256, bytes};
-    }
-    return {status: 'identical', sha256, bytes};
+    return {status: 'built', sha256, sizeBytes: bytes};
   } catch (error) {
     zip.destroy(error);
     await completion;
@@ -128,12 +122,11 @@ export async function rebuild({manifestBytes, rawRoot, output, expectedSha256, p
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [manifestPath, rawRoot, output, expectedSha256] = process.argv.slice(2);
+if (process.argv[1] && import.meta.url === pathToFileURL(await realpath(process.argv[1])).href) {
+  const [manifestPath, rawRoot, output] = process.argv.slice(2);
   try {
-    const result = await rebuild({manifestBytes: await readFile(manifestPath), rawRoot, output, expectedSha256});
+    const result = await buildArchive({manifestBytes: await readFile(manifestPath), rawRoot, output});
     console.log(JSON.stringify(result));
-    if (result.status !== 'identical') process.exitCode = 2;
   } catch (error) {
     console.log(JSON.stringify({status: 'failed', error: error.message}));
     process.exitCode = 1;

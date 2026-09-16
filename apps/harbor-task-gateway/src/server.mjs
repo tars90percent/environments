@@ -12,6 +12,7 @@ import { createGatewayHandler } from "./app.mjs";
 import { taskArchiveChunks } from "./task-archive.mjs";
 import { createVendorArchiveCache } from "./vendor-archive-cache.mjs";
 import { createSubmissionArchiveService } from "./submission-archives.mjs";
+import { createSubmissionManifestService } from "./submission-manifests.mjs";
 
 const configuration = loadConfiguration(process.env);
 const client = new S3Client({
@@ -148,6 +149,16 @@ const submissionArchives = createSubmissionArchiveService({
   signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
 });
 
+const submissionManifests = createSubmissionManifestService({
+  listSourceObjects: listObjects,
+  headSourceObject: async (key, {ifMatch}) => {
+    const object = await client.send(new HeadObjectCommand({Bucket: configuration.bucket, Key: key, IfMatch: ifMatch}),
+      {abortSignal: AbortSignal.timeout(45_000)});
+    return {contentLength: object.ContentLength, etag: object.ETag,
+      sha256: object.Metadata?.sha256, mode: object.Metadata?.mode, artifactSha256: object.Metadata?.["task-artifact-sha256"]};
+  },
+});
+
 const handler = createGatewayHandler({
   authToken: configuration.authToken,
   signedUrlTtlSeconds: configuration.signedUrlTtlSeconds,
@@ -163,6 +174,7 @@ const handler = createGatewayHandler({
   }),
   prepareZipArchive,
   submissionArchives,
+  submissionManifests,
   signGetObject: async ({ key, expiresInSeconds, downloadName }) => getSignedUrl(
     client,
     new GetObjectCommand({

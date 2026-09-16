@@ -48,6 +48,11 @@ export function documentationHtml() {
   --data '{"roots":["vendor/submission/task"],"manifest":{"schemaVersion":"example.v1"},"filename":"vendor-harbor-tasks.zip"}' \
   "${productionBaseUrl}/zip-archives"</code></pre>
 
+    <h2>Obtain a submission file manifest</h2>
+    <p><code>POST /submission-manifest</code> accepts the same exact CASE task selection as <code>/submission-archives</code>. It uses source listings and conditional HEAD metadata to bind paths, sizes, modes, per-file SHA-256 hashes, and source artifact identities; it reads no task bodies and uses no archive cache. The inventory must be stable across the scan.</p>
+    <p>Poll the same request after HTTP 202 (<code>building</code> or <code>busy</code>). HTTP 200 returns <code>manifestJson</code>, its UTF-8 <code>manifestSha256</code>, <code>revision</code>, <code>fileCount</code>, <code>taskCount</code>, and <code>sourceBytes</code>. Hash the exact returned string, without reserializing it. Gzip responses are supported. HTTP 409 reports a failed scan; <code>retry: true</code> restarts that scan. Completed manifests are cached in bounded process memory; clients retain verified manifests and receipts durably.</p>
+    <p>The internal JFS publisher builds its own ZIP from raw JFS files and verifies the file manifest. Its ZIP checksum identifies those independently generated transport bytes.</p>
+
     <h2>Prepare an exact submission archive</h2>
     <p><code>POST /submission-archives</code> accepts <code>vendorId</code>, <code>storageVendorId</code>, <code>submissionId</code>, and 1–1000 tasks, each with <code>taskVersionId</code>, <code>name</code>, and the immutable source <code>artifactSha256</code> from CASE. It returns HTTP 202 while building or busy, HTTP 200 when ready, or HTTP 409 after an integrity failure. Poll the same request; use <code>retry: true</code> deliberately to retry a failed build.</p>
     <p>This profile contains task directories at the ZIP root and a checksummed <code>manifest.json</code>. ZIP64 supports large archives. Every source file is checked against its recorded SHA-256, artifact identity, length, ETag, and original mode. The cache revision includes exact task versions and excludes evaluation notes. Other archive profiles keep their existing layout.</p>
@@ -77,6 +82,18 @@ export function openApiDocument() {
     servers: [{ url: productionBaseUrl }],
     security: [{ bearerAuth: [] }],
     paths: {
+      "/submission-manifest": {
+        post: {
+          summary: "Scan CASE export metadata into a trusted file manifest without building a ZIP",
+          requestBody: {required: true, content: {"application/json": {schema: {type: "object", required: ["vendorId", "storageVendorId", "submissionId", "tasks"], properties: {
+            vendorId: {type: "string"}, storageVendorId: {type: "string"}, submissionId: {type: "string"}, retry: {type: "boolean"},
+            tasks: {type: "array", minItems: 1, maxItems: 1000, items: {type: "object", required: ["taskVersionId", "name", "artifactSha256"], properties: {
+              taskVersionId: {type: "string"}, name: {type: "string"}, artifactSha256: {type: "string", pattern: "^[a-f0-9]{64}$"},
+            }}},
+          }}}}},
+          responses: {"200": {description: "Ready: schemaVersion, revision, manifestJson (exact UTF-8 bytes to hash), manifestSha256, fileCount, taskCount, sourceBytes; supports gzip"}, "202": {description: "Scanning or busy; poll after Retry-After"}, "400": {description: "Invalid request"}, "401": {description: "Unauthorized"}, "409": {description: "Scan failed; explicit retry required"}, "502": {description: "Source metadata request failed"}},
+        },
+      },
       "/submission-archives": {
         post: {
           summary: "Prepare a checksum-verified ZIP of exact CASE task versions in one submission",

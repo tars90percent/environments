@@ -1,38 +1,63 @@
 # Harbor submission archive publisher
 
-This publishes one ZIP per CASE submission containing its registered Harbor task
-versions. It reuses the gateway's `submission-archives-v1/` cache namespace in
-Railway's `harbor-task-archives` bucket. It does **not** mirror vendor-wide or
-benchmark-wide ZIPs from that mixed cache bucket, and does not import, validate,
-or evaluate anything in Beagle.
+This builds submission ZIPs on the TARS development machine from the completed
+raw JFS mirror. CASE supplies the exact task selection; the gateway supplies a
+trusted file manifest. The Railway `harbor-task-archives` bucket serves portal
+downloads independently. The publisher does not read or write that ZIP cache,
+and does not import or evaluate anything in Beagle.
 
-CASE's original artifacts remain canonical. Railway `harbor-tasks` and the raw
-JFS mirror remain unchanged. Only the following dedicated archive locations are
-managed:
+## Data flow and identity
+
+1. CASE publishes registered Harbor files into Railway `harbor-tasks`, including
+   file hashes, original modes, and immutable source artifact identities.
+2. The raw mirror stages those individual files under
+   `/jfs-dialogue-alishprod01/data/users/TARS/harbor-tasks/`, then EVE publishes
+   them under `/jfs-dialogue-alishprod01/alignment_data_forge/rl_tasks/harbor-tasks/`.
+3. The publisher reads CASE's supported catalog and asks the authenticated gateway
+   `POST /submission-manifest` for the exact task versions in each submission.
+   The gateway scans source listings and conditional HEAD metadata, checks the
+   artifact identities, and checks that the inventory remains stable. It reads
+   no task bodies and generates no ZIP. HTTP 202 means poll; HTTP 409 means the
+   scan failed. HTTP 200 carries the exact manifest string and its SHA-256.
+4. Under the raw mirror's lock, the local builder hashes raw staging files and
+   creates a ZIP64 archive with task directories at its root plus `manifest.json`.
+   The publisher independently verifies the manifest, every member's bytes and
+   mode, and the complete raw task inventory. No delivered code is executed.
+5. The ZIP's own checksum defines its immutable path. EVE copies it to shared
+   JFS; a trusted helper verifies the transferred checksum and commits the
+   shared index only after all referenced archives are present.
+
+The development machine controls the process. These are mounted JFS locations,
+not storage on the development machine's local disk:
 
 ```text
 /jfs-dialogue-alishprod01/data/users/TARS/harbor-task-archives/
 /jfs-dialogue-alishprod01/alignment_data_forge/rl_tasks/harbor-task-archives/
     index.json
-    <vendor>/<submission>/<full-revision-sha256>.zip
+    <vendor>/<submission>/<selection-revision>/<archive-sha256>.zip
 ```
 
-The index lists the current revision of every Harbor submission, explicitly
-marking unavailable revisions `pending`. A new submission or changed task version
-gets a new archive revision. Unchanged content reuses its verified archive;
-classification, timeline and evaluation notes do not cause repackaging. Retired
-versions stay on disk for reproducibility; no automated archive deletion occurs.
-The gateway's ZIP contains task directories at its root and a provenance and
-integrity manifest. Beagle ingestion compatibility has not been established by
-an actual import; submission there still requires the user's explicit approval.
+The selection revision hashes exact CASE task versions and source artifact
+identities. The manifest checksum binds the expected files. The ZIP checksum
+identifies the packaged bytes; a different compression encoding can be valid
+when its members match the same manifest. EVE must preserve the chosen ZIP's
+bytes exactly. Classification, timeline, and evaluation notes do not change the
+selection revision.
+
+Read the exact path from `index.json`. Its entries expose status, revision,
+task count, and, when ready, path, ZIP checksum, size, and manifest checksum.
+Previously published `<revision>.zip` paths and their verification receipts
+remain supported. Unchanged archives are reused; there is no automatic deletion
+or forced repackaging. An explicitly rebuilt archive can become current while
+its predecessor and receipt remain available. A failed rebuild retains the
+previous verified archive in the index and records the failure in private status.
+CASE's retained original deliveries remain source evidence.
 
 ## Installation
 
-Requires Python 3.9+, JFS, the existing completed raw mirror, and the existing EVE
-credentials. No new Python packages, daemon, Railway service or bucket are needed.
-Install the committed program as root-owned `/usr/local/sbin/harbor-task-archives`
-with mode 0755. Keep runtime credentials out of this repository:
-
+Requires Python 3.9+, JFS, the existing completed raw mirror, and EVE credentials.
+Install committed `publisher.py` as root-owned
+`/usr/local/sbin/harbor-task-archives`, mode 0755. Keep credentials private:
 `/home/TARS/.config/harbor-task-archives/config.json`, mode 0600:
 
 ```json
@@ -44,112 +69,87 @@ with mode 0755. Keep runtime credentials out of this repository:
 }
 ```
 
-EVE credentials are reused in place from
-`/home/TARS/.config/harbor-tasks-mirror/eve.json`. Secrets are not passed on the
-command line or copied into JFS archives. The publisher ignores signed URLs and
-uses the authenticated, resumable gateway download endpoint.
-Catalog/API reads negotiate gzip compression; the full CASE catalog is large
-and uncompressed transfers from Railway to the dev machine are slow.
+EVE credentials remain in
+`/home/TARS/.config/harbor-tasks-mirror/eve.json`. Never pass secrets on the command
+line or put them in archives. Catalog and manifest reads negotiate gzip.
 
-To avoid downloading large ZIPs over the external network, install an isolated
-Node 24 runtime at `/usr/local/lib/harbor-task-archives/runtime/`, and this
-directory's `rebuild.mjs`, `package.json`, `package-lock.json`, and production
-`node_modules` alongside it. Verify the official Node download SHA-256 and use
-`npm ci --ignore-scripts --omit=dev` with the committed lockfile. Keep this prefix
-root-owned; do not replace the machine's system Node installation.
+Install an isolated Node 24 runtime at
+`/usr/local/lib/harbor-task-archives/runtime/`, with this directory's `build.mjs`,
+`package.json`, `package-lock.json`, and production `node_modules` alongside it.
+Verify the official Node download SHA-256 and install dependencies with
+`npm ci --ignore-scripts --omit=dev`. Keep this prefix root-owned and preserve the
+system Node installation. The builder is required. Missing or inconsistent raw
+files leave publication pending. Small files are read ahead in batches of at
+most 16 files and 32 MiB; larger files are streamed individually.
 
-The optional builder reads just the cached ZIP's manifest through HTTP ranges,
-checks its expected checksum and exact task identities, then recreates the ZIP
-from the already completed raw JFS mirror using the gateway's pinned ZIP writer.
-Every source file is hashed during compression. The resulting ZIP is accepted
-only if its full SHA-256 is identical to the Railway cache receipt. A different
-compression encoding falls back to the verified gateway download; that fallback
-is remembered for the current runtime, helper, lockfile, and archive checksum.
-Source mismatches remain pending. The normal independent ZIP/member/raw checks
-still run before publication. No delivered code is executed.
-Small source files are read ahead in batches of at most 16 files and 32 MiB,
-with path, size and checksum checks before use. Larger files are streamed alone.
-This bounds memory while avoiding serial JFS latency for large file counts;
-archive order and the expected ZIP checksum remain unchanged.
-
-Keep the existing raw-mirror cron and executable intact. Add a separate TARS cron
-entry, offset from the raw mirror's minute 17 schedule:
+Keep the existing raw-mirror cron and executable intact. The archive cron is:
 
 ```cron
 27 * * * * /usr/bin/timeout -k 30s 45m /usr/local/sbin/harbor-task-archives --seconds 2100 --retry-failed >> /home/TARS/.local/state/harbor-task-archives/publisher.log 2>&1
 ```
 
-Create the private state directory before installing cron. The program acquires
-its own nonblocking flock; concurrent invocations skip safely. It acquires the
-raw mirror's lock for local builds and readiness/integrity checks, and never writes raw task
-files. The run budget leaves time before the next raw-mirror schedule. The outer
-timeout bounds stalled I/O as well. A stopped run retains recoverable progress.
+Create the private state directory first. Nonblocking locks prevent concurrent
+archive runs and protect raw readiness/build verification. The run budget and
+outer timeout bound work. Verified manifests and completed archives survive a
+restart. Interrupted local ZIP builds are rebuilt on the next run; `.builds/`
+files are never evidence of a completed archive. Normal handled failures remove
+their temporary ZIP; after a hard kill, inspect any orphan only while the
+publisher lock is free before removing that temporary file.
 
 ## Verification and recovery
 
 ```sh
 harbor-task-archives --plan
 harbor-task-archives --submission <exact-submission-id> --seconds 2100
+harbor-task-archives --submission <exact-submission-id> --rebuild --seconds 2100
 harbor-task-archives --status
 harbor-task-archives --seconds 2100 --retry-failed
 harbor-task-archives --audit --seconds 3300
 ```
 
-`--plan` reads the supported CASE catalog without building or copying archives.
-Select pilot submissions with repeated `--submission` arguments; all other
-submissions remain explicit pending index entries. An ordinary unfiltered run
-reconciles the full current catalog. Gateway retries are limited to once per
-revision per invocation; deterministic integrity failures stay pending.
+`--plan` reads the CASE catalog without building or copying. Repeat `--submission`
+to select pilots. Unselected verified archives remain available; unselected
+missing archives are pending. An unfiltered run reconciles the current catalog.
+`--rebuild` requires explicit submission selections and preserves previous
+receipts in `verified-history/`. Gateway retries are limited to once per revision
+per invocation. Integrity failures remain pending; they never trigger a download
+fallback. Task files, modes, or manifests must not be repaired to make them pass.
 
-The publisher verifies the archive's checksum, ZIP member bytes, original modes,
-manifest, exact task versions, and raw staging JFS inventory. It never extracts
-or executes delivered code. Per-revision verification receipts are stored under
-`/home/TARS/.local/state/harbor-task-archives/verified/`.
+State under `/home/TARS/.local/state/harbor-task-archives/` includes `manifests/`,
+`manifest-receipts/`, and per-selection `verified/` receipts. Manifests retained
+for a selection revision must not silently change. Normal unchanged runs reuse
+size/mtime verification; `--audit` re-hashes every current ZIP in both JFS locations.
+Finish a rollout with an audit and a no-op reconciliation.
 
-EVE copies only new current archives and a candidate index from a unique `.outbox`
-generation to a shared `.incoming` generation. A trusted, content-addressed copy
-of this program checks SHA-256 again in shared JFS, renames archives into place,
-and commits `index.json` last. A base-index checksum prevents an old helper from
-overwriting a newer publication. Repeating promotion after a crash is safe.
-Tiny plans/receipts remain for diagnostics; transferred ZIP bytes are moved into
-their final paths and completed local outbox hard links are removed.
+EVE copies new current archives and a candidate index from a unique `.outbox`
+generation to shared `.incoming`. A content-addressed copy of this trusted
+publisher verifies SHA-256, exclusively links each archive into its final path,
+and commits `index.json` last. A conflicting existing archive is never overwritten.
+The base-index checksum prevents an older helper replacing a newer index.
+Promotion is locked and idempotent, including recovery after partial publication.
+Tiny plans and receipts remain; completed outbox hard links are removed.
 
-`active.json` persists the EVE operation before submission. An uncertain copy POST
-is reconciled against EVE's task listing by its unique source/destination paths;
-it is never blindly duplicated. A lost promotion POST may be retried because the
-helper is locked, idempotent and generation-guarded. Known transfer failures and
-helper failures have at most three retries. A process restart resumes the saved
-operation before starting another publication. Small partial downloads resume
-with validated byte ranges. Archives larger than 32 MiB use eight concurrent
-16 MiB ranges; complete pieces receive local checksum receipts before reuse.
-Each interrupted range retains its sequentially written prefix, bound to its
-offsets and expected archive checksum, and retries at most four times per run.
-Assembly writes a contiguous file in order and checks the expected full-ZIP
-SHA-256 before promotion. Interrupted or sparse file lengths are never treated
-as evidence that all bytes arrived.
+`active.json` records an EVE operation before submission. An uncertain copy POST
+is reconciled through EVE's task listing by unique source/destination paths;
+it is never blindly duplicated. A lost promotion response can be retried because
+the helper is idempotent. Known copy/helper failures have at most three retries.
+Restart resumes the saved operation before preparing another publication.
+For zero or multiple matches to an uncertain copy, inspect the recorded operation
+before retrying. Never clear active state to bypass verification.
 
-For an uncertain transfer with zero or multiple matching tasks, inspect EVE using
-the recorded operation identity and resolve it before retrying. Do not delete
-`active.json` to skip verification. `status.json`, `eve-progress.json`,
-`last-success.json`, `last-error.json`, and `last-audit.json` provide local health
-evidence; `last-error.json` retains historical failures and must be interpreted
-alongside the success timestamps. No extra notification system is installed.
+`status.json`, `eve-progress.json`, `last-success.json`, `last-error.json`, and
+`last-audit.json` provide health evidence. Historical errors must be read alongside
+later success timestamps. Storage readiness does not establish Beagle import
+compatibility or evaluation success; follow the agreed scope in root `AGENTS.md`.
 
-`--audit` re-hashes every current ZIP in both JFS locations. Normal unchanged runs
-reuse saved local size/mtime verification and do not rescan all archive bytes.
-Initial rollout must finish with an audit and a no-op run.
+## Deployment
 
-## Deployment and rollback
-
-Gateway changes deploy only from the GitHub-connected main branch after CI. The
-publisher itself is installed on TARS from a reviewed, committed version, with a
-backup of any existing executable and crontab. To pause publication, remove only
-the marked archive cron entry; the existing raw mirror continues independently.
-Restore the previous executable if needed. Retain active operation state and
-archive generations when rolling back. No registry or original delivery is
-changed by this program.
-
-Run tests locally with:
+Gateway changes deploy through GitHub CI/CD. Install the publisher and builder
+on TARS from a reviewed, committed version, backing up installed programs and
+crontab first. Finish any active publication before replacing them. To pause,
+remove only the archive cron entry. Preserve the raw pipeline, state, receipts,
+and published generations. A rollback must retain support for all paths already
+recorded in the index; do not install a reader that assumes revision-only paths.
 
 ```sh
 python3 -m unittest discover -s ops/harbor-archives -p 'test_*.py' -v

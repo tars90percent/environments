@@ -25,10 +25,11 @@ test("installs the source-controlled guide into the persistent agent workspace",
   }
 });
 
-test("the CASE guide defines the vendor record and flexible cataloging purpose", async () => {
+test("the CASE guide defines the shared Base record and flexible cataloging purpose", async () => {
   const guide = await readFile(rootGuide, "utf8");
 
   assert.match(guide, /source of truth for our RL environment vendors/);
+  assert.match(guide, /https:\/\/vrfi1sk8a0\.feishu\.cn\/base\/WqS9bTgadatBNusLu7aciS7wn8f/);
   assert.match(guide, /CASE is the Railway-hosted agent/);
   assert.match(guide, /Preserve original deliveries/);
   assert.match(guide, /chronology of material vendor activity/);
@@ -49,8 +50,9 @@ test("the CASE guide delegates Harbor evaluation to AutoQA", async () => {
 
   assert.match(guide, /does not run Harbor Environment, Oracle, or Nop checks/);
   assert.match(guide, /AutoQA is the execution boundary for new Harbor samples/);
-  assert.match(guide, /associate each AutoQA request and result with the exact task version/);
-  assert.match(guide, /without inventing an interim workflow/);
+  assert.match(guide, /Associate each AutoQA request and result with the exact task version/);
+  assert.match(guide, /within an agreed task\/model\/budget scope/);
+  assert.match(guide, /ask before changing scope or budget/);
   assert.doesNotMatch(guide, /Modal Dockerfile compatibility adapter/);
 });
 

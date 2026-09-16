@@ -7,6 +7,7 @@ import io
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 import zipfile
@@ -60,58 +61,106 @@ class PublisherTests(unittest.TestCase):
             self.assertEqual(message['time'], report['time'])
             self.assertFalse((state / 'last-error.json').exists())
 
-    def test_zip_metadata_reader_supports_offsets_over_four_gib_and_truncated_prefixes(self):
+    def test_manifest_api_is_independent_of_zip_cache_and_retains_trusted_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
-            path, receipt, _ = archive(Path(directory))
-            data = path.read_bytes()
-            prefix = 5 * 1024 ** 3
-            total = prefix + len(data)
-            receipt = dict(receipt, sizeBytes=total)
-            calls = []
-            def open_request(req, timeout):
-                start, end = map(int, req.headers['Range'].removeprefix('bytes=').split('-'))
-                calls.append((start, end))
-                self.assertGreater(start, 2 ** 32)
-                payload = b'\0' * max(0, prefix - start) + data[max(0, start - prefix):end + 1 - prefix]
-                if len(calls) == 1:
-                    payload = payload[:10000]
-                response = io.BytesIO(payload)
-                response.status = 206
-                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(total), 'X-Content-SHA256': receipt['sha256']}
-                return response
-            with mock.patch.object(p.OPENER, 'open', open_request):
-                with p.ArchiveRangeReader({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None) as reader, zipfile.ZipFile(reader) as archive_file:
-                    p.checked_manifest(archive_file.read('manifest.json'), receipt, request())
-            self.assertEqual(len(calls), 2)
-            self.assertEqual(calls[1][0], calls[0][0] + 10000)
-
-    def test_range_reader_loads_zip_manifest_and_rejects_wrong_archive_identity(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path, receipt, _ = archive(Path(directory))
-            data = path.read_bytes()
-            ranges = []
-            wrong = False
-            def open_request(req, timeout):
-                start, end = map(int, req.headers['Range'].removeprefix('bytes=').split('-'))
-                ranges.append((start, end))
-                response = io.BytesIO(data[start:end + 1])
-                response.status = 206
-                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(len(data)), 'X-Content-SHA256': '0' * 64 if wrong else receipt['sha256']}
-                return response
+            root = Path(directory)
+            path, receipt, _ = archive(root)
+            with zipfile.ZipFile(path) as z:
+                data = z.read('manifest.json')
+            response = dict(receipt, status='ready', manifestJson=data.decode())
             config = {'gateway_url': 'https://example.test', 'gateway_token': 'test'}
-            with mock.patch.object(p.OPENER, 'open', open_request):
-                with p.ArchiveRangeReader(config, receipt, request(), None) as reader, zipfile.ZipFile(reader) as archive_file:
-                    manifest = archive_file.read('manifest.json')
-                    self.assertEqual(p.checked_manifest(manifest, receipt, request())['revision'], p.revision(request()))
-                self.assertEqual(len(ranges), 1)
-                wrong = True
-                with self.assertRaisesRegex(ValueError, 'immutable archive'):
-                    p.ArchiveRangeReader(config, receipt, request(), None).read(1)
-            changed = json.loads(manifest)
-            changed['files'][0]['sourceKey'] = 'another/private/file'
-            altered = p.json_bytes(changed)
-            with self.assertRaisesRegex(ValueError, 'source path'):
-                p.checked_manifest(altered, dict(receipt, manifestSha256=hashlib.sha256(altered).hexdigest()), request())
+            with mock.patch.object(p, 'STATE', root / 'state'), mock.patch.object(p, 'api', return_value=response) as call:
+                manifest_path, saved = p.prepare_manifest(config, request())
+                self.assertEqual(manifest_path.read_bytes(), data)
+                self.assertNotIn('sha256', saved)  # No ZIP identity received from Railway.
+                self.assertEqual(call.call_args.args[1], 'https://example.test/submission-manifest')
+                self.assertEqual(p.prepare_manifest(config, request()), (manifest_path, saved))
+                self.assertEqual(call.call_count, 1)
+                manifest_path.write_bytes(data + b' ')
+                with self.assertRaisesRegex(ValueError, 'checksum'):
+                    p.prepare_manifest(config, request())
+
+    def test_manifest_rejects_changed_source_mapping_or_selection_and_wrong_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, receipt, _ = archive(Path(directory))
+            with zipfile.ZipFile(path) as z:
+                manifest = json.loads(z.read('manifest.json'))
+            for key, value in [('sourceKey', 'another/private/file'), ('mode', '4755'), ('sizeBytes', -1)]:
+                altered = copy.deepcopy(manifest)
+                altered['files'][0][key] = value
+                data = p.json_bytes(altered)
+                with self.assertRaises(ValueError):
+                    p.checked_manifest(data, dict(receipt, manifestSha256=hashlib.sha256(data).hexdigest()), request())
+            with self.assertRaisesRegex(ValueError, 'exact CASE'):
+                p.checked_manifest(p.json_bytes(manifest), dict(receipt, revision='0' * 64), request())
+
+    def test_legacy_and_checksum_paths_reuse_verified_archives_without_network(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, receipt, _ = archive(root)
+            with mock.patch.object(p, 'STAGING', root / 'staging'), mock.patch.object(p, 'api', side_effect=AssertionError('No network')):
+                for relative in (p.archive_path(request()), p.archive_path(request(), receipt['sha256'])):
+                    destination = p.STAGING / relative
+                    p.atomic(destination, path.read_bytes())
+                    saved = p.reuse_archive(request(), dict(receipt, path=relative))
+                    self.assertEqual(p.index_entry(request(), saved)['path'], relative)
+                    self.assertEqual(p.index_entry(request(), saved)['manifestSha256'], receipt['manifestSha256'])
+                    self.assertEqual(p.reuse_archive(request(), saved), saved)
+                with self.assertRaisesRegex(ValueError, 'identity'):
+                    p.receipt_path(request(), dict(receipt, path='vendor/delivery/unrelated.zip'))
+
+    def test_raw_readiness_requires_completed_publication_and_both_task_markers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.multiple(p, RAW_STATE=root / 'state', RAW=root / 'raw', RAW_SHARED=root / 'shared'):
+                p.atomic(p.RAW_STATE / 'eve-last-success.json', {})
+                p.atomic(p.RAW_STATE / 'current-tasks.list', b'vendor/delivery/task\n')
+                for destination in (p.RAW, p.RAW_SHARED):
+                    p.atomic(destination / 'vendor/delivery/task/task.toml', b'v')
+                p.raw_ready(request())
+                p.atomic(p.RAW_STATE / 'eve-active.json', {})
+                with self.assertRaisesRegex(RuntimeError, 'not complete'):
+                    p.raw_ready(request())
+                (p.RAW_STATE / 'eve-active.json').unlink()
+                (p.RAW_SHARED / 'vendor/delivery/task/task.toml').unlink()
+                with self.assertRaisesRegex(RuntimeError, 'both completed'):
+                    p.raw_ready(request())
+
+    def test_failed_explicit_rebuild_keeps_previous_verified_archive_current(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, receipt, _ = archive(root)
+            state, staging, shared = root / 'state', root / 'staging', root / 'shared'
+            p.atomic(staging / p.archive_path(request()), path.read_bytes())
+            p.atomic(state / 'verified' / (p.revision(request()) + '.json'), receipt)
+            index = {'submissions': [p.index_entry(request(), receipt)]}
+            p.atomic(staging / 'index.json', index)
+            p.atomic(shared / 'index.json', index)
+            task = {'id': 'version:1', 'kind': 'task', 'format': 'harbor', 'sourcePath': 'task', 'artifactId': 'artifact', 'contentSha256': 'a' * 64}
+            catalog = {'vendors': [{'id': 'vendor', 'submissions': [{'id': 'delivery', 'tasks': [task]}]}]}
+            config = {'case_url': 'https://case.test', 'gateway_url': 'https://gateway.test', 'case_token': 'test'}
+            args = SimpleNamespace(submission=['delivery'], plan=False, rebuild=True, seconds=30, retry_failed=False)
+            with mock.patch.multiple(p, STATE=state, STAGING=staging, SHARED=shared, RAW_STATE=root / 'raw-state'), \
+                 mock.patch.object(p, 'private_config', return_value=config), mock.patch.object(p, 'api', return_value=catalog), \
+                 mock.patch.object(p, 'Eve'), mock.patch.object(p, 'raw_ready'), mock.patch.object(p, 'log'), \
+                 mock.patch.object(p, 'prepare_manifest', return_value=(root / 'manifest.json', {})), \
+                 mock.patch.object(p, 'build_archive', side_effect=ValueError('source mismatch')), \
+                 mock.patch.object(p, 'start_publication') as publish, \
+                 mock.patch.object(p.time, 'sleep', side_effect=TimeoutError('stop test')):
+                with self.assertRaises(TimeoutError):
+                    p.run(args)
+                publish.assert_not_called()
+            entry = p.read(state / 'status.json')['submissions'][0]
+            self.assertEqual(entry['status'], 'ready')
+            self.assertEqual(entry['path'], p.archive_path(request()))
+            self.assertIn('source mismatch', entry['reason'])
+            self.assertEqual(p.read(shared / 'index.json'), index)
+
+    def test_rebuild_requires_explicit_selection(self):
+        with mock.patch.object(p.sys, 'argv', ['publisher', '--rebuild']), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as caught:
+                p.main()
+            self.assertEqual(caught.exception.code, 2)
 
     def test_api_negotiates_and_decodes_compressed_catalog(self):
         class Response(io.BytesIO):
@@ -210,6 +259,13 @@ class PublisherTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'checksum verification'):
                 p.promote(generation, p.file_hash(incoming / 'plan.json'), shared)
             self.assertEqual(p.read(shared / 'index.json'), previous)
+            p.atomic(shared / 'file.zip', b'previous')
+            plan['files'][0]['sha256'] = p.file_hash(incoming / 'file.zip')
+            p.atomic(incoming / 'plan.json', plan)
+            with self.assertRaisesRegex(ValueError, 'immutable archive path'):
+                p.promote(generation, p.file_hash(incoming / 'plan.json'), shared)
+            self.assertEqual((shared / 'file.zip').read_bytes(), b'previous')
+            self.assertEqual(p.read(shared / 'index.json'), previous)
 
     def test_unsafe_paths_links_and_empty_catalog_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -222,26 +278,6 @@ class PublisherTests(unittest.TestCase):
                 p.safe_path(root, 'link/file')
         with self.assertRaisesRegex(ValueError, 'Empty'):
             p.requests_from_catalog({'vendors': []})
-
-    def test_download_resumes_only_matching_archive_and_keeps_partial_on_interruption(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            path, receipt, _ = archive(root)
-            data = path.read_bytes()
-            staging = root / 'staging'
-            partial = staging / p.archive_path(request())
-            partial.parent.mkdir(parents=True)
-            partial.with_suffix('.part').write_bytes(data[:10])
-            class Response(io.BytesIO):
-                status = 206
-                headers = {'X-Content-SHA256': receipt['sha256'], 'Content-Range': 'bytes 10-' + str(len(data) - 1) + '/' + str(len(data))}
-            def open_request(req, timeout):
-                self.assertEqual(req.headers['Range'], 'bytes=10-')
-                return Response(data[10:])
-            with mock.patch.object(p, 'STAGING', staging), mock.patch.object(p.OPENER, 'open', open_request):
-                downloaded = p.download({'gateway_url': 'https://example.test', 'gateway_token': 'secret'}, receipt, request(), None)
-            self.assertEqual(downloaded.read_bytes(), data)
-            self.assertFalse(partial.with_suffix('.part').exists())
 
     def test_lost_eve_copy_response_recovers_existing_operation_without_duplicate_post(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -271,81 +307,6 @@ class PublisherTests(unittest.TestCase):
                 p.advance_publication(FakeEve())
                 self.assertEqual(p.read(state / 'active.json')['phase'], 'promote')
                 self.assertEqual(sum(method == 'POST' for method, _ in calls), 1)
-
-
-class RangeTests(unittest.TestCase):
-    def test_truncated_ranges_retry_from_written_prefix_and_resume_after_restart(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            original, receipt, _ = archive(root)
-            data = original.read_bytes()
-            staging = root / 'staging'
-            pieces = staging / '.downloads' / p.revision(request())
-            p.atomic(pieces / '0.tmp', data[:19])
-            p.atomic(pieces / '0.request.json', {'start': 0, 'end': 63, 'archiveSha256': receipt['sha256']})
-            ranges, cut = [], set()
-            class Response(io.BytesIO):
-                status = 206
-            def open_request(req, timeout):
-                start, end = map(int, req.headers['Range'][6:].split('-'))
-                ranges.append((start, end))
-                payload = data[start:end + 1]
-                index = start // 64
-                if index not in cut:
-                    cut.add(index)
-                    payload = payload[:7]
-                response = Response(payload)
-                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(len(data)), 'X-Content-SHA256': receipt['sha256']}
-                return response
-            with mock.patch.multiple(p, STAGING=staging, CHUNK_BYTES=64), mock.patch.object(p.OPENER, 'open', open_request), mock.patch.object(p.time, 'sleep'):
-                result = p.download_ranges({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None)
-            self.assertEqual(result.read_bytes(), data)
-            self.assertIn((19, 63), ranges)
-            self.assertIn((26, 63), ranges)
-            self.assertNotIn((0, 63), ranges)
-
-    def test_parallel_ranges_resume_complete_pieces_and_verify_full_assembly(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            original, receipt, _ = archive(root)
-            data = original.read_bytes()
-            staging = root / 'staging'
-            pieces = staging / '.downloads' / p.revision(request())
-            p.atomic(pieces / '0.bin', data[:64])
-            p.atomic(pieces / '0.json', {'start': 0, 'end': 63, 'sha256': hashlib.sha256(data[:64]).hexdigest()})
-            ranges = []
-            class Response(io.BytesIO):
-                status = 206
-            def open_request(req, timeout):
-                start, end = map(int, req.headers['Range'][6:].split('-'))
-                ranges.append((start, end))
-                response = Response(data[start:end + 1])
-                response.headers = {'Content-Range': 'bytes ' + str(start) + '-' + str(end) + '/' + str(len(data)), 'X-Content-SHA256': receipt['sha256']}
-                return response
-            with mock.patch.multiple(p, STAGING=staging, CHUNK_BYTES=64), mock.patch.object(p.OPENER, 'open', open_request):
-                path = p.download_ranges({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None)
-            self.assertEqual(path.read_bytes(), data)
-            self.assertFalse(pieces.exists())
-            self.assertNotIn((0, 63), ranges)
-            self.assertEqual(sorted(ranges), [(start, min(start + 64, len(data)) - 1) for start in range(64, len(data), 64)])
-
-    def test_invalid_range_cannot_commit_an_archive_and_completed_pieces_survive(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            original, receipt, _ = archive(root)
-            data = original.read_bytes()
-            staging = root / 'staging'
-            pieces = staging / '.downloads' / p.revision(request())
-            p.atomic(pieces / '0.bin', data[:64])
-            p.atomic(pieces / '0.json', {'sha256': hashlib.sha256(data[:64]).hexdigest()})
-            class Response(io.BytesIO):
-                status = 200
-                headers = {}
-            with mock.patch.multiple(p, STAGING=staging, CHUNK_BYTES=64), mock.patch.object(p.OPENER, 'open', lambda *a, **k: Response(data)):
-                with self.assertRaises((ValueError, RuntimeError)):
-                    p.download_ranges({'gateway_url': 'https://example.test', 'gateway_token': 'test'}, receipt, request(), None)
-            self.assertFalse((staging / p.archive_path(request())).exists())
-            self.assertEqual((pieces / '0.bin').read_bytes(), data[:64])
 
 
 if __name__ == '__main__':

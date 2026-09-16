@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": {"test": "node --test test-rebuild.mjs"},
+  "scripts": {"test": "node --test test-build.mjs"},
   "engines": {"node": ">=24"},
   "dependencies": {"zip-stream": "6.0.1"}
 }

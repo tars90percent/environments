@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Verified CASE submission archives -> TARS JFS -> shared JFS. No evaluation calls.
+"""CASE file manifests + raw JFS -> verified local ZIPs -> shared JFS. No evaluation calls.
 
 Python standard library only. See README.md for installation, recovery and bounds.
 """
 import argparse
 import base64
 import contextlib
-import concurrent.futures
 import fcntl
-import functools
 import gzip
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -20,7 +17,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -43,7 +39,6 @@ CONFIG = Path('/home/TARS/.config/harbor-task-archives/config.json')
 EVE_CONFIG = Path('/home/TARS/.config/harbor-tasks-mirror/eve.json')
 EVE_API = 'https://transfer.xaminim.com/api/v1'
 SHA = re.compile(r'^[a-f0-9]{64}$')
-CHUNK_BYTES = 16 * 1024 * 1024
 BUILDER = Path('/usr/local/lib/harbor-task-archives')
 
 
@@ -183,8 +178,22 @@ def revision(request):
     return hashlib.sha256(json.dumps(request, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
 
 
-def archive_path(request):
-    return request['vendorId'] + '/' + request['submissionId'] + '/' + revision(request) + '.zip'
+def archive_path(request, archive_sha=None):
+    prefix = request['vendorId'] + '/' + request['submissionId'] + '/' + revision(request)
+    if archive_sha is None:
+        return prefix + '.zip'  # Retained published archive paths.
+    if not isinstance(archive_sha, str) or not SHA.fullmatch(archive_sha):
+        raise ValueError('Invalid archive checksum')
+    return prefix + '/' + archive_sha + '.zip'
+
+
+def receipt_path(request, receipt):
+    if receipt.get('revision') != revision(request):
+        raise ValueError('Receipt does not match exact CASE task versions')
+    path = receipt.get('path', archive_path(request))
+    if path not in (archive_path(request), archive_path(request, receipt.get('sha256'))):
+        raise ValueError('Receipt path does not match archive identity')
+    return path
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -207,8 +216,8 @@ def api(method, url, auth, payload=None, query=None):
                     return json.load(stream)
             return json.load(response)
     except urllib.error.HTTPError as exc:
-        # Gateway build failures are structured and do not contain credentials.
-        if exc.code == 409 and url.endswith('/submission-archives'):
+        # Gateway manifest failures are structured and do not contain credentials.
+        if exc.code == 409 and url.endswith('/submission-manifest'):
             data = json.load(exc)
             if data.get('status') == 'failed':
                 return data
@@ -256,7 +265,7 @@ def verify_archive(path, receipt, request, raw=None, deadline=None):
         manifest_bytes = archive.read('manifest.json')
         if hashlib.sha256(manifest_bytes).hexdigest() != receipt['manifestSha256']:
             raise ValueError('Manifest checksum mismatch')
-        manifest = json.loads(manifest_bytes)
+        manifest = checked_manifest(manifest_bytes, receipt, request)
         if any(manifest.get(key) != value for key, value in request.items()) or manifest.get('revision') != revision(request):
             raise ValueError('Manifest does not match exact CASE task versions')
         files = manifest['files']
@@ -302,79 +311,9 @@ def verify_archive(path, receipt, request, raw=None, deadline=None):
     return len(files)
 
 
-class ArchiveRangeReader(io.RawIOBase):
-    """Seekable, checksum-bound HTTP ranges for ZIP64 metadata, not task bytes."""
-    def __init__(self, config, receipt, request, deadline):
-        self.url = config['gateway_url'] + '/submission-archives/' + revision(request) + '.zip'
-        self.auth = 'Bearer ' + config['gateway_token']
-        self.receipt, self.deadline, self.position = receipt, deadline, 0
-        self.cached = []
-
-    def seekable(self):
-        return True
-
-    def readable(self):
-        return True
-
-    def tell(self):
-        return self.position
-
-    def seek(self, offset, whence=0):
-        target = offset + (self.position if whence == 1 else self.receipt['sizeBytes'] if whence == 2 else 0)
-        if whence not in (0, 1, 2) or target < 0:
-            raise ValueError('Invalid ZIP seek')
-        self.position = target
-        return target
-
-    def read(self, size=-1):
-        total = self.receipt['sizeBytes']
-        end = min(total, total if size < 0 else self.position + size)
-        if end <= self.position:
-            return b''
-        for start, data in self.cached:
-            if start <= self.position and end <= start + len(data):
-                result = data[self.position - start:end - start]
-                self.position = end
-                return result
-        # EOCD, ZIP64 records, and small central directories share one tail read.
-        start = min(self.position, max(0, total - 65536))
-        stop = min(total, max(end, start + 65536))
-        if stop - start > 128 * 1024 * 1024:
-            raise ValueError('Archive metadata range is too large')
-        data = bytearray()
-        for attempt in range(4):
-            check_deadline(self.deadline)
-            offset = start + len(data)
-            if offset == stop:
-                break
-            req = urllib.request.Request(self.url, headers={'Authorization': self.auth, 'Range': 'bytes=' + str(offset) + '-' + str(stop - 1)})
-            try:
-                with OPENER.open(req, timeout=45) as response:
-                    expected = 'bytes ' + str(offset) + '-' + str(stop - 1) + '/' + str(total)
-                    if response.status != 206 or response.headers.get('Content-Range') != expected or response.headers.get('X-Content-SHA256') != self.receipt['sha256']:
-                        raise ValueError('Metadata range does not match immutable archive')
-                    while len(data) < stop - start:
-                        check_deadline(self.deadline)
-                        chunk = response.read1(min(65536, stop - start - len(data)))
-                        if not chunk:
-                            break
-                        data.extend(chunk)
-                if len(data) != stop - start:
-                    raise OSError('Truncated metadata range')
-            except (urllib.error.URLError, OSError):
-                check_deadline(self.deadline)
-                if attempt == 3:
-                    raise
-        if len(data) != stop - start:
-            raise OSError('Incomplete archive metadata')
-        result = bytes(data[self.position - start:end - start])
-        self.position = end
-        self.cached.append((start, bytes(data)))
-        self.cached = self.cached[-3:]
-        return result
-
-
 def checked_manifest(data, receipt, request):
+    if receipt.get('schemaVersion') != SCHEMA or receipt.get('revision') != revision(request):
+        raise ValueError('Manifest receipt does not match exact CASE task versions')
     if len(data) > 128 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != receipt['manifestSha256']:
         raise ValueError('Manifest checksum mismatch')
     manifest = json.loads(data)
@@ -392,208 +331,91 @@ def checked_manifest(data, receipt, request):
         paths.add(item['path'])
     if len(paths) != receipt['fileCount'] or len(tasks) != receipt['taskCount'] or not {name + '/task.toml' for name in tasks}.issubset(paths):
         raise ValueError('Manifest counts or task completion markers differ')
+    if receipt['sourceBytes'] != sum(item['sizeBytes'] for item in manifest['files']):
+        raise ValueError('Manifest source byte count differs')
     return manifest
 
 
-@functools.lru_cache(maxsize=1)
-def builder_identity():
-    return hashlib.sha256(''.join(file_hash(BUILDER / path) for path in ('runtime/bin/node', 'rebuild.mjs', 'package-lock.json')).encode()).hexdigest()
-
-
-def rebuild_from_jfs(config, receipt, request, deadline):
-    """Reproduce the cached ZIP locally; equivalent-but-different ZIPs fall back."""
-    node, helper = BUILDER / 'runtime/bin/node', BUILDER / 'rebuild.mjs'
-    if not node.is_file() or not helper.is_file():
-        return None
+def prepare_manifest(config, request, retry=False):
     rev = revision(request)
-    identity = {'builder': builder_identity(), 'archiveSha256': receipt['sha256']}
-    skipped = STATE / 'rebuild-fallback' / (rev + '.json')
-    if read(skipped) == identity:
+    path = STATE / 'manifests' / (rev + '.json')
+    receipt_path = STATE / 'manifest-receipts' / (rev + '.json')
+    saved = read(receipt_path)
+    if saved:
+        checked_manifest(path.read_bytes(), saved, request)
+        return path, saved
+    result = api('POST', config['gateway_url'] + '/submission-manifest',
+                 'Bearer ' + config['gateway_token'], dict(request, retry=retry))
+    if result.get('revision') != rev:
+        raise ValueError('Gateway manifest revision differs from planned identity')
+    if result.get('status') == 'failed':
+        raise RuntimeError('Gateway manifest rejected: ' + result.get('error', 'source metadata is inconsistent'))
+    if result.get('status') in ('building', 'busy'):
         return None
-    manifest_path = STATE / 'manifests' / (rev + '.json')
-    if not manifest_path.exists() or file_hash(manifest_path, deadline) != receipt['manifestSha256']:
-        with ArchiveRangeReader(config, receipt, request, deadline) as stream, zipfile.ZipFile(stream) as archive:
-            if archive.getinfo('manifest.json').file_size > 128 * 1024 * 1024:
-                raise ValueError('Archive manifest too large')
-            data = archive.read('manifest.json')
-        checked_manifest(data, receipt, request)
-        atomic(manifest_path, data)
-    else:
-        checked_manifest(manifest_path.read_bytes(), receipt, request)
-    path = safe_path(STAGING, archive_path(request))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix('.rebuild-' + uuid.uuid4().hex)
+    if result.get('status') != 'ready' or not isinstance(result.get('manifestJson'), str):
+        raise ValueError('Invalid gateway manifest response')
+    data = result['manifestJson'].encode('utf-8')
+    receipt = {key: result[key] for key in ('schemaVersion', 'revision', 'manifestSha256', 'fileCount', 'taskCount', 'sourceBytes')}
+    checked_manifest(data, receipt, request)
+    if path.exists() and path.read_bytes() != data:
+        raise ValueError('Manifest changed for an existing selection revision')
+    atomic(path, data)
+    atomic(receipt_path, receipt)
+    return path, receipt
+
+
+def reuse_archive(request, receipt, deadline=None):
+    if not receipt:
+        return None
+    path = safe_path(STAGING, receipt_path(request, receipt))
+    if not path.exists():
+        return None
+    details = path.stat()
+    if details.st_size != receipt['sizeBytes'] or details.st_mtime_ns != receipt.get('localMtimeNs'):
+        verify_archive(path, receipt, request, deadline=deadline)
+        receipt = dict(receipt, localMtimeNs=details.st_mtime_ns)
+    return receipt
+
+
+def build_archive(request, manifest_path, manifest_receipt, deadline):
+    node, helper = BUILDER / 'runtime/bin/node', BUILDER / 'build.mjs'
+    if not node.is_file() or not helper.is_file():
+        raise RuntimeError('Local archive builder is not installed')
+    checked_manifest(manifest_path.read_bytes(), manifest_receipt, request)
+    temporary = STAGING / '.builds' / (uuid.uuid4().hex + '.zip')
+    temporary.parent.mkdir(parents=True, exist_ok=True)
     try:
         with lock(RAW_STATE / 'run.lock'):
             raw_ready(request)
             check_deadline(deadline)
-            log('rebuilding_from_jfs', submission=request['submissionId'], source_bytes=receipt['sourceBytes'])
+            log('building_from_jfs', submission=request['submissionId'], source_bytes=manifest_receipt['sourceBytes'])
             try:
-                result = subprocess.run([str(node), str(helper), str(manifest_path), str(RAW), str(temporary), receipt['sha256']], capture_output=True, text=True, timeout=max(1, deadline - time.monotonic()))
+                result = subprocess.run([str(node), str(helper), str(manifest_path), str(RAW), str(temporary)],
+                                        capture_output=True, text=True, timeout=max(1, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 raise TimeoutError('Local archive build reached run budget') from None
-        if result.returncode == 2:
-            atomic(skipped, identity)
-            log('rebuild_encoding_differs', submission=request['submissionId'], fallback='verified gateway download')
-            return None
-        if result.returncode != 0:
-            raise ValueError('Local archive build failed source checks; raw mirror retained')
-        if temporary.stat().st_size != receipt['sizeBytes'] or file_hash(temporary, deadline) != receipt['sha256']:
-            raise ValueError('Rebuilt archive differs from cached ZIP')
-        os.replace(temporary, path)
-        log('rebuilt_identical_archive', submission=request['submissionId'], bytes=receipt['sizeBytes'])
-        return path
+            if result.returncode != 0:
+                raise ValueError('Local archive build failed; inspect raw file integrity and builder availability')
+            built = json.loads(result.stdout)
+            if built.get('status') != 'built' or not SHA.fullmatch(built.get('sha256', '')):
+                raise ValueError('Invalid local archive builder result')
+            receipt = dict(manifest_receipt, sha256=built['sha256'], sizeBytes=built['sizeBytes'])
+            # Compare uncompressed members with the trusted manifest and the raw
+            # inventory before establishing this ZIP's transport checksum.
+            verify_archive(temporary, receipt, request, RAW, deadline)
+        relative = archive_path(request, receipt['sha256'])
+        path = safe_path(STAGING, relative)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if path.stat().st_size != receipt['sizeBytes'] or file_hash(path, deadline) != receipt['sha256']:
+                raise ValueError('Existing archive conflicts with immutable archive path')
+        receipt.update(path=relative, localMtimeNs=path.stat().st_mtime_ns)
+        return receipt
     finally:
         if temporary.exists():
             temporary.unlink()
-
-
-def download(config, receipt, request, deadline):
-    if receipt['sizeBytes'] > 2 * CHUNK_BYTES:
-        return download_ranges(config, receipt, request, deadline)
-    path = safe_path(STAGING, archive_path(request))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_suffix('.part')
-    size = part.stat().st_size if part.exists() else 0
-    if size > receipt['sizeBytes']:
-        part.unlink()
-        size = 0
-    if size != receipt['sizeBytes']:
-        req = urllib.request.Request(config['gateway_url'] + '/submission-archives/' + revision(request) + '.zip',
-            headers={'Authorization': 'Bearer ' + config['gateway_token'], **({'Range': 'bytes=' + str(size) + '-'} if size else {})})
-        try:
-            with OPENER.open(req, timeout=45) as response:
-                expected_range = 'bytes ' + str(size) + '-' + str(receipt['sizeBytes'] - 1) + '/' + str(receipt['sizeBytes'])
-                if (size and (response.status != 206 or response.headers.get('Content-Range') != expected_range)) or response.headers.get('X-Content-SHA256') != receipt['sha256']:
-                    raise ValueError('Download response does not match immutable archive')
-                with part.open('ab' if size else 'wb') as stream:
-                    while True:
-                        check_deadline(deadline)
-                        chunk = response.read(4 * 1024 * 1024)
-                        if not chunk:
-                            break
-                        stream.write(chunk)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-        except urllib.error.URLError:
-            raise RuntimeError('Archive download interrupted; partial file retained') from None
-    if part.stat().st_size != receipt['sizeBytes'] or file_hash(part, deadline) != receipt['sha256']:
-        part.unlink()
-        raise ValueError('Downloaded archive checksum mismatch; partial discarded')
-    os.replace(part, path)
-    return path
-
-
-def download_ranges(config, receipt, request, deadline):
-    """Bounded parallel HTTP ranges, committed as separate verified pieces.
-
-    Never use a sparse file's length as proof of a resumable prefix. Only complete
-    pieces get receipts; assembly is sequential and the entire ZIP is hashed.
-    """
-    rev = revision(request)
-    path = safe_path(STAGING, archive_path(request))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pieces = safe_path(STAGING, '.downloads/' + rev)
-    pieces.mkdir(parents=True, exist_ok=True)
-    stopped = threading.Event()
-    count = (receipt['sizeBytes'] + CHUNK_BYTES - 1) // CHUNK_BYTES
-    url = config['gateway_url'] + '/submission-archives/' + rev + '.zip'
-
-    def fetch_piece(index):
-        start = index * CHUNK_BYTES
-        end = min(start + CHUNK_BYTES, receipt['sizeBytes']) - 1
-        target = pieces / (str(index) + '.bin')
-        metadata = pieces / (str(index) + '.json')
-        previous = read(metadata)
-        if previous and previous.get('start') == start and previous.get('end') == end and target.exists() and target.stat().st_size == end - start + 1 and file_hash(target, deadline) == previous.get('sha256'):
-            return target
-        tmp = target.with_suffix('.tmp')
-        descriptor = target.with_suffix('.request.json')
-        identity = {'start': start, 'end': end, 'archiveSha256': receipt['sha256']}
-        if read(descriptor) != identity:
-            if tmp.exists():
-                tmp.unlink()
-            atomic(descriptor, identity)
-        if tmp.exists() and (not stat.S_ISREG(tmp.lstat().st_mode) or tmp.stat().st_size > end - start + 1):
-            raise ValueError('Invalid partial range file')
-        for attempt in range(4):
-            check_deadline(deadline)
-            if stopped.is_set():
-                raise RuntimeError('Another range failed; partial pieces retained')
-            written = tmp.stat().st_size if tmp.exists() else 0
-            if written == end - start + 1:
-                break
-            offset = start + written
-            expected = 'bytes ' + str(offset) + '-' + str(end) + '/' + str(receipt['sizeBytes'])
-            req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + config['gateway_token'], 'Range': 'bytes=' + str(offset) + '-' + str(end)})
-            try:
-                with OPENER.open(req, timeout=45) as response:
-                    if response.status != 206 or response.headers.get('Content-Range') != expected or response.headers.get('X-Content-SHA256') != receipt['sha256']:
-                        raise ValueError('Range response does not match immutable archive')
-                    # These prefixes are written sequentially by this program,
-                    # never preallocated. Final ZIP SHA-256 is still mandatory.
-                    with tmp.open('ab') as stream:
-                        while True:
-                            check_deadline(deadline)
-                            if stopped.is_set():
-                                raise RuntimeError('Another range failed; partial pieces retained')
-                            chunk = response.read(256 * 1024)
-                            if not chunk:
-                                break
-                            if written + len(chunk) > end - start + 1:
-                                raise ValueError('Range response exceeded expected length')
-                            stream.write(chunk)
-                            written += len(chunk)
-                        stream.flush()
-                        os.fsync(stream.fileno())
-                if written != end - start + 1:
-                    raise OSError('Incomplete range response; prefix retained')
-                break
-            except (urllib.error.URLError, OSError):
-                check_deadline(deadline)
-                if attempt == 3:
-                    raise
-                time.sleep(2 ** attempt)
-        if not tmp.exists() or tmp.stat().st_size != end - start + 1:
-            raise OSError('Range remains incomplete')
-        piece_sha = file_hash(tmp, deadline)
-        os.replace(tmp, target)
-        atomic(metadata, {'start': start, 'end': end, 'sha256': piece_sha})
-        return target
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(fetch_piece, i) for i in range(count)]
-        try:
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
-        except Exception:
-            stopped.set()
-            for future in futures:
-                future.cancel()
-            raise
-    part = path.with_suffix('.part')
-    digest = hashlib.sha256()
-    with part.open('wb') as stream:
-        for index in range(count):
-            with (pieces / (str(index) + '.bin')).open('rb') as source:
-                while True:
-                    check_deadline(deadline)
-                    chunk = source.read(4 * 1024 * 1024)
-                    if not chunk:
-                        break
-                    stream.write(chunk)
-                    digest.update(chunk)
-        stream.flush()
-        os.fsync(stream.fileno())
-    if part.stat().st_size != receipt['sizeBytes'] or digest.hexdigest() != receipt['sha256']:
-        # Individual range receipts prove local completion, not remote identity.
-        # The complete expected ZIP checksum remains the acceptance boundary.
-        shutil.rmtree(pieces)
-        part.unlink()
-        raise ValueError('Assembled archive checksum mismatch; pieces discarded')
-    os.replace(part, path)
-    shutil.rmtree(pieces)
-    return path
 
 
 def raw_ready(request):
@@ -610,7 +432,8 @@ def index_entry(request, receipt=None, error=None):
     entry = {key: request[key] for key in ('vendorId', 'submissionId')}
     entry.update(revision=revision(request), taskCount=len(request['tasks']), status='ready' if receipt else 'pending')
     if receipt:
-        entry.update(path=archive_path(request), sha256=receipt['sha256'], sizeBytes=receipt['sizeBytes'])
+        entry.update(path=receipt_path(request, receipt), sha256=receipt['sha256'], sizeBytes=receipt['sizeBytes'],
+                     manifestSha256=receipt['manifestSha256'])
     if error:
         entry['reason'] = error
     return entry
@@ -652,7 +475,7 @@ def start_publication(index):
 
 
 def promote(generation, plan_sha, shared=SHARED):
-    """Idempotent trusted EVE helper: hash copies, rename archives, commit index last."""
+    """Idempotent trusted EVE helper: hash copies, publish immutable archives, commit index last."""
     if not re.fullmatch(r'\d{8}T\d{6}-[a-f0-9]{12}', generation) or not SHA.fullmatch(plan_sha):
         raise ValueError('Invalid publication identity')
     shared.mkdir(parents=True, exist_ok=True)
@@ -677,10 +500,17 @@ def promote(generation, plan_sha, shared=SHARED):
             source = candidate if candidate.exists() else target
             if source.stat().st_size != item['sizeBytes'] or file_hash(source) != item['sha256']:
                 raise ValueError('Shared archive failed checksum verification')
+            if target.exists() and (target.stat().st_size != item['sizeBytes'] or file_hash(target) != item['sha256']):
+                raise ValueError('Existing shared archive conflicts with immutable archive path')
             if candidate.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(candidate, target)
-                os.chmod(target, 0o644)
+                os.chmod(candidate, 0o644)
+                try:
+                    os.link(candidate, target)
+                except FileExistsError:
+                    if target.stat().st_size != item['sizeBytes'] or file_hash(target) != item['sha256']:
+                        raise ValueError('Existing shared archive conflicts with immutable archive path')
+                candidate.unlink()
         index = read(incoming / 'index.json')
         for item in index['submissions']:
             if item['status'] == 'ready' and safe_path(shared, item['path']).stat().st_size != item['sizeBytes']:
@@ -782,6 +612,7 @@ def run(args):
     eve = Eve()
     errors = {}
     retry_sent = set()
+    rebuilt = set()
     while True:
         check_deadline(deadline)
         if read(STATE / 'active.json'):
@@ -794,44 +625,36 @@ def run(args):
             rev = revision(request)
             receipt_file = STATE / 'verified' / (rev + '.json')
             saved = read(receipt_file)
-            path = safe_path(STAGING, archive_path(request))
-            details = path.stat() if path.exists() else None
-            if saved and details and details.st_size == saved['sizeBytes'] and details.st_mtime_ns == saved['localMtimeNs']:
-                entries.append(index_entry(request, saved))
-                continue
-            receipt = None
-            if request['submissionId'] in selected:
-                try:
+            receipt = previous = None
+            try:
+                receipt = previous = reuse_archive(request, saved, deadline)
+                if receipt and not (args.rebuild and request['submissionId'] in selected and rev not in rebuilt):
+                    if receipt != saved:
+                        atomic(receipt_file, receipt)
+                    entries.append(index_entry(request, receipt))
+                    continue
+                if request['submissionId'] in selected:
                     with lock(RAW_STATE / 'run.lock'):
                         raw_ready(request)
-                    payload = dict(request)
-                    if args.retry_failed and rev not in retry_sent:
-                        payload['retry'] = True
-                    result = api('POST', config['gateway_url'] + '/submission-archives', 'Bearer ' + config['gateway_token'], payload)
+                    prepared = prepare_manifest(config, request, args.retry_failed and rev not in retry_sent)
                     retry_sent.add(rev)
-                    if result.get('revision') != rev:
-                        raise ValueError('Gateway revision differs from planned identity')
-                    if result['status'] == 'ready':
-                        receipt = {key: result[key] for key in ('schemaVersion', 'revision', 'sha256', 'sizeBytes', 'sourceBytes', 'fileCount', 'taskCount', 'manifestSha256')}
-                        if not path.exists() or path.stat().st_size != receipt['sizeBytes'] or file_hash(path, deadline) != receipt['sha256']:
-                            path = rebuild_from_jfs(config, receipt, request, deadline) or download(config, receipt, request, deadline)
-                        with lock(RAW_STATE / 'run.lock'):
-                            raw_ready(request)
-                            verify_archive(path, receipt, request, RAW, deadline)
-                        receipt['localMtimeNs'] = path.stat().st_mtime_ns
+                    if prepared:
+                        receipt = build_archive(request, *prepared, deadline)
+                        if saved:
+                            atomic(STATE / 'verified-history' / rev / (saved['sha256'] + '.json'), saved)
                         atomic(receipt_file, receipt)
+                        rebuilt.add(rev)
                         log('archive_verified', submission=request['submissionId'], tasks=len(request['tasks']), files=receipt['fileCount'], bytes=receipt['sizeBytes'])
                         errors.pop(rev, None)
-                    elif result['status'] == 'failed':
-                        errors[rev] = 'Gateway rejected source integrity; inspect gateway build log'
                     else:
-                        errors[rev] = result['status']
-                except TimeoutError:
-                    raise
-                except (ValueError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
-                    errors[rev] = type(exc).__name__ + ': ' + str(exc)
-                    receipt = None
-                    log('submission_pending', submission=request['submissionId'], reason=errors[rev])
+                        errors[rev] = 'manifest_pending'
+            except TimeoutError:
+                raise
+            except (ValueError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
+                errors[rev] = type(exc).__name__ + ': ' + str(exc)
+                log('submission_pending', submission=request['submissionId'], reason=errors[rev])
+                # A failed explicit rebuild does not withdraw a verified archive.
+                receipt = previous if args.rebuild else None
             entries.append(index_entry(request, receipt, errors.get(rev)))
         # Re-read the supported catalog before publishing a selection. A change
         # during a long build cannot silently become the current index.
@@ -849,7 +672,7 @@ def run(args):
         if old.get('submissions') != public_entries or not (SHARED / 'index.json').exists():
             start_publication({'schemaVersion': INDEX_SCHEMA, 'generatedAt': now(), 'submissions': public_entries})
             continue
-        if all(entry['status'] == 'ready' for entry in entries if entry['submissionId'] in selected):
+        if all(entry['status'] == 'ready' and entry.get('reason') is None for entry in entries if entry['submissionId'] in selected):
             log('up_to_date', ready=status['ready'], pending=status['pending'])
             return
         time.sleep(min(15, max(0, deadline - time.monotonic())))
@@ -860,11 +683,14 @@ def main():
     parser.add_argument('--plan', action='store_true')
     parser.add_argument('--submission', action='append')
     parser.add_argument('--seconds', type=int, default=2100)
-    parser.add_argument('--retry-failed', action='store_true')
+    parser.add_argument('--retry-failed', action='store_true', help='Retry failed gateway manifest scans once per revision')
+    parser.add_argument('--rebuild', action='store_true', help='Build a verified local archive for the explicitly selected submissions')
     parser.add_argument('--status', action='store_true')
     parser.add_argument('--audit', action='store_true')
     parser.add_argument('--promote', nargs=2, metavar=('GENERATION', 'PLAN_SHA256'))
     args = parser.parse_args()
+    if args.rebuild and not args.submission:
+        parser.error('--rebuild requires explicit --submission selections')
     if args.promote:
         promote(*args.promote)
         return
