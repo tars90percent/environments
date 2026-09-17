@@ -87,12 +87,12 @@ test("capture plans reject duplicate submission and attachment identities", () =
   }), /duplicate attachment/);
 });
 
-test("trusted Feishu capture commands use the local registry rather than its HTTP API", async () => {
+test("retired Feishu capture entries reject original delivery capture", async () => {
   const messageCapture = await readFile(new URL("../src/intake-plan-cli.ts", import.meta.url), "utf8");
   const mailCapture = await readFile(new URL("../src/mail-intake-plan-cli.ts", import.meta.url), "utf8");
   for (const source of [messageCapture, mailCapture]) {
-    assert.match(source, /openLocalRegistry/);
-    assert.match(source, /captureSubmission/);
+    assert.match(source, /throw new Error\(SRM_ONLY_MESSAGE\)/);
+    assert.doesNotMatch(source, /openLocalRegistry|captureSubmission|storeSourcePayload/);
     assert.doesNotMatch(source, /CASE_REGISTRY_URL|CASE_REGISTRY_ADMIN_TOKEN|\/v1\//);
     assert.doesNotMatch(source, /formatFor|categoryId/);
   }

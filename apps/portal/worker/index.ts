@@ -5,16 +5,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   benchmarkHarborDatasetFilename,
   benchmarkHarborDatasetManifest,
-  taskDatasetArchive,
-  taskDatasetFilename,
-  taskDatasetManifest,
   vendorHarborDatasetFilename,
   vendorHarborDatasetManifest,
-  type DatasetPackage,
 } from "../app/dataset-archive";
-import { originalSubmissionArchive } from "../app/original-submission-archive";
-import { originalSubmissionArchiveFilename, originalSubmissionArtifacts, type OriginalSubmissionArtifact } from "../app/original-submission";
-import { normalizeCaseCatalog, normalizeCaseSubmission } from "./case-catalog";
+import { normalizeCaseCatalog } from "./case-catalog";
 import { vendorTaskFiles } from "./vendor-task-files";
 import { buildBenchmarkLandscape } from "../app/benchmark-landscape";
 
@@ -157,68 +151,11 @@ const worker = {
       }
     }
 
-    const originalDownloadMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/original-download$/);
-    if (originalDownloadMatch?.[1]) {
+    if (/^\/api\/submissions\/[^/]+\/(?:original-download|dataset-download)$/.test(url.pathname)
+        || /^\/api\/artifacts\/[^/]+\/download$/.test(url.pathname)) {
       if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
-      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
-      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
-        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
-      }
-      try {
-        const submissionId = decodeURIComponent(originalDownloadMatch[1]);
-        const upstream = await fetch(`${registryUrl}/v1/submissions/${encodeURIComponent(submissionId)}`, {
-          headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
-        });
-        if (!upstream.ok) return registryErrorResponse(upstream, "original_submission_unavailable");
-        const submission = normalizeCaseSubmission(await upstream.json());
-        const artifacts = originalSubmissionArtifacts(submission);
-        if (!artifacts.length) return Response.json({ error: "original_submission_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
-        const archive = originalSubmissionArchive(artifacts, (artifact) => fetchOriginalArtifact(artifact, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
-        return new Response(archive, {
-          status: 200,
-          headers: {
-            "content-type": "application/zip",
-            "content-disposition": `attachment; filename="${originalSubmissionArchiveFilename(submission)}"`,
-            "cache-control": "no-store",
-            "x-content-type-options": "nosniff",
-            "x-case-original-file-count": String(artifacts.length),
-          },
-        });
-      } catch {
-        return Response.json({ error: "original_submission_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
-      }
-    }
-
-    const datasetDownloadMatch = url.pathname.match(/^\/api\/submissions\/([^/]+)\/dataset-download$/);
-    if (datasetDownloadMatch?.[1]) {
-      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
-      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
-      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
-        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
-      }
-      try {
-        const submissionId = decodeURIComponent(datasetDownloadMatch[1]);
-        const upstream = await fetch(`${registryUrl}/v1/submissions/${encodeURIComponent(submissionId)}`, {
-          headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
-        });
-        if (!upstream.ok) return registryErrorResponse(upstream, "dataset_unavailable");
-        const submission = normalizeCaseSubmission(await upstream.json());
-        const manifest = taskDatasetManifest(submission);
-        if (!manifest.tasks.length) return Response.json({ error: "dataset_empty" }, { status: 404, headers: { "cache-control": "no-store" } });
-        const archive = taskDatasetArchive(submission, (task) => fetchArtifact(task.artifactId, registryUrl, runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN!));
-        return new Response(archive, {
-          status: 200,
-          headers: {
-            "content-type": "application/x-tar",
-            "content-disposition": `attachment; filename="${taskDatasetFilename(submission)}"`,
-            "cache-control": "no-store",
-            "x-content-type-options": "nosniff",
-            "x-case-task-count": String(manifest.tasks.length),
-          },
-        });
-      } catch {
-        return Response.json({ error: "dataset_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
-      }
+      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401 });
+      return Response.json({ error: "original_deliveries_moved_to_feishu_base", url: "https://vrfi1sk8a0.feishu.cn/base/WqS9bTgadatBNusLu7aciS7wn8f" }, { status: 410, headers: { "cache-control": "no-store" } });
     }
 
     if (url.pathname === "/api/catalog") {
@@ -240,31 +177,6 @@ const worker = {
       }
     }
 
-    const artifactDownloadMatch = url.pathname.match(/^\/api\/artifacts\/([^/]+)\/download$/);
-    if (artifactDownloadMatch?.[1]) {
-      if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
-      if (!hasPortalSession(request, runtimeEnv)) return Response.json({ error: "unauthorized" }, { status: 401, headers: { "cache-control": "no-store" } });
-      if (!registryUrl || !runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN) {
-        return Response.json({ error: "case_catalog_not_configured" }, { status: 503, headers: { "cache-control": "no-store" } });
-      }
-      try {
-        const artifactId = decodeURIComponent(artifactDownloadMatch[1]);
-        const upstream = await fetch(`${registryUrl}/v1/artifacts/${encodeURIComponent(artifactId)}/download-url`, {
-          headers: { authorization: `Bearer ${runtimeEnv.CASE_REGISTRY_CATALOG_TOKEN}`, accept: "application/json" },
-        });
-        if (!upstream.ok) {
-          return Response.json({ error: "artifact_unavailable" }, { status: upstream.status, headers: { "cache-control": "no-store" } });
-        }
-        const payload = await upstream.json() as { url?: unknown };
-        if (typeof payload.url !== "string") throw new Error("CASE returned no artifact URL");
-        const downloadUrl = new URL(payload.url);
-        if (downloadUrl.protocol !== "https:") throw new Error("CASE returned an unsafe artifact URL");
-        return Response.redirect(downloadUrl.href, 302);
-      } catch {
-        return Response.json({ error: "artifact_unavailable" }, { status: 502, headers: { "cache-control": "no-store" } });
-      }
-    }
-
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
       return handleImageOptimization(request, {
@@ -282,21 +194,7 @@ const worker = {
 
 export default worker;
 
-async function fetchOriginalArtifact(artifact: OriginalSubmissionArtifact, registryUrl: string, catalogToken: string): Promise<Response> {
-  return fetchArtifact(artifact.artifactId, registryUrl, catalogToken);
-}
 
-async function fetchArtifact(artifactId: DatasetPackage["artifactId"], registryUrl: string, catalogToken: string): Promise<Response> {
-  const signed = await fetch(`${registryUrl}/v1/artifacts/${encodeURIComponent(artifactId)}/download-url`, {
-    headers: { authorization: `Bearer ${catalogToken}`, accept: "application/json" },
-  });
-  if (!signed.ok) return signed;
-  const payload = await signed.json() as { url?: unknown };
-  if (typeof payload.url !== "string") throw new Error("CASE returned no artifact URL");
-  const downloadUrl = new URL(payload.url);
-  if (downloadUrl.protocol !== "https:") throw new Error("CASE returned an unsafe artifact URL");
-  return await fetch(downloadUrl, { headers: { accept: "application/octet-stream" } });
-}
 
 type SessionClaim = {
   openId?: unknown;

@@ -1,0 +1,29 @@
+name: Harbor Mirror CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ops/harbor-mirror/**
+      - .github/workflows/harbor-mirror-ci.yml
+  pull_request:
+    paths:
+      - ops/harbor-mirror/**
+      - .github/workflows/harbor-mirror-ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.9'
+      - name: Check shell syntax
+        run: bash -n ops/harbor-mirror/harbor-tasks-mirror
+      - name: Test with synthetic files and fake services
+        run: python3 -m unittest discover -s ops/harbor-mirror/tests -p 'test_*.py' -v

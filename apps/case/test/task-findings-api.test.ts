@@ -56,3 +56,16 @@ test("serves submissions without the former batch route", async () => {
     await server.close();
   }
 });
+
+
+test("original upload endpoints are retired even with a valid upload credential", async () => {
+  const token = "upload-token-with-at-least-32-characters";
+  const server = await startRegistryServer({ repository: {} as RegistryRepository, catalogToken: "catalog-token-with-at-least-32-characters", uploadToken: token, host: "127.0.0.1", port: 0 });
+  try {
+    for (const path of ["/v1/researcher-uploads", "/v1/researcher-uploads/upload-url"]) {
+      const response = await fetch(`${server.url}${path}`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: "not even valid JSON" });
+      assert.equal(response.status, 410);
+      assert.equal((await response.json() as { error: string }).error, "original_deliveries_moved_to_feishu_base");
+    }
+  } finally { await server.close(); }
+});

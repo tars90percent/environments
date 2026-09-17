@@ -1,9 +1,8 @@
-import type { CatalogSnapshot, CatalogVendor, CatalogVendorInteraction } from "../app/catalog";
-import type { DatasetSubmission } from "../app/dataset-archive";
+import type { CatalogSnapshot, CatalogVendor } from "../app/catalog";
 
 export function normalizeCaseCatalog(value: unknown): CatalogSnapshot {
   const root = record(value);
-  const vendors = records(root.vendors).map(normalizeVendor);
+  const vendors = records(root.vendors).map(normalizeVendor).filter((vendor) => vendor.submissions.length > 0);
   const submissions = vendors.flatMap((vendor) => vendor.submissions);
   const tasks = submissions.flatMap((submission) => submission.tasks);
   return {
@@ -18,54 +17,24 @@ export function normalizeCaseCatalog(value: unknown): CatalogSnapshot {
   };
 }
 
-export function normalizeCaseSubmission(value: unknown): DatasetSubmission {
-  return value as DatasetSubmission;
-}
 
 type JsonRecord = Record<string, unknown>;
 
 function normalizeVendor(value: JsonRecord): CatalogVendor {
-  const interactions = records(value.interactions).map(normalizeInteraction);
+
   return {
     id: text(value.id),
     ...(text(value.harborStorageId) ? { harborStorageId: text(value.harborStorageId) } : {}),
     name: text(value.name),
     short: text(value.short, text(value.name)),
-    hasTimeline: value.hasTimeline === true || interactions.length > 0,
-    interactions,
-    submissions: Array.isArray(value.submissions) ? value.submissions as CatalogVendor["submissions"] : [],
+    hasTimeline: false,
+    interactions: [],
+    submissions: records(value.submissions).map((submission) => ({
+      id: text(submission.id), date: text(submission.date), label: text(submission.label),
+      source: "Feishu Base", formats: ["harbor"], sourceEvents: [],
+      tasks: records(submission.tasks).filter((task) => task.kind === "task" && task.format === "harbor") as CatalogVendor["submissions"][number]["tasks"],
+    })).filter((submission) => submission.tasks.length > 0),
   };
-}
-
-function normalizeInteraction(value: JsonRecord): CatalogVendorInteraction {
-  return {
-    id: text(value.id),
-    kind: interactionKind(value.kind),
-    eventType: text(value.eventType),
-    title: text(value.title),
-    summary: text(value.summary),
-    channel: interactionChannel(value.channel),
-    evidence: interactionEvidence(value.evidence),
-    occurredAt: text(value.occurredAt),
-  };
-}
-
-function interactionKind(value: unknown): CatalogVendorInteraction["kind"] {
-  return new Set(["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"]).has(value as string)
-    ? value as CatalogVendorInteraction["kind"]
-    : "note";
-}
-
-function interactionChannel(value: unknown): CatalogVendorInteraction["channel"] {
-  return new Set(["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"]).has(value as string)
-    ? value as CatalogVendorInteraction["channel"]
-    : "other";
-}
-
-function interactionEvidence(value: unknown): CatalogVendorInteraction["evidence"] {
-  return new Set(["direct", "relayed", "automated", "internal"]).has(value as string)
-    ? value as CatalogVendorInteraction["evidence"]
-    : "internal";
 }
 
 function record(value: unknown): JsonRecord {

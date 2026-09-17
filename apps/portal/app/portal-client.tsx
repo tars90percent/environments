@@ -9,10 +9,8 @@ import type {
   CatalogSubmission,
   CatalogTask,
   CatalogVendor,
-  CatalogVendorInteraction,
   HarborCheckPhase,
 } from "./catalog";
-import { originalSubmissionArtifacts } from "./original-submission";
 import { displayArchivePath } from "./archive-path";
 import {
   benchmarkCategoryDefinitions,
@@ -22,7 +20,6 @@ import {
   type BenchmarkGroup,
   type HarborTaskContext,
 } from "./benchmark-landscape";
-import { groupSubmissionTasks, type SubmissionTaskGroup } from "./task-groups";
 import { findModelBenchmark } from "./model-benchmark-data";
 import type { ModelBenchmarkExplanation } from "./model-benchmark-explanations";
 import { ModelBenchmarkExplanationPage } from "./model-benchmark-explanation";
@@ -30,14 +27,12 @@ import { modelBenchmarkSamples } from "./model-benchmark-samples";
 import { ModelBenchmarkReferencePage } from "./model-benchmark-reference";
 import { VendorTaskDetail } from "./vendor-task-detail";
 import { ModelBenchmarkTaskDetail } from "./model-benchmark-task-detail";
-import { benchmarkDeliveries } from "./benchmark-deliveries";
-import { latestVendorInventory } from "./vendor-inventory";
 import { taskListHref, readTaskListLocation, type TaskListLocation } from "./task-navigation";
 import { previewTaskExamples } from "./local-preview/preview-task-examples";
 import { MiniMaxMark } from "./minimax-mark";
 
 type Language = "zh" | "en";
-type VendorSection = "tasks" | "submissions" | "timeline";
+const SRM_BASE_URL = "https://vrfi1sk8a0.feishu.cn/base/WqS9bTgadatBNusLu7aciS7wn8f";
 const TaskListContext = createContext({ returnTo: "/", localPreview: false });
 
 type PortalView = "benchmarks" | "vendors" | "model-benchmarks" | "model-explanation" | "model-task" | "vendor-task";
@@ -206,8 +201,6 @@ const phaseLabels: Record<HarborCheckPhase, string> = {
   nop: "Nop",
 };
 
-const TASK_GROUP_THRESHOLD = 100;
-const TASK_BATCH_SIZE = 50;
 
 export default function PortalClient({ user, initialCatalog, localPreview = false, initialView = "benchmarks", initialModelBenchmarkId, initialModelExplanation, initialModelTask, initialVendorTaskId, initialListLocation, initialTaskOrigin, initialLanguage }: {
   user: PortalUser;
@@ -226,7 +219,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   const [state, setState] = useState<"loading" | "ready" | "unavailable">(initialCatalog || initialView === "model-benchmarks" || initialView === "model-explanation" || (initialView === "model-task" || initialView === "vendor-task") ? "ready" : "loading");
   const [language, setLanguage] = useState<Language>(initialLanguage ?? initialListLocation?.language ?? initialTaskOrigin?.language ?? "zh");
   const [view, setView] = useState<PortalView>(initialListLocation?.view ?? initialView);
-  const [vendorSectionSelection, setVendorSectionSelection] = useState<{ vendorId: string; section: VendorSection } | null>(null);
   const [query, setQuery] = useState(initialListLocation?.query ?? "");
   const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string | null>(initialListLocation?.benchmark ?? null);
   const [selectedVendorId, setSelectedVendorId] = useState(initialListLocation?.vendor || vendorsForDisplay(initialCatalog?.vendors ?? [])[0]?.id || "");
@@ -310,9 +302,6 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     return vendors.filter((vendor) => vendorSearchText(vendor).includes(normalized));
   }, [query, vendors]);
   const selectedVendor = matchingVendors.find((vendor) => vendor.id === selectedVendorId) ?? matchingVendors[0];
-  const vendorSection = vendorSectionSelection && vendorSectionSelection.vendorId === selectedVendor?.id
-    ? vendorSectionSelection.section
-    : defaultVendorSection(selectedVendor);
   const selectedBenchmarkCategory = landscape?.categories.find((category) => category.id === selectedBenchmark?.categoryId);
   const initialModelBenchmark = initialModelTask
     ? findModelBenchmark(initialModelTask.benchmarkId)
@@ -332,7 +321,7 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
   function showVendors(vendorId?: string) {
     if (!catalog) setState("loading");
     setView("vendors");
-    setVendorSectionSelection(null);
+
     setSelectedBenchmarkId(null);
     setQuery("");
     if (vendorId) setSelectedVendorId(vendorId);
@@ -400,18 +389,12 @@ export default function PortalClient({ user, initialCatalog, localPreview = fals
     {state === "ready" && view === "vendors" && selectedVendor && <div className="portal-grid">
       <aside className="vendor-sidebar" aria-label={t.vendors}>
         <div className="sidebar-head"><strong>{t.vendorRecords}</strong></div>
-        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => { setSelectedVendorId(vendor.id); setVendorSectionSelection(null); }} type="button"><span><strong>{vendor.name}</strong><small>{vendorRecordSummary(vendor, language)}</small></span></button>)}</div>
+        <div className="vendor-list">{matchingVendors.map((vendor) => <button className={vendor.id === selectedVendor.id ? "active" : ""} key={vendor.id} onClick={() => { setSelectedVendorId(vendor.id);  }} type="button"><span><strong>{vendor.name}</strong><small>{vendorRecordSummary(vendor, language)}</small></span></button>)}</div>
       </aside>
       <section className="vendor-main">
-        <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h1>{selectedVendor.name}</h1><div className="vendor-meta">{selectedVendor.submissions.length > 0 && <><span>{selectedVendor.submissions.length} {countLabel(selectedVendor.submissions.length, language, "submission", t.submissions.toLowerCase())}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></>}{selectedVendor.interactions.length > 0 && <span>{selectedVendor.interactions.length} {t.interactions}</span>}</div></header>
-        <nav className="vendor-section-nav" aria-label={language === "zh" ? "供应商内容" : "Vendor sections"}>
-          {(["tasks", "submissions", "timeline"] as const).map((section) => <button type="button" key={section} aria-pressed={vendorSection === section} onClick={() => setVendorSectionSelection({ vendorId: selectedVendor.id, section })}>{section === "tasks" ? t.tasks : section === "submissions" ? t.submissions : language === "zh" ? "时间线" : "Timeline"}</button>)}
-        </nav>
-        {vendorSection === "timeline" && (selectedVendor.interactions.length ? <VendorInteractionTimeline interactions={selectedVendor.interactions} language={language} /> : <StateCard>{language === "zh" ? "暂无往来记录。" : "No interactions recorded yet."}</StateCard>)}
-        {vendorSection === "tasks" && <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />}
-        {vendorSection === "submissions" && selectedVendor.submissions.length === 0 && <StateCard>{t.noTasks}</StateCard>}
-        {vendorSection === "submissions" && selectedVendor.submissions.length > 0 && <section className="submission-history"><div className="section-title"><div><h3>{t.history}</h3><p>{t.historyNote}</p></div><span>{t.newest}</span></div>
-        <div className="submission-list">{selectedVendor.submissions.map((submission, index) => <SubmissionCard datasetHref={localPreview ? "/local-preview/dataset-download" : `/api/submissions/${encodeURIComponent(submission.id)}/dataset-download`} key={submission.id} language={language} latest={index === 0} open={index === 0} submission={submission} />)}</div></section>}
+        <header className="vendor-profile"><div className="vendor-kicker">{t.vendor}</div><h1>{selectedVendor.name}</h1><div className="vendor-meta">{selectedVendor.submissions.length > 0 && <><span>{selectedVendor.submissions.length} {countLabel(selectedVendor.submissions.length, language, "submission", t.submissions.toLowerCase())}</span><span>{selectedVendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} {t.taskRecords}</span></>}</div></header>
+        <p><a href={SRM_BASE_URL} target="_blank" rel="noreferrer">{language === "zh" ? "供应商往来与原始交付材料 ↗" : "Supplier history and original deliveries in Feishu Base ↗"}</a></p>
+        <VendorHarborTasks categories={landscape?.categories ?? []} downloadHref={localPreview ? "/local-preview/vendor-harbor-download" : `/api/vendors/${encodeURIComponent(selectedVendor.id)}/harbor-download`} language={language} vendor={selectedVendor} />
       </section>
     </div>}
     </div>
@@ -460,7 +443,6 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
   const primaryRecords = shortlist ? records.filter((record) => shortlist.vendorIds.includes(record.vendor.id)) : records;
   const otherRecords = shortlist ? records.filter((record) => !shortlist.vendorIds.includes(record.vendor.id)) : [];
   const primaryVendors = shortlist ? vendors.filter((vendor) => shortlist.vendorIds.includes(vendor.id)) : vendors;
-  const otherVendors = shortlist ? vendors.filter((vendor) => !shortlist.vendorIds.includes(vendor.id)) : [];
   const otherCount = benchmark.taskCount - benchmarkSampleCount(benchmark);
   const vendorNames = new Intl.ListFormat(language, { style: "long", type: "conjunction" }).format(shortlist?.vendorIds.flatMap((id) => {
     const vendor = primaryVendors.find((candidate) => candidate.id === id);
@@ -468,7 +450,6 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
   }) ?? []);
   const download = <div className="benchmark-catalog-download">{shortlist && <h3>{t.allCatalogSamples}</h3>}<HarborDownloadToolbar downloadHref={downloadHref} key={downloadHref} language={language} taskCount={benchmark.taskCount} /><p className="benchmark-download-note">{t.benchmarkDownloadNote}</p></div>;
   return <div className="benchmark-detail">
-    {benchmark.categoryId === "active-procurement" && <BenchmarkDeliveryTimeline vendors={primaryVendors} benchmarkId={benchmark.id} capabilityId={benchmark.capabilityId} language={language} onOpenVendor={onOpenVendor} />}
     <section className="benchmark-task-section">
       {shortlist && <div className="section-title"><div><h3>{t.shortlistedVendors}</h3><p>{t.shortlistedSamples}</p></div><span>{primaryRecords.length} {t.taskRecords}</span></div>}
       {shortlist && <div className="benchmark-scope-download">
@@ -480,7 +461,6 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
     {shortlist && (otherCount > 0 || benchmarkDeliveries(otherVendors, benchmark.id, benchmark.capabilityId).length > 0) && <details className="benchmark-other-samples" key={benchmark.id}>
       <summary><strong>{t.otherSamples}</strong><span>{otherRecords.length} {t.catalogSamples}</span></summary>
       <div className="benchmark-other-content">
-        <BenchmarkDeliveryTimeline vendors={otherVendors} benchmarkId={benchmark.id} capabilityId={benchmark.capabilityId} language={language} onOpenVendor={onOpenVendor} />
         <BenchmarkVendorSamples records={otherRecords} benchmark={benchmark} language={language} onOpenVendor={onOpenVendor} />
       </div>
     </details>}
@@ -491,46 +471,13 @@ export function BenchmarkDetail({ benchmark, downloadHref, language, onOpenVendo
 function BenchmarkVendorSamples({ records, benchmark, language, onOpenVendor }: { records: HarborTaskContext[]; benchmark: BenchmarkGroup; language: Language; onOpenVendor: (vendorId: string) => void }) {
   const t = text[language];
   const vendorGroups = groupRecordsByVendor(records);
-  const inventoryDirectionId = benchmark.inventoryDirectionId ?? (benchmark.id.startsWith("benchmark:") ? undefined : benchmark.id);
   return vendorGroups.length === 0 ? <StateCard>{t.noMatch}</StateCard> : <div className="benchmark-vendor-list">{vendorGroups.map(({ vendor, records: vendorRecords }) => <section className="benchmark-vendor-group" key={vendor.id}>
-    <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : countLabel(vendorRecords.length, language, "Harbor sample", "Harbor samples")}<b aria-hidden>→</b></span></button>{benchmark.categoryId === "active-procurement" && inventoryDirectionId && <VendorInventory vendor={vendor} benchmarkId={inventoryDirectionId} language={language} />}</header>
+    <header><button onClick={() => onOpenVendor(vendor.id)} type="button"><span><small>{t.offeredBy}</small><strong>{vendor.name}</strong></span><span>{vendorRecords.length} {language === "zh" ? "个 Harbor 样本" : countLabel(vendorRecords.length, language, "Harbor sample", "Harbor samples")}<b aria-hidden>→</b></span></button></header>
     <div className="task-list"><TaskColumnHeadings language={language} />{vendorRecords.map((record) => <TaskRow contextLabel={`${record.submission.label} · ${formatDate(record.submission.date, language)}`} hideBenchmark={benchmark.categoryId !== "active-procurement"} key={record.task.id} language={language} task={record.task} />)}</div>
   </section>)}</div>;
 }
 
-function BenchmarkDeliveryTimeline({ vendors, benchmarkId, capabilityId, language, onOpenVendor }: { vendors: CatalogVendor[]; benchmarkId: string; capabilityId?: string; language: Language; onOpenVendor: (vendorId: string) => void }) {
-  const deliveries = benchmarkDeliveries(vendors, benchmarkId, capabilityId);
-  if (!deliveries.length) return null;
-  const total = deliveries.reduce((sum, delivery) => sum + delivery.taskCount, 0);
-  return <section className="benchmark-delivery-timeline" aria-label={language === "zh" ? "样本交付时间线" : "Sample delivery timeline"}>
-    <div className="section-title"><div><h3>{language === "zh" ? "样本交付时间线" : "Sample delivery timeline"}</h3><p>{language === "zh" ? "按提交日期排列，包含非 Harbor 任务，不计轨迹。横向滚动查看全部交付。" : "By submission date, including non-Harbor tasks and excluding traces. Scroll horizontally for all deliveries."}</p></div><span>{deliveries.length} {language === "zh" ? "次交付" : "deliveries"} · {total} {language === "zh" ? "个样本" : "samples"}</span></div>
-    {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Keyboard users need focus to scroll this horizontal region. */}
-    <div className="delivery-timeline-scroll" tabIndex={0} role="region" aria-label={language === "zh" ? "交付历史，可横向滚动" : "Delivery history, scroll horizontally"}>
-      <ol>{deliveries.map((delivery) => <li key={`${delivery.vendorId}:${delivery.submissionId}`}>
-        <time dateTime={delivery.date}>{formatDate(delivery.date, language)}</time>
-        <span className="delivery-timeline-dot" aria-hidden />
-        <article>
-          <button type="button" onClick={() => onOpenVendor(delivery.vendorId)} aria-label={`${text[language].openVendor}: ${delivery.vendorName}`}>{delivery.vendorName}<span aria-hidden> ↗</span></button>
-          <strong>{delivery.taskCount} {language === "zh" ? "个样本" : delivery.taskCount === 1 ? "sample" : "samples"}</strong>
-          <small>{delivery.harborCount} Harbor{delivery.harborCount < delivery.taskCount && ` · ${delivery.taskCount - delivery.harborCount} ${language === "zh" ? "非 Harbor" : "non-Harbor"}`}</small>
-          <details><summary>{language === "zh" ? "提交详情" : "Submission details"}</summary><p>{delivery.label}</p><small>{delivery.submissionId}</small></details>
-        </article>
-      </li>)}</ol>
-    </div>
-  </section>;
-}
 
-function VendorInventory({ vendor, benchmarkId, language }: { vendor: CatalogVendor; benchmarkId: string; language: Language }) {
-  const claim = latestVendorInventory(vendor, benchmarkId);
-  return <div className="vendor-inventory">
-    <span>{language === "zh" ? "可供库存" : "Available inventory"}</span>
-    <p>{claim?.title ?? (language === "zh" ? "库存尚未确认" : "Inventory not confirmed")}</p>
-    {claim && <>
-      <small>{language === "zh" ? "供应商自报" : "Vendor-reported"} · <time dateTime={claim.occurredAt}>{formatInteractionDate(claim.occurredAt, language)}</time> · {interactionChannelLabel(claim.channel, language)}{claim.evidence === "relayed" ? (language === "zh" ? "（用户转述）" : " (relayed by user)") : ""}</small>
-      <details><summary>{language === "zh" ? "查看证据" : "View evidence"}</summary><p>{claim.summary.split(/(https:\/\/[^\s]+)/g).map((part, index) => part.startsWith("https://") ? <a key={index} href={part} target="_blank" rel="noreferrer">{language === "zh" ? "来源消息 ↗" : "Source message ↗"}</a> : part)}</p></details>
-    </>}
-  </div>;
-}
 
 function groupRecordsByVendor(records: HarborTaskContext[]): Array<{ vendor: CatalogVendor; records: HarborTaskContext[] }> {
   const groups = new Map<string, { vendor: CatalogVendor; records: HarborTaskContext[] }>();
@@ -595,95 +542,12 @@ function HarborDownloadToolbar({ downloadHref, language, taskCount, buttonLabel,
   return <div className="vendor-harbor-toolbar">{!hideCount && <span>{taskCount} {t.harbor}</span>}<button disabled={downloadState === "preparing" || taskCount === 0} onClick={prepareDownload} type="button">{downloadState === "preparing" ? t.preparingHarborDownload : downloadState === "error" ? t.retryHarborDownload : buttonLabel ?? t.downloadAllHarbor}</button>{downloadState === "error" && <small role="status">{t.harborDownloadFailed}</small>}</div>;
 }
 
-function VendorInteractionTimeline({ interactions, language }: { interactions: CatalogVendorInteraction[]; language: Language }) {
-  const t = text[language];
-  if (interactions.length === 0) return null;
-  return <section className="vendor-interactions">
-    <header className="interaction-heading"><div><span>{language === "zh" ? "供应商记录" : "Vendor record"}</span><h3>{t.interactionTimeline}</h3></div><small>{interactions.length} {t.interactions}</small></header>
-    <ol className="interaction-list">{interactions.map((interaction) => <li key={interaction.id}>
-      <time dateTime={interaction.occurredAt}>{formatInteractionDate(interaction.occurredAt, language)}</time>
-      <span className="interaction-marker" aria-hidden />
-      <article>
-        <div className="interaction-classification"><span>{interactionKindLabel(interaction.kind, language)}</span>{interaction.channel !== "other" && <span>{interactionChannelLabel(interaction.channel, language)}</span>}<span>{interactionEvidenceLabel(interaction.evidence, language)}</span></div>
-        <h4>{interaction.title}</h4>
-        <p>{interaction.summary}</p>
-      </article>
-    </li>)}</ol>
-  </section>;
-}
 
-function SubmissionCard({ submission, open, latest, language, datasetHref }: { submission: CatalogSubmission; open: boolean; latest: boolean; language: Language; datasetHref: string }) {
-  const t = text[language];
-  const harborTaskCount = submission.tasks.filter((task) => task.format === "harbor").length;
-  const grouped = submission.tasks.length > TASK_GROUP_THRESHOLD;
-  return <details className="submission-card" open={open}>
-    <summary className="submission-summary">
-      <span className="submission-date"><strong>{formatDate(submission.date, language)}</strong>{latest && <small>{t.latest}</small>}</span>
-      <span className="submission-name"><strong>{submission.label}</strong><code>{friendlySubmissionSource(submission, language)}</code></span>
-      <span className="submission-count"><strong>{submission.tasks.length} {t.taskRecords}</strong><small>{harborTaskCount} {t.harbor}</small></span>
-      <span className="disclosure">▾</span>
-    </summary>
-    <div className="submission-body">
-      <section className="dataset-access"><div className="dataset-copy"><span>CASE DATASET</span><h4>{t.tasks}</h4><p>{submission.tasks.length ? t.datasetNote : t.noTasks}</p></div><div className="dataset-metrics"><span><strong>{submission.tasks.length}</strong><small>{t.taskRecords}</small></span><span><strong>{submission.tasks.filter((task) => task.format === "harbor").length}</strong><small>{t.harbor}</small></span></div>{submission.tasks.some((task) => task.artifactId) && <a href={datasetHref}>{t.dataset}</a>}</section>
-      <div className="submission-section-head"><div><h4>{grouped ? t.taskGroups : t.tasks}</h4>{grouped && <p>{t.groupedTaskNote}</p>}</div><span>{submission.tasks.length} {t.taskRecords}</span></div>
-      <SubmissionTaskList language={language} tasks={submission.tasks} />
-      <OriginalSubmissionPanel language={language} submission={submission} />
-    </div>
-  </details>;
-}
 
-function SubmissionTaskList({ tasks, language }: { tasks: CatalogTask[]; language: Language }) {
-  const t = text[language];
-  if (tasks.length === 0) return <div className="task-list"><TaskColumnHeadings language={language} /><p className="empty-task-list">{t.noTasks}</p></div>;
-  if (tasks.length <= TASK_GROUP_THRESHOLD) return <div className="task-list"><TaskColumnHeadings language={language} />{tasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>;
-  return <div className="task-group-list">{groupSubmissionTasks(tasks).map((group) => <FoldedTaskGroup group={group} key={group.id} language={language} />)}</div>;
-}
 
-function FoldedTaskGroup({ group, language }: { group: SubmissionTaskGroup; language: Language }) {
-  const t = text[language];
-  const [expanded, setExpanded] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(TASK_BATCH_SIZE);
-  const visibleTasks = expanded ? group.tasks.slice(0, visibleCount) : [];
-  const remaining = Math.max(group.tasks.length - visibleTasks.length, 0);
-  const nextCount = Math.min(TASK_BATCH_SIZE, remaining);
-  return <details className="task-group" onToggle={(event) => setExpanded(event.currentTarget.open)}>
-    <summary className="task-group-summary">
-      <span><strong>{group.benchmark.displayName}</strong><small>{group.kind === "trace" ? t.traces : t.tasks}</small></span>
-      <span><strong>{group.tasks.length}</strong><small>{t.taskRecords}</small></span>
-      <span aria-hidden className="disclosure">▾</span>
-    </summary>
-    {expanded && <div className="task-group-body">
-      <div className="task-list"><TaskColumnHeadings language={language} />{visibleTasks.map((task) => <TaskRow key={task.id} language={language} task={task} />)}</div>
-      {remaining > 0 && <div className="task-group-more"><span>{showingLabel(visibleTasks.length, group.tasks.length, language)}</span><button onClick={() => setVisibleCount((count) => count + TASK_BATCH_SIZE)} type="button">{showMoreLabel(nextCount, language)}</button></div>}
-    </div>}
-  </details>;
-}
 
-function showingLabel(visible: number, total: number, language: Language) {
-  return language === "zh" ? `已显示 ${visible} / ${total}` : `Showing ${visible} of ${total}`;
-}
 
-function showMoreLabel(count: number, language: Language) {
-  return language === "zh" ? `再显示 ${count} 条` : `Show ${count} more`;
-}
 
-function OriginalSubmissionPanel({ submission, language }: { submission: CatalogSubmission; language: Language }) {
-  const t = text[language];
-  const artifacts = originalSubmissionArtifacts(submission);
-  const knownBytes = artifacts.map((artifact) => artifact.sizeBytes).filter((size): size is number => typeof size === "number" && Number.isFinite(size) && size >= 0);
-  const size = knownBytes.length === artifacts.length && artifacts.length ? formatBytes(knownBytes.reduce((sum, value) => sum + value), language) : null;
-  return <section className="original-submission"><div className="submission-section-head"><h4>{t.sources}</h4><span>{artifacts.length}</span></div><div className="original-card">
-    <div className="original-copy"><strong>{fileCount(artifacts.length, language)}{size ? ` · ${size}` : ""}</strong><p>{t.originalNote}</p><div className="original-provenance">{submission.sourceEvents.map((event) => <span key={event.id}>{friendlyChannel(event.channel, language)} · {formatTimestamp(event.receivedAt, language)}{event.sender ? ` · ${event.sender}` : ""}</span>)}</div></div>
-    <div className={`original-actions${artifacts.length > 1 ? " multiple" : ""}`}>{artifacts.map((artifact) => <a
-      aria-label={`${t.downloadOne}: ${artifact.displayName}`}
-      className={artifacts.length === 1 ? "primary" : undefined}
-      href={`/api/artifacts/${encodeURIComponent(artifact.artifactId)}/download`}
-      key={artifact.artifactId}
-      title={artifact.displayName}
-    >{artifacts.length === 1 ? t.downloadOne : <><span>{artifact.displayName}</span>{artifact.sizeBytes !== null && <small>{formatBytes(artifact.sizeBytes, language)}</small>}</>}</a>)}</div>
-    {artifacts.length === 0 && <p className="original-empty">{t.noOriginalFile}</p>}
-  </div></section>;
-}
 
 function TaskColumnHeadings({ language }: { language: Language }) {
   return <div className="task-column-headings" aria-hidden="true"><span>{text[language].task}</span><div><span>Environment</span><span>Oracle</span><span>Nop</span></div><span /></div>;
@@ -731,13 +595,9 @@ function HarborChecks({ task, language }: { task: CatalogTask; language: Languag
   })}</div>;
 }
 
-function defaultVendorSection(vendor?: CatalogVendor): VendorSection {
-  if (vendor?.submissions.some((submission) => submission.tasks.some((task) => task.kind === "task" && task.format === "harbor"))) return "tasks";
-  return vendor?.submissions.length ? "submissions" : "timeline";
-}
 
 function hasVendorRecord(vendor: CatalogVendor): boolean {
-  return vendor.submissions.length > 0 || vendor.hasTimeline || vendor.interactions.length > 0;
+  return vendor.submissions.some((submission) => submission.tasks.some((task) => task.kind === "task" && task.format === "harbor"));
 }
 
 function vendorsForDisplay(vendors: CatalogVendor[]): CatalogVendor[] {
@@ -749,12 +609,11 @@ function vendorRecordSummary(vendor: CatalogVendor, language: Language): string 
   const submissionSummary = vendor.submissions.length > 0
     ? `${vendor.submissions.length} ${countLabel(vendor.submissions.length, language, "submission", text[language].submissions.toLowerCase())} · ${vendor.submissions.reduce((sum, submission) => sum + submission.tasks.length, 0)} ${text[language].taskRecords}`
     : "";
-  const interactionSummary = vendor.interactions.length > 0 ? `${vendor.interactions.length} ${text[language].interactions}` : "";
-  return [submissionSummary, interactionSummary].filter(Boolean).join(" · ");
+  return submissionSummary;
 }
 
 function vendorSearchText(vendor: CatalogVendor): string {
-  return [vendor.name, vendor.short, ...vendor.interactions.flatMap((interaction) => [interaction.title, interaction.summary, interaction.eventType]), ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, sampleGroup(task).displayName, sampleCapability(task).displayName, task.benchmark.displayName, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
+  return [vendor.name, vendor.short, ...vendor.submissions.flatMap((submission) => [submission.label, submission.source, ...submission.tasks.flatMap((task) => [task.title, task.stableKey, sampleGroup(task).displayName, sampleCapability(task).displayName, task.benchmark.displayName, task.sourcePath ? displayArchivePath(task.sourcePath) : ""])])].join(" ").toLowerCase();
 }
 
 function benchmarkGroupSearchText(group: BenchmarkGroup, language: Language): string {
@@ -801,91 +660,18 @@ function updatePortalPath(path: string, localPreview: boolean) {
   if (window.location.pathname !== destination) window.history.replaceState(window.history.state, "", destination);
 }
 
-function friendlySubmissionSource(submission: CatalogSubmission, language: Language): string {
-  const channel = submission.sourceEvents[0]?.channel;
-  if (channel === "workspace" || channel === "upload" || /local (folder )?handoff/i.test(submission.source)) return text[language].directCaseImport;
-  return friendlyChannel(channel ?? submission.source, language);
-}
 
-function friendlyChannel(channel: string, language: Language): string {
-  const normalized = channel.trim().toLowerCase();
-  if (normalized === "workspace" || normalized === "upload") return text[language].directCaseImport;
-  if (normalized === "email" || normalized === "mail") return language === "zh" ? "邮件" : "Email";
-  if (normalized === "website") return language === "zh" ? "网站" : "Website";
-  if (normalized === "vendor_portal") return language === "zh" ? "供应商门户" : "Vendor portal";
-  if (normalized === "feishu") return "Feishu";
-  if (normalized === "slack") return "Slack";
-  return channel;
-}
 
-function fileCount(count: number, language: Language): string {
-  if (language === "zh") return `${count} 个原始文件`;
-  return `${count} original ${count === 1 ? "file" : "files"}`;
-}
 
-function formatBytes(bytes: number, language: Language): string {
-  return new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en", { style: "unit", unit: bytes < 1024 ? "byte" : bytes < 1024 ** 2 ? "kilobyte" : "megabyte", unitDisplay: "short", maximumFractionDigits: bytes < 1024 ? 0 : 1 }).format(bytes < 1024 ? bytes : bytes < 1024 ** 2 ? bytes / 1024 : bytes / 1024 ** 2);
-}
 
 function formatDate(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
 
-function formatInteractionDate(value: string, language: Language): string {
-  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    timeZone: "Asia/Shanghai",
-  }).format(new Date(value));
-}
 
-function interactionKindLabel(kind: CatalogVendorInteraction["kind"], language: Language): string {
-  const labels: Record<CatalogVendorInteraction["kind"], [string, string]> = {
-    contact: ["Contact", "接洽"],
-    sample: ["Sample", "样本"],
-    evaluation: ["Review", "评估"],
-    commercial: ["Commercial", "商务"],
-    delivery: ["Delivery", "交付"],
-    acceptance: ["Acceptance", "验收"],
-    payment: ["Payment", "付款"],
-    relationship: ["Follow-up", "跟进"],
-    note: ["Record", "记录"],
-  };
-  return labels[kind][language === "zh" ? 1 : 0];
-}
 
-function interactionChannelLabel(channel: CatalogVendorInteraction["channel"], language: Language): string {
-  const labels: Record<CatalogVendorInteraction["channel"], [string, string]> = {
-    meeting: ["Meeting", "会议"],
-    email: ["Email", "邮件"],
-    feishu: ["Feishu", "Feishu"],
-    slack: ["Slack", "Slack"],
-    wechat: ["WeChat", "微信"],
-    file_delivery: ["File delivery", "文件交付"],
-    internal: ["Internal record", "内部记录"],
-    other: ["Channel not recorded", "渠道未记录"],
-  };
-  return labels[channel][language === "zh" ? 1 : 0];
-}
 
-function interactionEvidenceLabel(evidence: CatalogVendorInteraction["evidence"], language: Language): string {
-  const labels: Record<CatalogVendorInteraction["evidence"], [string, string]> = {
-    direct: ["Direct record", "直接记录"],
-    relayed: ["Internally relayed", "内部转述"],
-    automated: ["Automated notice", "自动通知"],
-    internal: ["Internal decision", "内部决策"],
-  };
-  return labels[evidence][language === "zh" ? 1 : 0];
-}
 
-function formatTimestamp(value: string, language: Language): string {
-  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Shanghai",
-  }).format(new Date(value));
-}
 
 const previewAbundantInteractions: CatalogVendorInteraction[] = [
   {

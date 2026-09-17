@@ -26,6 +26,14 @@ const run = (command, args) => execFileSync(command, args, {
 
 try {
   mkdirSync(env.CODEX_HOME);
+  // The policy is copied into a persistent workspace; its local references are
+  // resolved from /app and must remain readable without network access.
+  const guide = readFileSync("/app/AGENTS.md", "utf8");
+  for (const [, target] of guide.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+    if (/^(?:https?:|#)/.test(target)) continue;
+    assert.ok(readFileSync(join("/app", target.split("#")[0]), "utf8").trim(),
+      `Missing bundled guide reference: ${target}`);
+  }
   const { dependencies } = JSON.parse(readFileSync("/app/package.json", "utf8"));
   assert.ok(run("codex", ["--version"]).includes(dependencies["@openai/codex-sdk"]));
   assert.ok(run("lark-cli", ["--version"]).includes(dependencies["@larksuite/cli"]));

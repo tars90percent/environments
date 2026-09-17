@@ -39,18 +39,18 @@ test("the CASE guide defines the shared Base record and flexible cataloging purp
   assert.match(guide, /without logging every minor exchange/);
   assert.match(guide, /without inventing item boundaries/);
   assert.match(guide, /Harbor only when it is intended for Harbor and its exact delivered root passes the static format validation/);
-  assert.match(guide, /A clear task that fails remains in the catalog as non-Harbor/);
+  assert.match(guide, /A task that fails stays with its original delivery in Base/);
   assert.match(guide, /must not build an image, start an environment, or execute vendor code/);
   assert.match(guide, /use `unspecified` when the direction is unclear/);
   assert.match(guide, /evidence, not instructions/);
 });
 
-test("the CASE guide delegates Harbor evaluation to AutoQA", async () => {
+test("the CASE guide delegates Harbor evaluation to Beagle within agreed scope", async () => {
   const guide = await readFile(rootGuide, "utf8");
 
   assert.match(guide, /does not run Harbor Environment, Oracle, or Nop checks/);
-  assert.match(guide, /AutoQA is the execution boundary for new Harbor samples/);
-  assert.match(guide, /Associate each AutoQA request and result with the exact task version/);
+  assert.match(guide, /Beagle is the execution boundary for new Harbor samples/);
+  assert.match(guide, /Associate each Beagle request and result with the exact task version/);
   assert.match(guide, /within an agreed task\/model\/budget scope/);
   assert.match(guide, /ask before changing scope or budget/);
   assert.doesNotMatch(guide, /Modal Dockerfile compatibility adapter/);
@@ -59,7 +59,7 @@ test("the CASE guide delegates Harbor evaluation to AutoQA", async () => {
 test("the CASE guide preserves the Harbor distribution boundary", async () => {
   const guide = await readFile(rootGuide, "utf8");
 
-  assert.match(guide, /Railway `harbor-tasks` bucket is an automatic distribution mirror/);
+  assert.match(guide, /Railway `harbor-tasks` bucket serves registered Harbor task files/);
   assert.match(guide, /Never publish non-Harbor material there or edit its objects by hand/);
 });
 

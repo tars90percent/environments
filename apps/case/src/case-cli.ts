@@ -5,6 +5,8 @@ import { realpathSync } from "node:fs";
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { SRM_ONLY_MESSAGE } from "./registry/srm-boundary.js";
+
 const currentFile = fileURLToPath(import.meta.url);
 
 if (process.argv[1] && realpathSync(process.argv[1]) === currentFile) {
@@ -22,13 +24,8 @@ export async function runCaseCli(arguments_: string[]): Promise<number> {
     case "registry":
       if (!rest.length) return invalid("registry requires a command");
       return runNodeEntry("registry-cli", rest);
-    case "intake": {
-      const [source, planPath, ...extra] = rest;
-      if (!planPath || extra.length) return invalid("intake requires a source and one plan file");
-      if (source === "feishu") return runNodeEntry("intake-plan-cli", ["capture-feishu-plan", planPath]);
-      if (source === "mail") return runNodeEntry("mail-intake-plan-cli", ["capture-mail-plan", planPath]);
-      return invalid("intake source must be feishu or mail");
-    }
+    case "intake":
+      return invalid(SRM_ONLY_MESSAGE);
     case "harbor-tasks":
       if (!rest.length) return invalid("harbor-tasks requires plan, publish, plan-all, or publish-all");
       return runNodeEntry("harbor-export-cli", rest);
@@ -70,8 +67,6 @@ function usage(): string {
   return [
     "Usage:",
     "  casectl registry <command> [arguments]",
-    "  casectl intake feishu <plan.json>",
-    "  casectl intake mail <plan.json>",
     "  casectl harbor-tasks plan|publish <submission-id> [submission-id ...]",
     "  casectl harbor-tasks plan-all|publish-all",
     "  casectl task-package <command> [arguments]",
