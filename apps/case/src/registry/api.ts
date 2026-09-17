@@ -1,16 +1,15 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { basename } from "node:path";
-import { ArtifactStore, contentAddressedStorageKey } from "./artifacts.js";
+import { ArtifactStore } from "./artifacts.js";
 import { RegistryConflictError, RegistryNotFoundError } from "./postgres.js";
 import { registryFileReferences } from "./file-references.js";
 import type { RegistryRepository } from "./repository.js";
-import type { ResearcherUploadInput } from "./types.js";
 import {
-  parseResearcherUpload,
   ValidationError,
 } from "./validation.js";
+
+import { SRM_BASE_URL } from "./srm-boundary.js";
 
 type RegistryServerOptions = {
   repository: RegistryRepository;
@@ -57,27 +56,8 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   const role = authenticate(request, options);
   if (!role) return sendJson(response, 401, { error: "unauthorized" });
 
-  if (method === "POST" && url.pathname === "/v1/researcher-uploads/upload-url") {
-    if (role !== "upload") return sendJson(response, 403, { error: "upload_token_required" });
-    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
-    const body = asObject(await readJson(request));
-    const sha256 = requiredSha256(body.sha256, "sha256");
-    const sizeBytes = boundedInteger(body.sizeBytes, "sizeBytes", 1, MAX_RESEARCHER_UPLOAD_BYTES);
-    const contentType = boundedRequiredString(body.contentType, "contentType", 300);
-    return sendJson(response, 200, await options.artifactStore.createUploadUrl({
-      key: contentAddressedStorageKey(sha256),
-      contentType,
-      sha256,
-      sizeBytes,
-    }));
-  }
-
-  if (method === "POST" && url.pathname === "/v1/researcher-uploads") {
-    if (role !== "upload") return sendJson(response, 403, { error: "upload_token_required" });
-    if (!options.artifactStore) return sendJson(response, 503, { error: "artifact_store_unavailable" });
-    const upload = parseResearcherUpload(await readJson(request));
-    if (upload.artifact.sizeBytes > MAX_RESEARCHER_UPLOAD_BYTES) throw new RequestError(413, "upload_too_large");
-    return sendJson(response, 201, await recordResearcherUpload(upload, options));
+  if (method === "POST" && ["/v1/researcher-uploads", "/v1/researcher-uploads/upload-url"].includes(url.pathname)) {
+    return sendJson(response, 410, { error: "original_deliveries_moved_to_feishu_base", url: SRM_BASE_URL });
   }
 
   if (role !== "catalog") return sendJson(response, 403, { error: "catalog_token_required" });
@@ -124,99 +104,6 @@ async function handle(request: IncomingMessage, response: ServerResponse, option
   return sendJson(response, 404, { error: "not_found" });
 }
 
-async function recordResearcherUpload(upload: ResearcherUploadInput, options: RegistryServerOptions) {
-  if (!options.artifactStore) throw new RequestError(503, "artifact_store_unavailable");
-  const directoryEntry = (await options.repository.vendorDirectory()).find((vendor) => vendor.id === upload.vendorId);
-  if (!directoryEntry) throw new RequestError(404, "vendor_not_found");
-
-  const vendor = {
-    id: directoryEntry.id,
-    name: directoryEntry.name,
-    short: directoryEntry.short,
-    description: directoryEntry.description,
-    aliases: directoryEntry.aliases,
-  };
-  const filename = safeUploadName(upload.artifact.originalName);
-  const storageKey = contentAddressedStorageKey(upload.artifact.sha256);
-  const artifactId = `artifact:sha256:${upload.artifact.sha256}`;
-  const sourceEventId = `portal-upload:${upload.id}`;
-  const sourceItemId = `source-item:portal-upload:${upload.id}`;
-  const submissionId = `researcher-upload:${upload.id}`;
-  const uploadDate = new Date(upload.uploadedAt).toISOString().slice(0, 10);
-
-  await options.artifactStore.verifyObject({
-    key: storageKey,
-    sha256: upload.artifact.sha256,
-    sizeBytes: upload.artifact.sizeBytes,
-  });
-  await options.repository.captureSubmission({
-    vendor,
-    submission: {
-      id: submissionId,
-      date: uploadDate,
-      label: upload.label,
-      sourceLabel: "Researcher upload through the portal",
-      formats: [],
-      metadata: {
-        countUnit: "sample_files",
-        sampleFileCount: 1,
-        intakeMethod: "researcher_portal_upload",
-        uploaderOpenId: upload.researcher.openId,
-        ...(upload.note ? { researcherNote: upload.note } : {}),
-      },
-    },
-    artifacts: [{
-      id: artifactId,
-      kind: "source_payload",
-      storageKey,
-      sha256: upload.artifact.sha256,
-      sizeBytes: upload.artifact.sizeBytes,
-      contentType: upload.artifact.contentType,
-      metadata: {
-        originalName: filename,
-        source: "researcher_portal_upload",
-        intakePurpose: "sample_evaluation",
-        uploaderOpenId: upload.researcher.openId,
-      },
-    }],
-    sources: [{
-      sourceEvent: {
-        id: sourceEventId,
-        channel: "upload",
-        externalRef: `portal-upload://${upload.id}`,
-        sender: upload.researcher.name,
-        receivedAt: upload.uploadedAt,
-        rawArtifactId: artifactId,
-        metadata: {
-          uploadId: upload.id,
-          intakePurpose: "sample_evaluation",
-          uploaderOpenId: upload.researcher.openId,
-          uploaderUnionId: upload.researcher.unionId,
-          uploaderTenantKey: upload.researcher.tenantKey,
-          ...(upload.note ? { researcherNote: upload.note } : {}),
-        },
-      },
-      items: [{
-        id: sourceItemId,
-        kind: sourceKindFor(filename),
-        displayName: filename,
-        artifactId,
-        mediaType: upload.artifact.contentType,
-        contentSha256: upload.artifact.sha256,
-        sizeBytes: upload.artifact.sizeBytes,
-        fetchStatus: "snapshotted",
-        parseStatus: "not_requested",
-        mutable: false,
-        capturedAt: upload.uploadedAt,
-        metadata: { uploadId: upload.id, originalFilename: filename, intakePurpose: "sample_evaluation" },
-      }],
-      relations: [],
-    }],
-    actor: `portal:${upload.researcher.openId}`,
-  });
-
-  return { uploadId: upload.id, submissionId, sourceEventId, artifactId };
-}
 
 function authenticate(request: IncomingMessage, options: RegistryServerOptions): "catalog" | "upload" | null {
   return registryRole(request.headers.authorization, options.catalogToken, options.uploadToken);
@@ -236,21 +123,6 @@ function safeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buffer.length;
-    if (size > 10 * 1024 * 1024) throw new RequestError(413, "request_too_large");
-    chunks.push(buffer);
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch {
-    throw new RequestError(400, "invalid_json");
-  }
-}
 
 function sendJson(response: ServerResponse, status: number, value: unknown): void {
   if (response.headersSent) return;
@@ -260,7 +132,6 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
 }
 
 function sendError(response: ServerResponse, error: unknown): void {
-  if (error instanceof RequestError) return sendJson(response, error.status, { error: error.code });
   if (error instanceof ValidationError) return sendJson(response, 400, { error: "validation_error", message: error.message });
   if (error instanceof RegistryConflictError) return sendJson(response, 409, { error: "registry_conflict", message: error.message });
   if (error instanceof RegistryNotFoundError) return sendJson(response, 404, { error: "registry_not_found", message: error.message });
@@ -272,55 +143,6 @@ function setSecurityHeaders(response: ServerResponse): void {
   response.setHeader("cache-control", "no-store");
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("referrer-policy", "no-referrer");
-}
-
-class RequestError extends Error {
-  constructor(readonly status: number, readonly code: string) {
-    super(code);
-  }
-}
-
-function asObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new RequestError(400, "object_required");
-  return value as Record<string, unknown>;
-}
-
-function requiredString(value: unknown, name: string): string {
-  if (typeof value !== "string" || !value.trim()) throw new RequestError(400, `${name}_required`);
-  return value.trim();
-}
-
-function boundedInteger(value: unknown, name: string, minimum: number, maximum: number): number {
-  if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) {
-    throw new RequestError(400, `${name}_invalid`);
-  }
-  return value as number;
-}
-
-const MAX_RESEARCHER_UPLOAD_BYTES = 250 * 1024 * 1024;
-
-function boundedRequiredString(value: unknown, name: string, maximum: number): string {
-  const parsed = requiredString(value, name);
-  if (parsed.length > maximum) throw new RequestError(400, `${name}_too_long`);
-  return parsed;
-}
-
-function requiredSha256(value: unknown, name: string): string {
-  const parsed = requiredString(value, name).toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(parsed)) throw new RequestError(400, `${name}_invalid`);
-  return parsed;
-}
-
-function safeUploadName(value: string): string {
-  return basename(value.replace(/\\/g, "/")).replace(/[\r\n"]/g, "_").slice(0, 240) || "sample";
-}
-
-function sourceKindFor(value: string): "archive" | "pdf" | "spreadsheet" | "attachment" {
-  const lower = value.toLowerCase();
-  if ([".zip", ".rar", ".tar.gz", ".tgz", ".tar", ".gz", ".zst"].some((suffix) => lower.endsWith(suffix))) return "archive";
-  if (lower.endsWith(".pdf")) return "pdf";
-  if ([".xlsx", ".xls", ".csv"].some((suffix) => lower.endsWith(suffix))) return "spreadsheet";
-  return "attachment";
 }
 
 function safeError(error: unknown): string {

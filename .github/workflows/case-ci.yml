@@ -6,12 +6,22 @@ on:
       - main
     paths:
       - AGENTS.md
+      - docs/beagle.md
+      - docs/srm-data-boundary.md
+      - ops/harbor-mirror/README.md
+      - ops/harbor-archives/README.md
+      - apps/portal/README.md
       - apps/case/**
       - packages/**
       - .github/workflows/case-ci.yml
   pull_request:
     paths:
       - AGENTS.md
+      - docs/beagle.md
+      - docs/srm-data-boundary.md
+      - ops/harbor-mirror/README.md
+      - ops/harbor-archives/README.md
+      - apps/portal/README.md
       - apps/case/**
       - packages/**
       - .github/workflows/case-ci.yml

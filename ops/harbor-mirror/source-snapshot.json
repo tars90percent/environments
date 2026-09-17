@@ -1,0 +1,21 @@
+{
+  "description": "Byte-identical source snapshot retrieved from the TARS development machine; credentials and state excluded.",
+  "retrieved_on": "2026-09-17",
+  "files": [
+    {
+      "source": "harbor-tasks-pipeline",
+      "installed_path": "/usr/local/sbin/harbor-tasks-pipeline",
+      "sha256": "55c8f855aed3bc0eb8fe7e6dbf8d836e0bdee7b8eebf8eef2597dbc13c6aa6ad"
+    },
+    {
+      "source": "harbor-tasks-mirror",
+      "installed_path": "/usr/local/sbin/harbor-tasks-mirror",
+      "sha256": "186a0cfa3f84e2f6920bdae38ecda607fe26633abea98a99bc97cba534f25241"
+    },
+    {
+      "source": "harbor-eve-retire.py",
+      "installed_path": "/usr/local/libexec/harbor-eve-retire.py",
+      "sha256": "451b20e237fedf85d621e0137aca35e230c4840dd66658fd328cd8fe6ec166b5"
+    }
+  ]
+}

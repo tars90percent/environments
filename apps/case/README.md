@@ -3,28 +3,56 @@
 TARS's always-on Feishu colleague for vendor task-sample operations, powered by
 Codex.
 
-CASE owns the canonical sample registry used by its own tools and the portal.
-PostgreSQL holds vendors, original source graphs, dated submissions, parsed
-tasks or traces, their general benchmark directions, three Harbor check phases,
-non-conclusive check attempts, findings, and operational work.
-S3-compatible object storage holds immutable payloads, task artifacts,
-and check evidence.
+The [SRM Feishu Base](https://vrfi1sk8a0.feishu.cn/base/WqS9bTgadatBNusLu7aciS7wn8f)
+owns supplier history, original deliveries, receipt/source metadata, feedback and
+procurement. CASE maintains the Harbor task catalog and technical storage used
+by the portal and JFS distribution. Beagle is the rollout and evaluation service.
 
-Registered Harbor tasks are also copied, after their canonical registry
-transaction commits, into the separate `harbor-tasks` distribution bucket as
-individual files under `<vendor-id>/<submission-id>/<task-name>/`. This mirror
-contains no archives, stable-key directory, or generated wrapper; the canonical
-CASE artifact remains the source of truth.
+Registered Harbor task files are published under
+`<vendor-id>/<submission-id>/<task-name>/` in `harbor-tasks`. The current exporter
+also retains technical task packages in the legacy artifacts store. That mixed
+store contains historical originals and evidence awaiting verified preservation
+and retirement; it is not a destination for new vendor deliveries.
 
-CASE provides operations to preserve submissions, identify clear tasks or traces,
-assign general benchmark directions, label task formats, and distribute Harbor
-tasks. Humans and CASE choose how to use those operations as the process evolves. New evaluation belongs
-to AutoQA; CASE does not run Environment, Oracle, or Nop checks. Historical
-results remain attached to their exact task versions.
+The root [`AGENTS.md`](../../AGENTS.md) is the sole operating policy. Read the
+[SRM data boundary](../../docs/srm-data-boundary.md) for ownership and the legacy
+retirement gate. The legacy schema and recovery descriptions later in this guide
+explain existing records, not permission to capture new originals or timelines.
 
-This README describes the CASE application and its runtime. The monorepo's root
-[`AGENTS.md`](../../AGENTS.md) is the sole authoritative operating policy for
-submission capture, parsing, classification, Harbor checks, and findings.
+## Registering Harbor tasks from Base
+
+1. Preserve the original delivery and its metadata on the matching Base event.
+2. Use `casectl registry register-harbor-submission <reference.json>` to create
+   the technical task grouping. Its input is:
+
+   ```json
+   {
+     "vendor": {"id": "example-vendor", "name": "Example Vendor", "short": "Example"},
+     "submission": {"id": "example-2026-09-17", "date": "2026-09-17", "label": "Harbor samples"},
+     "baseRecordId": "recExampleRecord",
+     "actor": "CASE"
+   }
+   ```
+
+   Read the actual Base record first. Use its stable event record ID, not a name.
+   Existing vendor descriptions and aliases are preserved. The technical source
+   item `base-harbor:<submission-id>:record` points to Base; use it in new tasks'
+   `sourceItemIds`. It does not copy correspondence or original attachments.
+3. Extract exact delivered task roots locally without executing vendor code.
+   Store only task packages with `casectl registry store-file task_package
+   <path> --submission <id>`; do not upload a mixed vendor-delivery archive.
+4. Register with `append-tasks` or `reconcile-submission-tasks`. Only tasks that
+   pass the pinned Harbor static validator are accepted by these commands.
+   Invalid tasks and traces stay with their Base delivery. Publication to
+   `harbor-tasks` follows the committed task registration and is safely retryable.
+5. Keep timeline entries, original files, and evaluation reports in Base.
+
+The installed CLI rejects timeline mutation commands, legacy `capture-submission`,
+`import`, `import-source`, source-link reconciliation and Feishu/mail intake.
+`store-file` and `register-artifact` accept only `task_package`. The legacy HTTP
+upload endpoints return 410 before issuing a signed upload URL or recording data.
+Read-only legacy commands remain available for preservation verification. This
+boundary does not delete existing records or replace the exporter dependency.
 
 The service currently has a deliberately narrow chat-transport boundary:
 
@@ -46,6 +74,10 @@ At startup, CASE copies the monorepo's root `AGENTS.md` into `AGENT_WORKSPACE`. 
 keeps the persistent Codex workspace current across new and resumed Feishu
 threads. Update the source-controlled guide and redeploy CASE to change these
 instructions; do not hand-edit the runtime copy.
+
+The guide stays concise and links to detailed references. Its local references
+are bundled under `/app/` at their repository-relative paths; read them there
+instead of assuming they were copied into the persistent workspace.
 
 ## Prerequisites
 
@@ -82,8 +114,7 @@ When the registry variables in `.env.example` are configured, the same process
 also serves the portal-facing catalog on `PORT`. It runs built-in migrations at
 startup. Trusted local CASE commands use the registry library directly with
 `DATABASE_URL` and the CASE object-store credentials; there is no internal write
-API or admin token. CASE retains a researcher-upload adapter for compatibility; the portal does
-not expose it.
+API or admin token. Original-delivery upload routes are retired and return HTTP 410.
 
 The installed `casectl` command groups CASE-owned operations by area:
 
@@ -96,10 +127,6 @@ casectl registry register-benchmark /absolute/path/benchmark.json
 casectl registry remove-unused-benchmarks /absolute/path/benchmark-removal.json
 casectl registry purge-erroneous-benchmarks /absolute/path/benchmark-purge.json
 casectl registry assign-task-benchmarks /absolute/path/benchmark-assignments.json
-casectl registry capture-submission /absolute/path/capture.json
-casectl registry store-file source_payload /absolute/path/original.pdf
-casectl registry import /absolute/path/submission.json
-casectl registry import-source /absolute/path/source-envelope.json
 casectl registry append-tasks /absolute/path/tasks.json
 casectl registry archive-vendor /absolute/path/vendor-archive.json
 casectl registry restore-vendor /absolute/path/vendor-restore.json
@@ -110,8 +137,6 @@ casectl registry reconcile-harbor-work-items /absolute/path/work-reconciliation.
 casectl registry record-harbor-finding /absolute/path/harbor-finding.json
 casectl registry remove-submission /absolute/path/submission-removal.json
 casectl registry delete-artifact <unreferenced-artifact-id>
-casectl intake feishu /absolute/path/plan.json
-casectl intake mail /absolute/path/plan.json
 casectl harbor-tasks plan <submission-id>
 casectl task-package <command> [arguments]
 ```
@@ -127,8 +152,8 @@ inferred from filenames. Before registration, each task submitted with the
 `harbor` label is checked with the static task-format validator from CASE's
 pinned Harbor installation. The validator reads package structure and
 configuration but does not build an image, start an environment, or execute
-vendor code. A task that fails this check remains in the registration with the
-same identity and provenance, but its format is changed to `non_harbor`.
+vendor code. The CLI rejects a registration containing a task that fails this check; preserve
+the delivery and failed validation in Base.
 Missing artifacts, hash mismatches, unsafe archives, and other provenance or
 capture failures still stop the operation instead of changing the format.
 
@@ -138,7 +163,7 @@ to `harbor-tasks` after the database transaction succeeds. Exact reruns are
 idempotent. A publication error makes the command fail without undoing the
 canonical registration, so rerunning the same input safely completes or verifies
 the mirror. The four `HARBOR_TASKS_S3_*` connection values and optional region
-configure this destination independently from CASE's canonical artifact store.
+configure this destination independently from the retained technical artifact store.
 
 Benchmark reviews are append-only annotations on an existing task or trace
 version. `assign-task-benchmarks` changes the current benchmark without replacing
@@ -146,8 +171,8 @@ the task version, so its artifact, source links, Harbor checks, attempts, and
 findings remain attached and visible. Task reconciliation ignores benchmark-only
 changes and must never be used to manufacture a replacement version for them.
 
-`casectl registry` and `casectl intake` do not call the registry HTTP API. The
-capture commands place exact payload bytes in CASE's object store, then use one
+The retired capture implementation did not call the registry HTTP API. It
+placed payload bytes in CASE's object store, then used one
 database transaction to register artifact records, source events and items, the
 dated submission, and every source link. A capture plan contains the vendor,
 submission ID/date/label, attachments, and an optional explicit `harbor` or
@@ -188,28 +213,14 @@ task identities, or later submissions; it is not a substitute for recording a
 real delivery as failed, incomplete, superseded, or low quality.
 
 
-The intake commands accept only plans that explicitly declare
-`"purpose": "sample_evaluation"`. They capture exact Feishu message resources or Feishu Mail
-attachments through CASE's renewable user login, store immutable bytes in the
-registry bucket, and register visible `unchecked` submission checkpoints. CASE
-then continues the registration by interpreting the preserved material,
-creating task versions, and publishing Harbor tasks. Purchased
-deliveries move to a downstream pipeline and must not be registered as samples
-in CASE. Catalog task totals count only registered task versions;
-vendor-declared quantities and raw file counts remain separate.
+Legacy submissions link to exact source items. Original vendor files have the
+contextual `original_vendor_file` role, and messages, folders and receipts use
+`provenance`. These relationships matter during preservation verification because
+a file can participate in several deliveries. Retained legacy metadata must not
+be deleted on the basis of catalog counts alone.
 
-Each submission links to the exact source items that belong to it. Downloadable
-vendor files use the contextual `original_vendor_file` link role; messages,
-folders, URLs, receipts, and other arrival evidence use `provenance`. The role
-lives on the submission-to-source-item relationship because one immutable
-artifact can participate in different provenance contexts. Use the audited
-`casectl registry reconcile-submission-source-items` operation to repair legacy
-links without changing source records or stored object bytes.
-
-The portal is read-only and does not expose submission uploads. CASE can capture Feishu message/file and Mail attachments directly, or register
-other deliveries through `store-file`, `capture-submission`, and `import-source`.
-These operations preserve arbitrary file formats and external links; CASE decides
-which tools to use to inspect them.
+The portal is read-only. Register original materials and supplier history in Base,
+then register only the Harbor task grouping and packages as described above.
 
 Send `/new` as a message, or select the app's native `/new` slash command, to
 disconnect that Feishu chat from its current Codex thread in the active
@@ -329,82 +340,25 @@ registry roles, and portal OAuth are independent permission layers.
 The image retains the pinned Harbor library for static task-format validation.
 Legacy Harbor/Modal execution utilities and historical evaluation documentation
 remain for compatibility; they are not authorized execution paths for new
-samples. AutoQA is the execution boundary, once its supported endpoint exists.
+samples. Beagle is the execution boundary for new samples, within the agreed
+task/model/budget scope in root `AGENTS.md`.
 
-## Files and arbitrary deliveries
+## Task files and retained legacy storage
 
-Use `casectl registry store-file <kind> <path>` for any local file, including an
-untouched PDF, spreadsheet, archive, task package, trace, or other payload. It
-returns a readable reference such as
-`vendor-a/2026-09-07-september-samples/Sample index.pdf`, the original filename
-and file metadata. Pass `--submission <existing-id>` to use its delivery details,
-or `--context <file.json>` with `vendorId`, `date`, and `label` when capturing a
-new delivery. Without context, files go under `unassigned/<date>-unfiled/`.
-Name collisions receive ` (2)`, ` (3)`, and so on; files are never overwritten.
-Checksums are computed and verified internally. Old identifiers and `file-N`
-aliases remain usable. Add `--raw` to inspect retained identifiers and integrity
-details.
+`store-file task_package <path> --submission <id>` returns a readable task-file
+reference. Hashes are computed and verified internally. `append-tasks` accepts
+that reference without a caller-supplied checksum, plus the exact task root and
+source-item link to the Base event. Use `unspecified` when a direction is unclear.
+Static validation never executes task code. Failed tasks and non-Harbor material
+remain in Base. `casectl harbor-tasks publish <submission-id>` completes or
+verifies an interrupted publication.
 
-For historical filing, save the output of `plan-file-filing --raw`, review its
-`entries`, and add `actor` and `reason`. Run `migrate-file-locations <plan.json>`
-with that same saved plan when resuming an interruption. It copies each original
-object, verifies its complete bytes, then changes the central location and
-readable reference. All vendor, submission, task, and source links survive.
-Shared task packages use their first documented submission; correspondence uses
-its actual evidence date. The plan is editable when provenance calls for a
-different location. `file-inventory` and `file-moves` expose the record.
-
-Old copies remain available for rollback for at least 24 hours.
-`rollback-file-move <request.json>` accepts `moveId`, `actor`, and `reason` and
-verifies the old copy before switching back. After review,
-`prune-old-file-copies` verifies the current object again before removing an old
-copy whose retention period has passed. Historical aliases remain accepted.
-`merge-task-identities` can consolidate two identities for an exact repeated
-package while preserving both submissions, task versions and original keys.
-`correct-task-format` applies an audited correction only when it agrees with
-the pinned static validator, then updates the Harbor distribution mirror.
-
-`casectl registry capture-submission <capture.json>` registers a delivery before
-parsing. It accepts existing source references or inline source graphs and has
-no file-format restriction. A link-only delivery is a valid submission even
-when access is blocked or no task boundaries have been identified. Example:
-
-```json
-{
-  "purpose": "sample_evaluation",
-  "vendor": { "id": "vendor-a", "name": "Vendor A", "short": "A", "description": "Vendor record" },
-  "submission": { "id": "vendor-a-september-samples", "date": "2026-09-07", "label": "September samples", "sourceLabel": "Vendor email" },
-  "sources": [{
-    "sourceEvent": { "id": "september-email", "channel": "email", "externalRef": "mail://original-message", "sender": "Vendor contact", "receivedAt": "2026-09-07T08:00:00Z" },
-    "items": [
-      { "id": "sample-index", "kind": "pdf", "displayName": "Sample index.pdf", "artifactId": "vendor-a/2026-09-07-september-samples/Sample index.pdf", "fetchStatus": "snapshotted", "parseStatus": "not_requested", "mutable": false },
-      { "id": "sample-folder", "kind": "folder", "displayName": "Linked sample folder", "locator": "https://drive.google.com/drive/folders/example", "fetchStatus": "external_only", "parseStatus": "not_requested", "mutable": true }
-    ],
-    "relations": [{ "fromItemId": "sample-index", "toItemId": "sample-folder", "relation": "links_to" }]
-  }],
-  "actor": "CASE"
-}
-```
-
-After inspecting more material, use `import-source` to add source items and
-relationships to the same arrival event, or preserve a new arrival as another
-event. Previously recorded items and relationships remain intact. Use the
-submission's exact source-item links to distinguish original vendor files from
-supporting provenance.
-
-When tasks or traces are clearly bounded, `append-tasks` accepts their file
-references without `contentSha256`. The registry resolves file identity and
-integrity itself. Source paths, kinds, benchmark directions, and source links
-are still explicit. Use `unspecified` for an unclear direction. Harbor tasks
-must pass the pinned static validator; successful registration publishes their
-exact files to `harbor-tasks`. `casectl harbor-tasks publish <submission-id>` can
-complete or verify that mirror after an interrupted publication. The archive
-helper inspects/extracts/packages files without producing redundant hashes.
-
-Record or update the vendor's sample-delivery timeline entry with
-`record-vendor-interaction` / `update-vendor-interaction`, citing the submission
-and supporting source events. CASE decides the narrative and next steps; capture
-does not invent a timeline narrative or impose a procurement sequence.
+`file-inventory` and legacy source/timeline reads remain available for migration
+verification. File relocation operations preserve identities and links, verify
+bytes before switching locations, and retain rollback copies. They do not prove
+preservation in Base. Do not purge legacy originals or metadata until the
+[retirement gate](../../docs/srm-data-boundary.md#existing-data-and-deletion-gate)
+is satisfied. Record new deliveries and all timeline activity in Base.
 
 `casectl registry operations` is the current command and input reference.
 

@@ -51,6 +51,14 @@ RUN npx --yes skills add https://github.com/larksuite/cli/tree/v1.0.93 --yes --g
 
 COPY apps/case/tsconfig.json apps/case/tsconfig.build.json ./
 COPY AGENTS.md ./AGENTS.md
+# Bundle only the policy's explicit references, preserving repository-relative
+# paths under /app. Never copy local research outputs or vendor material.
+COPY docs/beagle.md ./docs/beagle.md
+COPY docs/srm-data-boundary.md ./docs/srm-data-boundary.md
+COPY ops/harbor-mirror/README.md ./ops/harbor-mirror/README.md
+COPY ops/harbor-archives/README.md ./ops/harbor-archives/README.md
+COPY apps/case/README.md ./apps/case/README.md
+COPY apps/portal/README.md ./apps/portal/README.md
 COPY apps/case/src ./src
 COPY apps/case/scripts ./scripts
 RUN npm run build \

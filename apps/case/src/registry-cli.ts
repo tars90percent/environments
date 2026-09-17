@@ -24,7 +24,6 @@ import {
   parseSampleTaxonomy,
   parseAssignTaskGpuRequirements,
   parseAppendTasks,
-  parseCaptureSubmission,
   parseArtifact,
   parseHarborCheckAttempt,
   parseHarborCheckResult,
@@ -34,21 +33,15 @@ import {
   parseRegisterBenchmark,
   parseReconcileHarborWorkItems,
   parseRemoveUnusedBenchmarks,
-  parseReconcileSubmissionSourceItems,
   parseReconcileSubmissionTasks,
-  parseSourceEnvelope,
   parseSubmissionIntakeClassification,
-  parseSubmissionManifest,
   parseSubmissionRemoval,
   parseUpdateBenchmark,
   parseVendorArchive,
-  parseVendorInteractionDelete,
-  parseVendorInteraction,
-  parseVendorInteractionUpdate,
-  parseVendorTimelineCreate,
-  parseVendorTimelineDelete,
   parseWorkCompletion,
 } from "./registry/validation.js";
+
+import { assertHarborTasks, assertRegistryWriteBoundary, assertTaskArtifactKind, harborSubmissionFromBase, SRM_ONLY_MESSAGE } from "./registry/srm-boundary.js";
 
 const rawOutput = process.argv.includes("--raw");
 const [command, ...arguments_] = process.argv.slice(2).filter((value) => value !== "--raw");
@@ -56,13 +49,22 @@ const argument = arguments_[0];
 let activeRepository: RegistryRepository | undefined;
 let commandResult: unknown;
 
+assertRegistryWriteBoundary(command, arguments_);
+
 if (command === "operations") {
-  output(operationSchemas());
+  output({ ...operationSchemas(), ownership: SRM_ONLY_MESSAGE });
 } else {
   const repository = await openLocalRepository();
   activeRepository = repository;
   try {
     switch (command) {
+      case "register-harbor-submission": {
+        const input = harborSubmissionFromBase(await jsonFile(argument));
+        const existing = (await repository.vendorDirectory(true)).find((vendor) => vendor.id === input.vendor.id);
+        if (existing) input.vendor = { id: existing.id, name: existing.name, short: existing.short, description: existing.description, aliases: existing.aliases };
+        output(await repository.captureSubmission(input));
+        break;
+      }
       case "summary":
         output(await repository.operationsSummary());
         break;
@@ -72,9 +74,6 @@ if (command === "operations") {
       case "vendors":
         if (arguments_.length > 1 || (argument && argument !== "--all")) fail("Usage: casectl registry vendors [--all]");
         output(await repository.vendorDirectory(argument === "--all"));
-        break;
-      case "create-vendor-timeline":
-        output(await repository.createVendorTimeline(parseVendorTimelineCreate(await jsonFile(argument))));
         break;
       case "vendor-timeline": {
         const vendorId = required(argument, "vendor id");
@@ -93,18 +92,6 @@ if (command === "operations") {
         output(interaction);
         break;
       }
-      case "record-vendor-interaction":
-        output(await repository.recordVendorInteraction(parseVendorInteraction(await jsonFile(argument))));
-        break;
-      case "update-vendor-interaction":
-        output(await repository.updateVendorInteraction(parseVendorInteractionUpdate(await jsonFile(argument))));
-        break;
-      case "delete-vendor-interaction":
-        output(await repository.deleteVendorInteraction(parseVendorInteractionDelete(await jsonFile(argument))));
-        break;
-      case "delete-vendor-timeline":
-        output(await repository.deleteVendorTimeline(parseVendorTimelineDelete(await jsonFile(argument))));
-        break;
       case "vendor": {
         const requestedId = required(argument, "vendor id");
         const vendorId = await repository.resolveVendorId(requestedId) ?? requestedId;
@@ -177,34 +164,24 @@ if (command === "operations") {
       case "assign-task-gpu-requirements":
         output(await repository.assignTaskGpuRequirements(parseAssignTaskGpuRequirements(await jsonFile(argument))));
         break;
-      case "import":
-        output(await repository.ingestSubmission(parseSubmissionManifest(await jsonFile(argument))));
-        break;
-      case "import-source":
-        output(await repository.ingestSourceEnvelope(parseSourceEnvelope(await jsonFile(argument))));
-        break;
-      case "capture-submission":
-        output(await repository.captureSubmission(parseCaptureSubmission(await jsonFile(argument))));
-        break;
-      case "reconcile-submission-source-items":
-        output(await repository.reconcileSubmissionSourceItems(parseReconcileSubmissionSourceItems(await jsonFile(argument))));
-        break;
       case "append-tasks": {
         const registration = parseAppendTasks(await jsonFile(argument));
+        assertHarborTasks(registration.tasks);
         output(await registerTaskSetWithHarborPublication({
           registration,
           classify: () => classifyHarborTaskRegistrations({ repository, sourceStore: localArtifactStore(), tasks: registration.tasks }),
-          register: (classifiedRegistration) => repository.appendTasks(classifiedRegistration),
+          register: (classifiedRegistration) => { assertHarborTasks(classifiedRegistration.tasks); return repository.appendTasks(classifiedRegistration); },
           publish: (submissionId) => publishSubmissionHarborTasks(repository, submissionId),
         }));
         break;
       }
       case "reconcile-submission-tasks": {
         const registration = parseReconcileSubmissionTasks(await jsonFile(argument));
+        assertHarborTasks(registration.tasks);
         output(await reconcileTaskSetWithHarborPublication({
           registration,
           classify: () => classifyHarborTaskRegistrations({ repository, sourceStore: localArtifactStore(), tasks: registration.tasks }),
-          register: (classifiedRegistration) => repository.reconcileSubmissionTasks(classifiedRegistration),
+          register: (classifiedRegistration) => { assertHarborTasks(classifiedRegistration.tasks); return repository.reconcileSubmissionTasks(classifiedRegistration); },
           publish: (submissionId) => publishSubmissionHarborTasks(repository, submissionId),
           prune: (submissionId) => pruneSubmissionHarborTasks(repository, submissionId),
         }));
@@ -281,6 +258,7 @@ if (command === "operations") {
         break;
       case "register-artifact": {
         const artifact = parseArtifact(await jsonFile(argument));
+        assertTaskArtifactKind(artifact.kind);
         const store = localArtifactStore();
         await store.verifyObject({ key: artifact.storageKey, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes });
         await repository.registerArtifact(artifact);
@@ -304,7 +282,7 @@ if (command === "operations") {
         output(await repository.reconcileHarborWorkItems(parseReconcileHarborWorkItems(await jsonFile(argument))));
         break;
       default:
-        fail("Usage: casectl registry operations|summary|catalog|vendors|create-vendor-timeline|vendor-timeline|vendor-timeline-history|record-vendor-interaction|vendor-interaction|update-vendor-interaction|delete-vendor-interaction|delete-vendor-timeline|vendor|submission|task|source-event|sample-taxonomy|register-sample-taxonomy|classify-tasks|task-classification-history|benchmarks|register-benchmark|update-benchmark|merge-benchmarks|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|capture-submission|import|import-source|reconcile-submission-source-items|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|file-inventory|plan-file-filing|file-moves|migrate-file-locations|rollback-file-move|prune-old-file-copies|merge-task-identities|correct-task-format|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
+        fail("Usage: casectl registry operations|register-harbor-submission|summary|catalog|vendors|vendor-timeline|vendor-timeline-history|vendor-interaction|vendor|submission|task|source-event|sample-taxonomy|register-sample-taxonomy|classify-tasks|task-classification-history|benchmarks|register-benchmark|update-benchmark|merge-benchmarks|remove-unused-benchmarks|purge-erroneous-benchmarks|assign-task-benchmarks|assign-task-gpu-requirements|append-tasks|reconcile-submission-tasks|classify-submission|archive-vendor|restore-vendor|store-file|file-inventory|plan-file-filing|file-moves|migrate-file-locations|rollback-file-move|prune-old-file-copies|merge-task-identities|correct-task-format|download-artifact|record-harbor-check|record-harbor-attempt|record-harbor-finding|register-artifact|remove-submission|delete-artifact|lease-work|complete-work|reconcile-harbor-work-items [arguments]");
     }
   } finally {
     try {
@@ -319,6 +297,7 @@ if (command === "operations") {
 }
 
 async function storeFile(repository: RegistryRepository, kind: string, path: string, context: FileContext): Promise<unknown> {
+  assertTaskArtifactKind(kind);
   const name=await repository.files.reserve(basename(path),context);
   const sourceArtifact = await storeSourcePayload(localArtifactStore(), path, {
     id:name.id,reference:name.reference,
@@ -396,42 +375,14 @@ function operationSchemas() {
     note: "Use readable vendor/date/filename references from store-file and catalog output. Checksums are managed internally; task registration does not require contentSha256. Original file IDs remain accepted. Add --raw to inspect original identifiers, storage keys and integrity metadata.",
   },
   commands: {
+    "register-harbor-submission": { arguments: ["<reference.json>"], fields: ["vendor{id,name,short}", "submission{id,date,label}", "baseRecordId", "actor"], note: "Register a technical Harbor grouping pointing to an existing SRM event; preserve originals and delivery history in Base first. Then store only task packages and append statically valid Harbor tasks." },
     operations: { arguments: [], result: "this command reference" },
     summary: { arguments: [], result: "registry counts" },
     catalog: { arguments: [], result: "researcher-facing sample catalog" },
     vendors: { arguments: ["[--all]"], result: "vendor directory" },
-    "create-vendor-timeline": {
-      arguments: ["<timeline.json>"],
-      fields: ["vendorId", "actor"],
-      note: "Creates an explicit empty timeline for an existing vendor. Recording the first interaction also creates one automatically.",
-    },
     "vendor-timeline": { arguments: ["<vendor-id>"], result: "active timeline, entries, and audit history" },
     "vendor-timeline-history": { arguments: ["<vendor-id>"], result: "timeline audit history, including deleted timelines and entries" },
     "vendor-interaction": { arguments: ["<interaction-id>"], result: "one active timeline entry" },
-    "record-vendor-interaction": {
-      arguments: ["<interaction.json>"],
-      fields: ["id", "vendorId", "kind", "eventType", "title", "summary", "channel", "evidence", "visibility", "occurredAt", "sourceEventIds", "submissionIds", "actor"],
-      kinds: ["contact", "sample", "evaluation", "commercial", "delivery", "acceptance", "payment", "relationship", "note"],
-      channels: ["meeting", "email", "feishu", "slack", "wechat", "file_delivery", "internal", "other"],
-      evidence: ["direct", "relayed", "automated", "internal"],
-      visibility: ["portal", "internal"],
-      note: "Creates an active timeline entry and creates the vendor timeline automatically when needed.",
-    },
-    "update-vendor-interaction": {
-      arguments: ["<update.json>"],
-      fields: ["id", "changes{kind?,eventType?,title?,summary?,channel?,evidence?,visibility?,occurredAt?,sourceEventIds?,submissionIds?}", "reason", "actor"],
-      note: "Updates the active entry and retains its before/after values in the timeline audit history.",
-    },
-    "delete-vendor-interaction": {
-      arguments: ["<deletion.json>"],
-      fields: ["id", "reason", "actor"],
-      note: "Removes the entry from the active timeline and retains the deleted value in audit history.",
-    },
-    "delete-vendor-timeline": {
-      arguments: ["<deletion.json>"],
-      fields: ["vendorId", "reason", "actor"],
-      note: "Deletes the active timeline and its entries while retaining a complete audit snapshot. The vendor record is not deleted.",
-    },
     vendor: { arguments: ["<vendor-id>"] },
     "rename-vendor-id": {
       arguments: ["<rename.json>"],
@@ -489,33 +440,21 @@ function operationSchemas() {
       fields: ["submissionId", "assignments[{taskId,gpuRequired,evidence}]", "reason", "actor"],
       note: "Appends audited GPU-requirement assignments without replacing task versions or creating Harbor attempts.",
     },
-    import: { arguments: ["<submission-manifest.json>"], compatibility: "Legacy normalized manifest import. Use capture-submission for arbitrary deliveries, or casectl intake feishu/mail for supported channel capture." },
-    "import-source": {
-      arguments: ["<source-envelope.json>"],
-      fields: ["vendor{id,name,short,description,aliases?}", "sourceEvent{id,channel,externalRef,sender?,receivedAt,rawArtifactId?,metadata?}", "items[{id,kind,displayName,locator?,artifactId?,mediaType?,sizeBytes?,fetchStatus,parseStatus,mutable,capturedAt?,metadata?}]", "relations[{fromItemId,toItemId,relation,position?,metadata?}]?", "submissionLinks[{submissionId,role,sourceItemIds?}]?"],
-      note: "Registers evidence or adds newly discovered items and relations to an existing source event without replacing earlier evidence. Use metadata to preserve details that do not fit the standard fields; file checksums are optional.",
-    },
-    "reconcile-submission-source-items": {
-      arguments: ["<reconciliation.json>"],
-      fields: ["submissionId", "sourceEventId", "items[{sourceItemId,role}]", "reason", "actor"],
-      roles: ["original_vendor_file", "provenance"],
-      note: "Replaces only this submission's item links for one already-linked source event; source records and artifacts are not changed.",
-    },
     "append-tasks": {
       arguments: ["<tasks.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "actor"],
       taskFields: ["id", "stableKey", "title", "summary?", "kind=task|trace", "format=harbor|non_harbor", "benchmarkId?", "sourcePath", "artifactId=<file-reference>", "sourceItemIds"],
-      note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override. Before registration, each task requested as Harbor is checked with the pinned Harbor library's static task-format validation without executing task code. A format failure retains the task but changes its format to non_harbor; missing or mismatched provenance still fails the operation. After the registry transaction commits, every active Harbor task in the submission is published as exact individual files to harbor-tasks; an export failure leaves the registration committed and makes this command fail so the same input can be retried safely.",
+      note: "Each task must resolve exactly one registered benchmark from a source-item bulk assignment or its own benchmarkId override. Before registration, each task requested as Harbor is checked with the pinned Harbor library's static task-format validation without executing task code. A format failure rejects the registration; preserve the failed delivery in Base; missing or mismatched provenance still fails the operation. After the registry transaction commits, every active Harbor task in the submission is published as exact individual files to harbor-tasks; an export failure leaves the registration committed and makes this command fail so the same input can be retried safely.",
     },
     "reconcile-submission-tasks": {
       arguments: ["<reconciliation.json>"],
       fields: ["submissionId", "benchmarkAssignments[{sourceItemId,benchmarkId}]", "tasks", "reason", "actor"],
-      note: "Checks each desired task requested as Harbor with the pinned Harbor library's static task-format validation without executing task code. A format failure retains the task but changes its format to non_harbor; missing or mismatched provenance still fails the operation. The reconciliation then atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version. After commit, active Harbor tasks are published before inactive task prefixes are removed from harbor-tasks; both steps are safely retryable. A null artifactId is accepted only for a non-Harbor unchanged legacy version that predates task-artifact links.",
+      note: "Checks each desired task requested as Harbor with the pinned Harbor library's static task-format validation without executing task code. A format failure rejects the registration; preserve the failed delivery in Base; missing or mismatched provenance still fails the operation. The reconciliation then atomically replaces changed parsed task/trace contents while preserving prior versions; benchmark-only changes do not supersede a task version. After commit, active Harbor tasks are published before inactive task prefixes are removed from harbor-tasks; both steps are safely retryable.",
     },
     "classify-submission": { arguments: ["<classification.json>"], fields: ["submissionId", "purpose", "sourceEventIds", "reason", "actor"] },
     "archive-vendor": { arguments: ["<archive.json>"], fields: ["vendorId", "reason", "actor"] },
     "restore-vendor": { arguments: ["<restore.json>"], fields: ["vendorId", "reason", "actor"] },
-    "store-file": { arguments: ["<artifact-kind>", "<absolute-file-path>", "[--submission <existing-submission-id> | --context <file-context.json>]"] , contextFields:["vendorId?","submissionId?","date?","label?","correspondence?"] },
+    "store-file": { arguments: ["task_package", "<absolute-file-path>", "[--submission <existing-submission-id> | --context <file-context.json>]"] , contextFields:["vendorId?","submissionId?","date?","label?"] },
     "file-inventory": { arguments:[], result:"Every registered file and its known vendor, delivery and source context; use --raw to inspect storage locations." },
     "plan-file-filing": { arguments:[], result:"Reviewable entries mapping current object locations to readable vendor/date/filename paths." },
     "migrate-file-locations": { arguments:["<plan.json>"], fields:["entries[{artifactId,fromKey,toKey}]","actor","reason"], note:"Resumes the same plan. Copies and verifies bytes before switching each location; preserves old references and copies." },
@@ -524,11 +463,6 @@ function operationSchemas() {
     "prune-old-file-copies": {arguments:[], note:"Verifies the current copy again and removes old copies only after 24 hours. Old file references remain valid."},
     "merge-task-identities": {arguments:["<merge.json>"],fields:["targetTaskVersionId","sourceTaskVersionId","actor","reason"],note:"Unifies task identity only for the same vendor and exact package, preserves both deliveries, all versions, original keys and an audit record."},
     "correct-task-format": {arguments:["<correction.json>"],fields:["taskId","format","actor","reason"],note:"Checks the exact root with pinned static Harbor validation, audits the correction and updates Harbor publication."},
-    "capture-submission": {
-      arguments: ["<capture.json>"],
-      fields: ["purpose=sample_evaluation", "vendor{id,name,short,description,aliases?}", "submission{id,date,label,sourceLabel,formats?,revisesSubmissionId?,metadata?}", "sources[{sourceEventId,sourceItemIds?}|{sourceEvent,items,relations?}]", "actor"],
-      note: "Preserve any delivery before parsing, including links, folders, PDFs, spreadsheets and mixed material. Store available files with store-file; external-only items need a locator, not a file. Sources use the import-source graph schema. CASE decides what to follow and parse, and records a sample-delivery entry with record-vendor-interaction linked to this submission and its sources.",
-    },
     "download-artifact": { arguments: ["<artifact-id>", "<output-path>"] },
     "record-harbor-check": { arguments: ["<check.json>"], phases: ["environment", "oracle", "nop"] },
     "record-harbor-attempt": {

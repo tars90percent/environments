@@ -37,7 +37,8 @@ test("shortlist card and detail distinguish candidates from retained catalog sam
     assert.ok(collapsed.includes("other delivery"));
     assert.ok(!collapsed.includes("mercor task"));
     assert.ok(html.indexOf("unipat task") < html.indexOf(otherLabel));
-    assert.equal((html.match(/class="vendor-inventory"/g) ?? []).length, 3);
+    assert.equal((html.match(/class="vendor-inventory"/g) ?? []).length, 0);
+    assert.ok(!html.includes("benchmark-delivery-timeline"));
     assert.ok(html.includes(language === "en" ? "Download Harbor tasks" : "下载 Harbor 任务"));
     const buttonLabel = language === "en" ? "Download Harbor tasks" : "下载 Harbor 任务";
     const section = html.slice(html.indexOf('<section class="benchmark-task-section">'), html.indexOf('<details class="benchmark-other-samples">'));

@@ -43,7 +43,6 @@ export function VendorTaskDetail({ taskId, language, onBack, returnTo, fromBench
         <div className="model-task-breadcrumb"><span>{data.vendor.name}</span><span>/</span><span>{data.submission.label}</span><span>/</span><code>{data.task.title}</code></div>
         <div className="model-task-title-row">
           <div><h1>{data.task.title}</h1>{data.task.summary ? <p>{data.task.summary}</p> : null}</div>
-          {data.task.artifactId ? <a className="model-task-primary-link" href={`/api/artifacts/${encodeURIComponent(data.task.artifactId)}/download`}><span>Harbor</span><strong>{zh ? "下载任务包" : "Download task package"} ↓</strong></a> : null}
         </div>
         <dl className="vendor-task-facts">
           <div><dt>{zh ? "供应商" : "Vendor"}</dt><dd>{data.vendor.name}</dd></div>
@@ -55,7 +54,7 @@ export function VendorTaskDetail({ taskId, language, onBack, returnTo, fromBench
           <div><dt>{zh ? "任务记录" : "Task record"}</dt><dd><code>{data.task.id}</code></dd></div>
           <div><dt>{zh ? "提交记录" : "Submission record"}</dt><dd><code>{data.submission.id}</code></dd></div>
           {data.task.contentSha256 ? <div><dt>SHA-256</dt><dd><code>{data.task.contentSha256}</code></dd></div> : null}
-        </dl><p>{zh ? "文件来自该提交批次的 Harbor 分发副本；下载任务包可获取 CASE 保存的原始任务文件。" : "Files come from this submission’s Harbor distribution mirror. The task package download retrieves the original task artifact retained by CASE."}</p></details>
+        </dl><p>{zh ? "文件来自该批次的 Harbor 任务存储。供应商原始交付材料与往来记录请查看飞书多维表格。" : "Files come from this batch’s Harbor task storage. Supplier originals and history belong in Feishu Base."}</p></details>
       </> : null}
     </header>
     {!data && !error ? <div className="task-file-preview-state" role="status"><span className="task-file-preview-spinner" /><p>{zh ? "正在加载任务文件…" : "Loading task files…"}</p></div> : null}

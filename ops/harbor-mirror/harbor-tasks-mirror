@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly RCLONE=/usr/bin/rclone
+readonly DEST=/jfs-dialogue-alishprod01/data/users/TARS/harbor-tasks
+readonly MOUNT=/jfs-dialogue-alishprod01
+readonly ENV_FILE=/home/TARS/.config/harbor-tasks-mirror/railway.env
+readonly STATE_DIR=/home/TARS/.local/state/harbor-tasks-mirror
+readonly STATE_FILE=/home/TARS/.local/state/harbor-tasks-mirror/current-tasks.list
+readonly RECOVERY_DIR=/jfs-dialogue-alishprod01/data/users/TARS/.harbor-tasks-mirror-history/$(date -u +%Y%m%dT%H%M%S)-$$
+
+if [[ ! -r "$ENV_FILE" ]]; then
+  echo "Credential environment is unavailable: $ENV_FILE" >&2
+  exit 78
+fi
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+export RCLONE_CONFIG=/dev/null
+# Use the same bytewise ordering for every sort and comm operation.
+export LC_ALL=C
+
+if ! /usr/bin/mountpoint -q "$MOUNT"; then
+  echo "JuiceFS is not mounted at $MOUNT" >&2
+  exit 75
+fi
+if [[ ! -d "$DEST" || ! -w "$DEST" ]]; then
+  echo "Mirror destination is unavailable or not writable: $DEST" >&2
+  exit 75
+fi
+: "${RCLONE_S3_BUCKET:?RCLONE_S3_BUCKET is required}"
+install -d -m 0700 "$STATE_DIR"
+
+WORK_DIR="$(mktemp -d /tmp/harbor-tasks-mirror.XXXXXX)"
+cleanup() {
+  find "$WORK_DIR" -type f -delete 2>/dev/null || true
+  rmdir "$WORK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+echo "$(date --iso-8601=seconds) Starting Railway harbor-tasks mirror discovery"
+VENDOR_RAW="$WORK_DIR/vendors.raw"
+"$RCLONE" lsd "harbor:${RCLONE_S3_BUCKET}/" --max-depth 1 | awk '{$1=$2=$3=$4=""; sub(/^ +/,""); print}' > "$VENDOR_RAW"
+mapfile -t VENDORS < <(
+  sed 's:/$::' "$VENDOR_RAW" |
+    sort
+)
+if (( ${#VENDORS[@]} == 0 )); then
+  echo "No eligible vendor prefixes were returned; refusing to alter the destination" >&2
+  exit 69
+fi
+for vendor in "${VENDORS[@]}"; do
+  [[ "$vendor" =~ ^[A-Za-z0-9._-]+$ ]] || {
+    echo "Unsafe vendor prefix returned by source: $vendor" >&2
+    exit 69
+  }
+done
+
+list_submissions() {
+  local vendor="$1"
+  local raw="$WORK_DIR/vendor.$vendor.raw"
+  local out="$WORK_DIR/vendor.$vendor.submissions"
+  "$RCLONE" lsd "harbor:${RCLONE_S3_BUCKET}/${vendor}/" --max-depth 1 | awk '{$1=$2=$3=$4=""; sub(/^ +/,""); print}' > "$raw"
+  : > "$out"
+  while IFS= read -r name; do
+    name="${name%/}"
+    [[ -n "$name" && "$name" != "." && "$name" != ".." && "$name" != */* ]] || {
+      echo "Unsafe submission prefix returned by source: $vendor/$name" >&2
+      return 69
+    }
+    printf '%s/%s\n' "$vendor" "$name" >> "$out"
+  done < "$raw"
+}
+export -f list_submissions
+export RCLONE RCLONE_S3_BUCKET RCLONE_CONFIG WORK_DIR
+printf '%s\0' "${VENDORS[@]}" |
+  xargs -0 -n1 -P4 bash -Eeuo pipefail -c 'list_submissions "$1"' _
+
+SUBMISSION_LIST="$WORK_DIR/submissions.list"
+find "$WORK_DIR" -type f -name 'vendor.*.submissions' -exec cat {} + |
+  sort > "$SUBMISSION_LIST"
+SUBMISSION_COUNT="$(wc -l < "$SUBMISSION_LIST" | tr -d ' ')"
+if (( SUBMISSION_COUNT == 0 )); then
+  echo "No submission prefixes were returned; refusing to alter the destination" >&2
+  exit 69
+fi
+
+list_tasks() {
+  local submission="$1"
+  local key="${submission//\//__}"
+  local raw="$WORK_DIR/submission.$key.raw"
+  local out="$WORK_DIR/submission.$key.tasks"
+  "$RCLONE" lsd "harbor:${RCLONE_S3_BUCKET}/${submission}/" --max-depth 1 | awk '{$1=$2=$3=$4=""; sub(/^ +/,""); print}' > "$raw"
+  : > "$out"
+  while IFS= read -r name; do
+    name="${name%/}"
+    [[ -n "$name" && "$name" != "." && "$name" != ".." && "$name" != */* ]] || {
+      echo "Unsafe task prefix returned by source: $submission/$name" >&2
+      return 69
+    }
+    printf '%s/%s\n' "$submission" "$name" >> "$out"
+  done < "$raw"
+}
+export -f list_tasks
+xargs -r -d '\n' -n1 -P8 bash -Eeuo pipefail -c 'list_tasks "$1"' _ < "$SUBMISSION_LIST"
+
+TASK_LIST="$WORK_DIR/tasks.list"
+find "$WORK_DIR" -type f -name 'submission.*.tasks' -exec cat {} + |
+  sort > "$TASK_LIST"
+TASK_COUNT="$(wc -l < "$TASK_LIST" | tr -d ' ')"
+if (( TASK_COUNT == 0 )); then
+  echo "No task prefixes were returned; refusing to alter the destination" >&2
+  exit 69
+fi
+
+if [[ ! -f "$STATE_FILE" ]]; then
+  : > "$STATE_FILE"
+  chmod 0600 "$STATE_FILE"
+fi
+ADDED_LIST="$WORK_DIR/added.list"
+REMOVED_LIST="$WORK_DIR/removed.list"
+# Normalize older checkpoints without changing the saved state until success.
+PREVIOUS_LIST="$WORK_DIR/previous-tasks.list"
+sort -u "$STATE_FILE" > "$PREVIOUS_LIST"
+comm -13 "$PREVIOUS_LIST" "$TASK_LIST" > "$ADDED_LIST"
+comm -23 "$PREVIOUS_LIST" "$TASK_LIST" > "$REMOVED_LIST"
+# Requeue interrupted or missing local tasks, even when present in the checkpoint.
+while IFS= read -r task_prefix; do
+  if [[ ! -f "$DEST/$task_prefix/task.toml" ]]; then
+    printf '%s\n' "$task_prefix" >> "$ADDED_LIST"
+  fi
+done < "$TASK_LIST"
+sort -u "$ADDED_LIST" -o "$ADDED_LIST"
+ADDED_COUNT="$(wc -l < "$ADDED_LIST" | tr -d ' ')"
+REMOVED_COUNT="$(wc -l < "$REMOVED_LIST" | tr -d ' ')"
+printf '%s vendors, %s submissions, %s tasks; added=%s removed=%s\n'   "${#VENDORS[@]}" "$SUBMISSION_COUNT" "$TASK_COUNT" "$ADDED_COUNT" "$REMOVED_COUNT"
+
+sync_new_task() {
+  local task_prefix="$1"
+  local target="$DEST/$task_prefix"
+  [[ -n "$task_prefix" && "$task_prefix" != /* && "$task_prefix" == */*/* && "/$task_prefix/" != *"/../"* ]] || {
+    echo "Unsafe new task prefix: $task_prefix" >&2
+    return 69
+  }
+  echo "$(date --iso-8601=seconds) [$task_prefix] new task sync started"
+  if [[ -e "$target/task.toml" || -L "$target/task.toml" ]]; then
+    mkdir -p "$RECOVERY_DIR/replaced/$task_prefix"
+    mv -- "$target/task.toml" "$RECOVERY_DIR/replaced/$task_prefix/task.toml"
+  fi
+  "$RCLONE" sync "harbor:${RCLONE_S3_BUCKET}/${task_prefix}/" "$target/"     --exclude '/task.toml'     --backup-dir "$RECOVERY_DIR/replaced/$task_prefix"     --size-only     --fast-list     --delete-after     --transfers 2     --checkers 4     --buffer-size 4M     --s3-no-check-bucket     --contimeout 20s     --timeout 5m     --retries 8     --low-level-retries 30     --retries-sleep 15s     --log-level NOTICE
+  local marker_tmp
+  marker_tmp="$(mktemp "$target/.task.toml.mirror.XXXXXX")"
+  "$RCLONE" copyto       "harbor:${RCLONE_S3_BUCKET}/${task_prefix}/task.toml"       "$marker_tmp"       --s3-no-check-bucket       --contimeout 20s       --timeout 5m       --retries 8       --low-level-retries 30       --retries-sleep 15s       --log-level NOTICE
+  mv -f -- "$marker_tmp" "$target/task.toml"
+  echo "$(date --iso-8601=seconds) [$task_prefix] new task sync completed"
+}
+export -f sync_new_task
+export DEST RECOVERY_DIR
+xargs -r -d '\n' -n1 -P4 bash -Eeuo pipefail -c 'sync_new_task "$1"' _ < "$ADDED_LIST"
+
+while IFS= read -r task_prefix; do
+  [[ -n "$task_prefix" && "$task_prefix" != /* && "$task_prefix" == */*/* && "/$task_prefix/" != *"/../"* ]] || {
+    echo "Unsafe removed task prefix: $task_prefix" >&2
+    exit 69
+  }
+  target="$DEST/$task_prefix"
+  if [[ -e "$target" || -L "$target" ]]; then
+    echo "$(date --iso-8601=seconds) [$task_prefix] removing retired task"
+    mkdir -p "$RECOVERY_DIR/retired/$(dirname "$task_prefix")"
+    mv -- "$target" "$RECOVERY_DIR/retired/$task_prefix"
+  fi
+done < "$REMOVED_LIST"
+
+STATE_NEXT="$STATE_DIR/current-tasks.next"
+install -m 0600 "$TASK_LIST" "$STATE_NEXT"
+mv -f "$STATE_NEXT" "$STATE_FILE"
+printf '%s vendors=%s submissions=%s tasks=%s added=%s removed=%s\n'   "$(date --iso-8601=seconds)" "${#VENDORS[@]}" "$SUBMISSION_COUNT" "$TASK_COUNT" "$ADDED_COUNT" "$REMOVED_COUNT"   > "$STATE_DIR/last-success"
+echo "$(date --iso-8601=seconds) Railway harbor-tasks mirror completed"

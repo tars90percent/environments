@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""Hourly Railway -> JFS -> EVE pipeline. Caller must hold the mirror flock."""
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+STATE = Path('/home/TARS/.local/state/harbor-tasks-mirror')
+SOURCE = Path('/jfs-dialogue-alishprod01/data/users/TARS/harbor-tasks')
+DEST = Path('/jfs-dialogue-alishprod01/alignment_data_forge/rl_tasks/harbor-tasks')
+CONFIG = Path('/home/TARS/.config/harbor-tasks-mirror/eve.json')
+MIRROR = '/usr/local/sbin/harbor-tasks-mirror'
+API = 'https://transfer.xaminim.com/api/v1'
+VOLUME = 'jfs-dialogue-alishprod01'
+REGION = 'ali-shanghai-prod-01'
+ACTIVE = {'Pending', 'Running', 'Scheduled'}
+RETRYABLE = {'Failed', 'Timeout'}
+
+
+def now():
+    return time.strftime('%Y-%m-%dT%H:%M:%S%z')
+
+
+def log(event, **fields):
+    print(json.dumps({'time': now(), 'event': event, **fields}, sort_keys=True), flush=True)
+
+
+def atomic(path, value):
+    tmp = path.with_name(path.name + '.tmp')
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        json.dump(value, f, sort_keys=True)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def read(path, default=None):
+    return json.loads(path.read_text()) if path.exists() else default
+
+
+def scan(root):
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError('Mirror root unavailable or symbolic link')
+    result = {}
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        for name in dirs + files:
+            p = Path(directory) / name
+            s = p.lstat()
+            if stat.S_ISLNK(s.st_mode) or not (stat.S_ISREG(s.st_mode) or stat.S_ISDIR(s.st_mode)):
+                raise RuntimeError('Unsupported link or special file in mirror')
+            if stat.S_ISREG(s.st_mode):
+                result[p.relative_to(root).as_posix()] = [s.st_size, s.st_mtime_ns]
+    return result
+
+
+def digest(inventory):
+    return hashlib.sha256(json.dumps(inventory, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def difference(src, dst):
+    return {'missing': sorted(src.keys() - dst.keys()),
+            'extra': sorted(dst.keys() - src.keys()),
+            'size_mismatch': sorted(p for p in src.keys() & dst.keys() if src[p][0] != dst[p][0])}
+
+
+def validate_source(src):
+    roots = set((STATE / 'current-tasks.list').read_text().splitlines())
+    if not roots or not src:
+        raise RuntimeError('Empty source/checkpoint; refusing publication')
+    for r in roots:
+        if len(r.split('/')) != 3 or any(x in {'', '.', '..'} for x in r.split('/')):
+            raise RuntimeError('Unsafe checkpoint task root')
+        if r + '/task.toml' not in src:
+            raise RuntimeError('Checkpoint task lacks completion marker')
+    if any('/'.join(p.split('/')[:3]) not in roots or len(p.split('/')) < 4 for p in src):
+        raise RuntimeError('Source contains files outside registered task roots')
+    return len(roots)
+
+
+class Eve:
+    def __init__(self):
+        if CONFIG.stat().st_mode & 0o077:
+            raise RuntimeError('EVE credential permissions must be 0600')
+        c = read(CONFIG)
+        self.auth = 'Basic ' + base64.b64encode((c['access_key'] + ':' + c['secret_key']).encode()).decode()
+
+    def call(self, method, path, payload=None, query=None):
+        url = API + path + ('?' + urllib.parse.urlencode(query) if query else '')
+        req = urllib.request.Request(url, method=method,
+            data=json.dumps(payload).encode() if payload is not None else None,
+            headers={'Authorization': self.auth, 'Content-Type': 'application/json'})
+        # Never retry a POST here: its response may have been lost after creation.
+        with urllib.request.urlopen(req, timeout=45) as response:
+            envelope = json.load(response)
+        if envelope.get('code') != 200:
+            raise RuntimeError('EVE application error code ' + str(envelope.get('code')))
+        return envelope['data']
+
+
+def endpoint(path):
+    return {'type': 'jfs', 'name': VOLUME, 'path': '/' + str(path).split('/', 2)[2] + '/'}
+
+
+def transfer_payload():
+    # cover is intentional: update can skip corrected files with older timestamps.
+    return {'task': {'transfer_type': 'transfer', 'transfer_strategy': 'cover',
+                     'delete_src': False, 'ttl': 86400},
+            'src': endpoint(SOURCE), 'dst': endpoint(DEST)}
+
+
+def recover_submission(eve, op):
+    if op['path'] != '/transfer':
+        raise RuntimeError('Uncertain reconciliation submission; inspect EVE before resuming')
+    found = []
+    page = 1
+    while True:
+        data = eve.call('GET', '/transfers/v2', query={'start_time': op['started'] - 5,
+            'end_time': int(time.time()) + 5, 'page': page, 'size': 500})
+        tasks = data.get('tasks', [])
+        for task in tasks:
+            if all(all(task.get(side, {}).get(k) == op['payload'][side][k]
+                       for k in ['type', 'name', 'path']) for side in ['src', 'dst']):
+                found.append(task['task']['task_id'])
+        if page * 500 >= data.get('total', len(tasks)):
+            break
+        page += 1
+    if len(found) != 1:
+        raise RuntimeError('Uncertain EVE submission; matching task count=' + str(len(found)))
+    return found[0]
+
+
+def operation(eve, state, path, payload):
+    op = state.get('operation')
+    if op is None:
+        op = {'path': path, 'payload': payload, 'started': int(time.time()), 'retries': 0}
+        state['operation'] = op
+        atomic(STATE / 'eve-active.json', state)
+        data = eve.call('POST', path, payload)
+        op['task_id'] = data['task_id']
+        atomic(STATE / 'eve-active.json', state)
+        log('eve_submitted', phase=state['phase'], task_id=op['task_id'])
+    elif 'task_id' not in op:
+        op['task_id'] = recover_submission(eve, op)
+        atomic(STATE / 'eve-active.json', state)
+        log('eve_submission_recovered', task_id=op['task_id'])
+    last_status = None
+    while True:
+        data = eve.call('GET', path, query={'taskId': op['task_id']})
+        status = data.get('status')
+        if status != last_status:
+            log('eve_status', task_id=op['task_id'], status=status,
+                copied=data.get('copied'), failed=data.get('failed'))
+            last_status = status
+        atomic(STATE / 'eve-progress.json', {k: data.get(k) for k in
+            ['status', 'copied', 'copied_bytes', 'failed', 'total', 'total_bytes', 'pending']} |
+            {'time': now(), 'task_id': op['task_id'], 'phase': state['phase']})
+        if status == 'Successful':
+            if data.get('failed', 0):
+                raise RuntimeError('EVE reported success with failed files')
+            state.setdefault('completed_operations', []).append({'task_id': op['task_id'], 'path': path})
+            return data
+        if status in RETRYABLE and path == '/transfer' and op['retries'] < 3:
+            op['retries'] += 1
+            atomic(STATE / 'eve-active.json', state)
+            eve.call('POST', '/transfer/retry', query={'taskId': op['task_id']})
+            log('eve_retry', task_id=op['task_id'], retry=op['retries'])
+            time.sleep(15)
+            continue
+        if status not in ACTIVE:
+            raise RuntimeError('EVE task stopped: ' + str(status))
+        time.sleep(15)
+
+
+def reconcile_payload(state):
+    # Only our own filesystem bookkeeping runs. No delivered code is executed.
+    code = Path('/usr/local/libexec/harbor-eve-retire.py').read_text()
+    scripts = SOURCE.parent / '.harbor-tasks-pipeline'
+    scripts.mkdir(mode=0o700, exist_ok=True)
+    script = scripts / (state['generation'] + '.py')
+    fd = os.open(script, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write(code)
+    # EVE's argument handling is not a shell; use plain, whitespace-free arguments.
+    args = str(script) + ' ' + state['generation'] + ' ' + state['source_digest']
+    return {'region': REGION, 'cmd_name': 'python3', 'cmd_args': args}
+
+
+def finish(state, src, dst):
+    diff = difference(src, dst)
+    if any(diff.values()):
+        atomic(STATE / 'eve-verification-difference.json', diff)
+        raise RuntimeError('Destination verification failed; inspect eve-verification-difference.json')
+    if digest(src) != state['source_digest']:
+        raise RuntimeError('Staging changed during EVE transfer')
+    report = {'time': now(), 'source_digest': state['source_digest'],
+        'generation': state['generation'], 'tasks': validate_source(src), 'files': len(src),
+        'bytes': sum(v[0] for v in src.values()), 'verification': 'relative paths and sizes',
+        'operations': state.get('completed_operations', []), 'difference': {k: 0 for k in diff}}
+    atomic(STATE / 'eve-last-success.json', report)
+    atomic(STATE / 'eve-runs' / (state['generation'] + '.json'), report)
+    (STATE / 'eve-active.json').unlink(missing_ok=True)
+    log('end_to_end_success', **report)
+
+
+def main(eve=None):
+    os.umask(0o077)
+    (STATE / 'eve-runs').mkdir(mode=0o700, parents=True, exist_ok=True)
+    eve = eve or Eve()
+    state = read(STATE / 'eve-active.json')
+    if state is None:
+        # Never start a new staging sync while a persisted EVE operation is active.
+        subprocess.run([MIRROR], check=True)
+        src = scan(SOURCE)
+        count = validate_source(src)
+        last = read(STATE / 'eve-last-success.json', {})
+        dst = scan(DEST)
+        diff = difference(src, dst)
+        state = {'generation': time.strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:10],
+                 'source_digest': digest(src), 'phase': 'transfer', 'task_count': count}
+        if last.get('source_digest') == state['source_digest'] and not any(diff.values()):
+            finish(state, src, dst)
+            return
+        # An unchanged source with only destination extras needs retirement alone.
+        if last.get('source_digest') == state['source_digest'] and not diff['missing'] and not diff['size_mismatch']:
+            state['phase'] = 'reconcile'
+        atomic(STATE / 'eve-active.json', state)
+    if state['phase'] == 'transfer':
+        operation(eve, state, '/transfer', transfer_payload())
+        state.pop('operation', None)
+        state['phase'] = 'reconcile'
+        atomic(STATE / 'eve-active.json', state)
+    src = scan(SOURCE)
+    validate_source(src)
+    if digest(src) != state['source_digest']:
+        raise RuntimeError('Staging changed; refusing retirement or end-to-end success')
+    if state['phase'] == 'reconcile':
+        if state.get('operation') or difference(src, scan(DEST))['extra']:
+            operation(eve, state, '/fs/execute', reconcile_payload(state))
+        state.pop('operation', None)
+        state['phase'] = 'verify'
+        atomic(STATE / 'eve-active.json', state)
+    finish(state, scan(SOURCE), scan(DEST))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as exc:
+        # No response bodies, signed URLs, credentials or subprocess environments.
+        error = {'time': now(), 'error_type': type(exc).__name__, 'message': str(exc)}
+        atomic(STATE / 'eve-last-error.json', error)
+        log('pipeline_failed', **error)
+        sys.exit(1)

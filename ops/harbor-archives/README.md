@@ -53,6 +53,41 @@ its predecessor and receipt remain available. A failed rebuild retains the
 previous verified archive in the index and records the failure in private status.
 CASE's retained original deliveries remain source evidence.
 
+## Development machine and JFS locations
+
+The remote TARS development machine (`dev-alsh-dialogue-TARS-cpu`, reached through JumpServer) controls the transfer and archive jobs. It is separate from the maintainer's laptop and Beagle's execution workers. The four paths below are on mounted JFS, not the machine's local disk. TARS writes staging; EVE publishes into the shared locations. Argus provides a browser view of those files.
+
+| Content | TARS staging | Shared publication |
+| --- | --- | --- |
+| Raw task files | `/jfs-dialogue-alishprod01/data/users/TARS/harbor-tasks/` | `/jfs-dialogue-alishprod01/alignment_data_forge/rl_tasks/harbor-tasks/` |
+| Submission ZIPs | `/jfs-dialogue-alishprod01/data/users/TARS/harbor-task-archives/` | `/jfs-dialogue-alishprod01/alignment_data_forge/rl_tasks/harbor-task-archives/` |
+
+Read the actual submission path from the Base and the ZIP path from the shared `index.json`; vendor display names are not storage identifiers. Shared-JFS publication and Beagle's later EVE-based cluster import are separate operations.
+
+The [raw mirror guide](../harbor-mirror/README.md) documents the Railway pull,
+staging completion markers, EVE reconciliation, cron, and verification limits.
+Its source lives in `ops/harbor-mirror/`; it runs on the development machine.
+A staging success alone does not establish shared availability.
+
+## Installed jobs and health evidence
+
+The archive publisher runs at minute 27 of each hour. Its schedule is independent
+of the raw pipeline; publication is not guaranteed to finish between cron ticks.
+The publisher has its own lock and also acquires the raw lock while verifying
+and building. Inspect the live crontab and state before reporting current health.
+
+| Stage | Program on the development machine | Evidence under `/home/TARS/.local/state/` |
+| --- | --- | --- |
+| Submission ZIP publication | `/usr/local/sbin/harbor-task-archives` and `/usr/local/lib/harbor-task-archives/build.mjs` | `harbor-task-archives/status.json`, `active.json`, `last-success.json`, `last-audit.json`, `publisher.log`, retained manifests, and verification receipts. |
+
+Use `harbor-task-archives --plan` to inspect the catalog selection and `--status` for saved publisher state. `--submission <exact-id>` limits reconciliation; `--rebuild` additionally requires explicit submission selections and preserves prior archives and receipts. `--audit` re-hashes current ZIPs in both JFS locations. An ordinary unchanged run can reuse size/mtime verification; its success is not a fresh full checksum audit. Read historical errors alongside later successes.
+
+Check the expected submission/revision in the shared index and the relevant inventory, receipt, and success/audit timestamp before reporting availability. Preserve active operations on failure. Do not run staging-only synchronization while a saved EVE transfer may still be using that source, clear active state to bypass reconciliation, hand-edit managed indexes, or treat a temporary `.builds/` file as a completed archive. Failed rebuilds retain the previously verified archive. Programs and credentials are local to the controller; the existence of a mounted path or an SSH connection does not grant write authority over shared publication.
+
+Raw-controller recovery is documented in the [raw mirror guide](../harbor-mirror/README.md).
+SSH access is described by the local `tars-dev-machine-ssh` skill; do not assume
+that skill or SSH credentials are available inside CASE.
+
 ## Installation
 
 Requires Python 3.9+, JFS, the existing completed raw mirror, and EVE credentials.

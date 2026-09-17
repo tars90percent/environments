@@ -2,34 +2,27 @@
 
 A researcher catalog for vendor RL-task samples, hosted on
 Railway and available to authenticated members of TARS's Feishu organization.
-The portal loads vendors, dated submissions, original-source records, parsed tasks
-or traces, their general benchmark directions, three Harbor tags,
-non-conclusive attempt state, findings, and downloads from CASE.
+The portal presents registered Harbor tasks, their classifications, task files,
+and existing technical check evidence. Supplier history, inventory claims,
+original deliveries, researcher feedback and procurement live in the
+[SRM Feishu Base](https://vrfi1sk8a0.feishu.cn/base/WqS9bTgadatBNusLu7aciS7wn8f).
+Vendor pages link there instead of displaying timelines or original submissions.
 
-It also includes a source-controlled reference page for widely used public model
-benchmarks. That page stores descriptive metadata and authoritative external
-links only; it does not copy benchmark task payloads into CASE or its object
-storage.
+The portal projects the CASE catalog to Harbor tasks only and does not send
+legacy source events or supplier interactions to the browser. Vendors and
+batches without Harbor tasks are omitted. The internal CASE catalog remains
+available to the JFS archive publisher during legacy-data retirement; its
+integrity inputs are unchanged.
 
-The portal presents vendor timelines, submissions, source evidence and tasks.
-Interpretation and the evolving vendor process remain with researchers and
-CASE. Benchmark directions are source-backed task labels, not evaluations.
+It also includes a separate public benchmark reference containing descriptive
+metadata and authoritative links, without third-party task payloads. DeepSWE's
+user-confirmed Mercor and Unipat shortlist remains a task-view filter; it does
+not imply acceptance or procurement progress. All-vendor and shortlist Harbor
+ZIP downloads continue through the gateway.
 
-DeepSWE features the user-confirmed Mercor and Unipat shortlist. Its card and
-detail headline count their registered Harbor samples; other vendors remain in
-a collapsed “Other cataloged samples” section with their delivery histories.
-Inventory evidence and submission history are retained. The shortlist describes
-vendor offerings, not a blanket review result for their tasks. Procurement-group
-totals follow the displayed scope; the overall catalog and explicitly labeled
-all-vendor download still include every registered Harbor task. A separate
-shortlist download includes only Harbor tasks from the server-selected vendors
-for that direction, across all submissions and independent of search. Its ZIP
-filename and manifest identify the shortlist scope. Active-procurement cards
-omit catalog-share bars so they cannot be mistaken for procurement progress.
-
-This README describes the portal application and its access boundary. The
-monorepo's root [`AGENTS.md`](../../AGENTS.md) is the sole authoritative
-operating policy; CASE remains the canonical registry. New sample execution belongs to AutoQA.
+The root [`AGENTS.md`](../../AGENTS.md) defines the operating policy. See the
+[SRM data boundary](../../docs/srm-data-boundary.md) for retained legacy data and
+retirement conditions. Beagle is the Harbor rollout and evaluation service.
 
 ## Safety boundary
 
@@ -58,11 +51,9 @@ no real trajectory data is bundled, uploaded, persisted, or evaluated. This
 standalone local-file utility needs no registry session and accesses no CASE
 endpoints. Refreshing clears the loaded file. Inputs are limited to 50 MB.
 
-- Browse vendors that have at least one recorded submission.
-- Open dated submissions without replacing earlier observations.
-- Inspect each original submission as one compact block with a direct download for every source item explicitly linked as an original vendor file. Message captures, receipts, screenshots, folders, and URLs remain in CASE as provenance but are not presented as downloads.
-- Open any registered vendor Harbor task at `/tasks/<taskId>` from its title or **View files** link. The shared benchmark file browser selects `instruction.md` first and displays the folder tree, file sizes and roles, source submission, task identity, and original package download. The portal resolves the task's distribution prefix from CASE and uses the existing Harbor gateway for paginated listings and individual reads. `/api/tasks/<taskId>/files` and `/api/tasks/<taskId>/file?path=...` require the researcher session; gateway credentials stay server-side. Text, raster images and PDFs preview privately, with an 8 MiB preview limit. Office documents, binary files and larger files are downloadable. Vendor files are never passed to the public Office viewer. macOS metadata sidecars (`._*`, `.DS_Store`, and `__MACOSX`) are omitted from the task browser. Text previews reject binary control data and invalid encoding instead of displaying replacement-character gibberish; UTF-8 and BOM-marked UTF-16 are supported. Missing or incomplete mirrors are shown explicitly. File reads never execute task code or launch evaluation.
-- Inspect tasks or traces. Non-Harbor tasks have no checks. Harbor tasks show only Environment, Oracle, and Nop: pass/fail when conclusive, a distinct tried marker when a result was blocked or inconclusive, and a dash when not attempted. Directly supported findings remain separate.
+- Browse vendors with registered Harbor tasks.
+- Open any registered vendor Harbor task at `/tasks/<taskId>` from its title or **View files** link. The shared benchmark file browser selects `instruction.md` first and displays the folder tree, file sizes and roles, source submission, task identity, and technical provenance. The portal resolves the task's distribution prefix from CASE and uses the existing Harbor gateway for paginated listings and individual reads. `/api/tasks/<taskId>/files` and `/api/tasks/<taskId>/file?path=...` require the researcher session; gateway credentials stay server-side. Text, raster images and PDFs preview privately, with an 8 MiB preview limit. Office documents, binary files and larger files are downloadable. Vendor files are never passed to the public Office viewer. macOS metadata sidecars (`._*`, `.DS_Store`, and `__MACOSX`) are omitted from the task browser. Text previews reject binary control data and invalid encoding instead of displaying replacement-character gibberish; UTF-8 and BOM-marked UTF-16 are supported. Missing or incomplete mirrors are shown explicitly. File reads never execute task code or launch evaluation.
+- Harbor tasks show only Environment, Oracle, and Nop: pass/fail when conclusive, a distinct tried marker when a result was blocked or inconclusive, and a dash when not attempted. Directly supported findings remain separate.
 - Browse standalone benchmark families grouped by task domain, with their creators, canonical maintainers, task-set scale, release or access status when established, and publisher-maintained sources. Evaluation variants remain attached to their underlying benchmark family rather than becoming duplicate benchmarks.
 - Open one bilingual, source-grounded guide for each of the 39 benchmark families. Each guide explains the domain, distribution, difficulty, reported time or interaction budget, recurring model failure modes, and how to interpret the score, with primary reading and a verification date.
 - Browse aggregate benchmarks in a separate section. Each aggregate lists its constituent evaluations and weights and links them back to the standalone benchmark families; the Artificial Analysis Intelligence Index is the first aggregate recorded this way.
@@ -103,8 +94,8 @@ vendor snapshots and submission-mutation surfaces.
 
 ## Deliberate omissions
 
-Persistence, capture, parsing, Harbor distribution, event delivery, and Feishu
-synchronization remain CASE responsibilities. AutoQA is the execution boundary
+The portal has no delivery capture, supplier timeline, or Feishu synchronization
+workflow. Those records are maintained in Base; CASE supplies Harbor distribution. Beagle is the execution boundary
 for new Harbor samples. The portal cannot create or edit
 canonical records or turn check tags into a quality judgment. The public
 benchmark reference is not a second registry and does not preserve or execute
@@ -113,29 +104,11 @@ descriptions and pointers, not copied prompts, answers, attachments, or packages
 Harbor filesystem views store tree metadata only; each file continues to live at
 the publisher's repository.
 
-File downloads use short CASE references; old artifact links remain supported.
+Task files and Harbor ZIPs are served through the gateway. The old original,
+artifact and submission-dataset download routes return HTTP 410 with a Base
+link after authenticating the caller; they cannot download legacy delivery
+material through the portal.
 
 Vendor pages and individual benchmark-direction pages offer “Download all Harbor tasks”. Both use the Harbor gateway to build or reuse a ZIP from the exact published task folders in `harbor-tasks`. Benchmark downloads span all vendors and submissions for that benchmark, independently of the page's search filter. The ZIP preserves vendor/submission/task paths, and its manifest identifies the vendor and submission for each task. Incomplete task roots cause preparation to fail rather than producing a partial archive.
 Export manifests retain task and submission identity, source paths and evidence,
 without repeating internal content checksums.
-
-## Vendor inventory claims
-
-Within active-procurement benchmark directions, existing sample-vendor headers
-show the latest portal-visible CASE timeline
-interaction with `eventType: inventory_reported:<registered benchmark id>`.
-Record these through `casectl registry record-vendor-interaction`: use the title
-for a concise available-volume/capacity statement, the summary for the original
-claim and source link or attributed relay, and the statement date in `occurredAt`.
-The channel and evidence fields identify direct communications versus relays.
-Append a dated entry when availability changes; earlier claims remain in the
-vendor timeline. An explicit unknown claim supersedes an older known quantity.
-Inventory is vendor-reported and is not added to received-sample counts.
-Inventory claims do not add vendors to a direction: only vendors with matching
-Harbor samples appear. Other benchmark directions show no inventory section.
-
-Active-procurement directions also show a horizontal sample-delivery timeline,
-derived from the complete catalog rather than the current search. Each entry
-represents one vendor submission with tasks assigned to that exact direction,
-using its recorded submission date. Counts include non-Harbor tasks (shown
-separately) and exclude traces; inventory statements never create deliveries.
