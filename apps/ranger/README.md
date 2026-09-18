@@ -1,7 +1,7 @@
 # RANGER
 
 RANGER is the persistent Feishu colleague on the development machine. It runs the
-official DeepSeek Harness through its ACP automation interface as a native systemd service. Its code
+official DeepSeek Harness through its ACP automation interface as a native systemd user service. Its code
 handles transport and durability; DeepSeek Harness composes shell, Python, curl, jq, standard
 filesystem tools, lark-cli, and the machine's existing publication programs.
 There is no RANGER operations CLI or service-specific tool abstraction.
@@ -67,6 +67,8 @@ installed mirror/archive programs keep their established permissions. RANGER has
 its own HOME, DeepSeek API credentials, Feishu profile, database, and workspace under
 `/var/lib/ranger`. It does not use the developer's interactive DeepSeek Harness session.
 
+The user service has lingering enabled so it starts at boot and survives logout.
+It uses an unprivileged user namespace for its filesystem restrictions.
 The systemd unit makes the OS and release read-only, hides the ordinary home,
 exposes only the existing mirror/archive configuration and state directories,
 and permits writes to RANGER state and TARS JFS staging. Privilege escalation is
@@ -140,16 +142,19 @@ It includes an explicit source/documentation allowlist, never local deliveries,
 secrets or node_modules. Transfer through the verified developer SSH/SFTP path
 and verify the complete SHA-256 before extracting to `/opt/ranger/releases/COMMIT`.
 Install/build/test there as TARS using the separate Node 24 runtime under
-`/opt/ranger/runtime`, then make the release root-owned and read-only to TARS.
+`/opt/ranger/runtime`, then make the release root-owned, readable/executable by TARS, and unwritable to TARS.
 
-Copy `.env.example` to `/etc/ranger/ranger.env` (root, mode 0600), filling the
+Copy `.env.example` to `/var/lib/ranger/service/ranger.env` (TARS, mode 0600), filling the
 allowlist and absolute immutable `RANGER_SOURCE_ROOT`. Put `DEEPSEEK_API_KEY` in
-`/etc/ranger/secrets.env` (root, mode 0600), separate from the source and ordinary
-configuration. Only the intended service receives that environment file.
+`/var/lib/ranger/service/secrets.env` (TARS, mode 0600), separate from the source and ordinary
+configuration. Keep the enclosing directory mode 0700. Only the intended service
+receives that environment file.
 
 Create `/var/lib/ranger/workspace`, `dsh`, `lark-cli` and `conversations` owned by
 TARS with mode 0700. Transfer only the new Feishu app's config/secret profile into
-its private configuration directory. Install the official Lark skills matching
+its private configuration directory. Symlink the two existing Harbor configuration
+and state directories into the isolated HOME so existing program defaults still
+resolve to the established paths; the unit exposes their actual targets. Install the official Lark skills matching
 the CLI tag under `/var/lib/ranger/.agents/skills`; do not copy developer SSH keys.
 
 Verify authenticated access to `https://api.deepseek.com/models`, then run a
@@ -157,17 +162,19 @@ bounded DeepSeek turn under the service's actual systemd restrictions before
 reporting the agent ready. This deployment does not use OpenAI services or a
 ChatGPT login. The existing CASE agent is unchanged.
 
-Install `deploy/ranger.service` into `/etc/systemd/system`, run
-`systemd-analyze verify`, atomically point `/opt/ranger/current` at the release,
-then `systemctl daemon-reload` and `systemctl enable --now ranger`. Do not touch
+Install `deploy/ranger.service` into `~/.config/systemd/user`, run
+`systemd-analyze --user verify`, and enable own-user lingering with
+`loginctl enable-linger TARS`. Atomically point `/opt/ranger/current` at the release,
+then `systemctl --user daemon-reload` and `systemctl --user enable --now ranger`.
+The dev machine denies root systemctl operations; use its supported user manager. Do not touch
 CASE's Railway deployment or the existing mirror/archive schedules.
 
-Check `systemctl status ranger`, the private `health.json`, and an actual Feishu
+Check `systemctl --user status ranger`, the private `health.json`, and an actual Feishu
 round trip. Test an orderly restart and verify the saved thread resumes. A green
 systemd service or `/status` response only establishes the harness is alive;
 model access, Feishu user authorization, and Beagle credentials are separate checks.
 
-Operator tools are standard: `journalctl -u ranger`, `systemctl restart ranger`,
+Operator tools are standard: `journalctl --user -u ranger`, `systemctl --user restart ranger`,
 authenticated DeepSeek API probes and read-only SQLite inspection. Journals contain lifecycle
 metadata, not message bodies or credentials; transcripts and state are private.
 Back up the database using SQLite's backup API while running, plus workspace,
