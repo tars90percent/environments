@@ -4,9 +4,10 @@ import { createHash } from "node:crypto";
 import type { Config } from "./config.js";
 import type { Message, State } from "./state.js";
 import { runHarness } from "./harness.js";
+import type { ReasoningEffort } from "./reasoning.js";
 
 export function chatKey(chat: string) { return createHash("sha256").update(chat).digest("hex").slice(0, 24); }
-export type AgentRunner = (message: Message, signal: AbortSignal) => Promise<void>;
+export type AgentRunner = (message: Message, signal: AbortSignal, effort: ReasoningEffort) => Promise<void>;
 
 export async function prepareWorkspace(config: Config) {
   for (const p of [config.data, config.workspace, config.harnessHome, config.larkConfig]) await mkdir(p, { recursive: true, mode: 0o700 });
@@ -33,13 +34,13 @@ export async function prepareWorkspace(config: Config) {
 }
 
 export function createAgent(config: Config, state: State, environment: NodeJS.ProcessEnv): AgentRunner {
-  return async (message, signal) => {
+  return async (message, signal, effort) => {
     const conversationDir = join(config.data,"conversations",chatKey(message.chat));
     const wakeupDir = join(conversationDir,"wakeups",String(state.generation(message.chat)));
     await mkdir(wakeupDir,{recursive:true,mode:0o700});
     const contextPath=join(conversationDir,"context.json");
     await writeFile(contextPath,JSON.stringify({
-      chatId:message.chat,messageId:message.replyTo,trigger:message.kind,
+      chatId:message.chat,messageId:message.replyTo,trigger:message.kind,reasoningEffort:effort,
       wakeupDirectory:wakeupDir,documentation:join(config.sourceRoot,"apps/ranger/README.md"),
     },null,2),{mode:0o600});
     const env={...environment,RANGER_CHAT_ID:message.chat,RANGER_MESSAGE_ID:message.replyTo,
@@ -49,7 +50,7 @@ export function createAgent(config: Config, state: State, environment: NodeJS.Pr
       : "A message from the authorized Feishu user.";
     const input=`You are RANGER on the development machine. Read the workspace AGENTS.md and its RANGER guide. This turn's operational context is in ${contextPath}; its wakeup directory is ${wakeupDir}. ${trigger}\n\n${message.text}`;
     let sequence=0;
-    const final=await runHarness(config,env,join(config.harnessHome,"ranger.patch.yml"),{
+    const final=await runHarness({...config,effort},env,join(config.harnessHome,"ranger.patch.yml"),{
       sessionId:state.thread(message.chat),prompt:input,signal,
       onSession:id=>state.saveThread(message.chat,id),
       onText:text=>{

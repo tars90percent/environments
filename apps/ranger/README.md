@@ -24,7 +24,7 @@ The official `@deepseek-ai/dsh` package is pinned at **0.1.5-rc.2**, the npm
 `latest` release verified on 2026-09-18. It is a developer preview; the separate
 `alpha` tag is not used. The ACP client is pinned at **1.4.0**, matching upstream.
 Lark CLI is **1.0.96** and Node 24 is required. The selected API model is
-`deepseek-flash` (DeepSeek-V4.1-Flash), with `high` reasoning and a 16,384-token
+`deepseek-flash` (DeepSeek-V4.1-Flash), with `high` reasoning by default and a 16,384-token
 per-request output cap. The cap is not a whole-turn or spend limit.
 
 `npm run smoke` checks installed versions and SQLite without credentials. The
@@ -48,7 +48,13 @@ is not a substitute for a server-side message archive.
 
 Feishu controls:
 
-- `/status` reports service/model/conversation state without a model call.
+- `/status` reports service/model/conversation state, the selected reasoning level,
+  and any active turn's reasoning level without a model call.
+- `/reasoning` shows the selected level; `/reasoning off|low|high|max` changes it
+  for subsequent turns across all conversations, including scheduled follow-ups.
+  The active turn keeps its original level. Changes are saved in SQLite, survive
+  restarts and `/new`, and take precedence over `DEEPSEEK_REASONING_EFFORT` (the
+  initial default). These commands do not call the model or restart the service.
 - `/stop` aborts the current DeepSeek Harness turn in that chat. External jobs continue until
   explicitly cancelled using the underlying service.
 - `/new` starts a fresh conversation after the current turn, cancels pending

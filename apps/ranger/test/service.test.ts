@@ -95,3 +95,83 @@ test("restart reconciles an interrupted turn before a queued conversation reset"
   f.state.finish(recovery);assert.equal(f.state.claim()?.text,"/new");
   f.state.close();f.cleanup();
 });
+
+test("reasoning commands persist globally, reject invalid values, and deduplicate deliveries",async()=>{
+  const f=fixture();let runs=0,closed=false;
+  const service=new Service(f.config,f.state,async()=>{runs++;},{reply:async()=>{}});
+  try {
+    service.receive(message("om_show","/reasoning"));
+    assert.match(f.state.outgoing()!.text,/Reasoning: high/);
+    service.receive(message("om_max"," /reasoning MAX \n"));
+    service.receive({...message("om_low","/reasoning low"),chat:"oc_other"});
+    service.receive(message("om_max","/reasoning max"));
+    for (const [i,text] of ["/reasoning medium","/reasoning max extra"].entries()) service.receive(message(`om_bad_${i}`,text));
+    await service.work();
+    assert.equal(runs,0);assert.equal(f.state.reasoningEffort(f.config.effort),"low");
+    service.receive(message("om_new","/new"));await service.work();
+    assert.equal(f.state.reasoningEffort(f.config.effort),"low");
+    const texts=f.state.db.prepare("SELECT text FROM outbox").all().map(x=>String(x.text));
+    assert.equal(texts.filter(x=>x.startsWith("Invalid reasoning level.")).length,2);
+    f.state.close();closed=true;
+    const reopened=new State(f.path);
+    try {assert.equal(reopened.reasoningEffort("off"),"low");assert.equal(reopened.claim(),undefined);}
+    finally {reopened.close();}
+  } finally {if (!closed) f.state.close();f.cleanup();}
+});
+
+test("reasoning changes during a turn apply to the next turn, including follow-ups",async()=>{
+  const f=fixture();let started!:()=>void,release!:()=>void;
+  const running=new Promise<void>(resolve=>started=resolve);
+  const blocked=new Promise<void>(resolve=>release=resolve);
+  const efforts:string[]=[];
+  const service=new Service(f.config,f.state,async(m,signal,effort)=>{
+    efforts.push(effort);
+    if (efforts.length===1) {started();await blocked;assert.equal(signal.aborted,false);}
+    f.state.finish(m);
+  },{reply:async()=>{}});
+  try {
+    service.receive(message());const work=service.work();await running;
+    service.receive(message("om_max","/reasoning max"));
+    service.receive(message("om_status","/status"));
+    const texts=f.state.db.prepare("SELECT text FROM outbox").all().map(x=>String(x.text));
+    assert(texts.some(x=>x.includes("Reasoning: max (all conversations)") && x.includes("Active turn reasoning: high")));
+    assert.equal(service.status().activeReasoningEffort,"high");
+    release();await work;
+    f.state.enqueue({...message("wake:test","inspect existing job"),kind:"wakeup"});await service.work();
+    assert.deepEqual(efforts,["high","max"]);
+  } finally {release();f.state.close();f.cleanup();}
+});
+
+test("reasoning changes and their replies commit atomically; interrupted commands replay without a model",async()=>{
+  const f=fixture();const service=new Service(f.config,f.state,async()=>assert.fail("no model needed"),{reply:async()=>{}});
+  const m=message("om_max","/reasoning max");
+  try {
+    const reply=f.state.reply;
+    f.state.reply=()=>{throw new Error("simulated outbox failure");};
+    assert.throws(()=>service.receive(m),/simulated outbox failure/);
+    f.state.reply=reply;
+    assert.equal(f.state.reasoningEffort("high"),"high");
+    assert.equal(f.state.db.prepare("SELECT COUNT(*) AS n FROM outbox").get()?.n,0);
+    assert.equal(f.state.claim()?.id,m.id); // Crash after claiming the queued command.
+    assert.equal(f.state.recover(),1);
+    assert.equal(f.state.db.prepare("SELECT COUNT(*) AS n FROM inbox WHERE kind='recovery'").get()?.n,0);
+    await service.work();
+    assert.equal(f.state.reasoningEffort("high"),"max");
+    assert.match(f.state.outgoing()!.text,/Reasoning set to max/);
+    assert.equal(f.state.claim(),undefined);
+  } finally {f.state.close();f.cleanup();}
+});
+
+test("an older queued reasoning command cannot undo a newer selection after restart",async()=>{
+  const f=fixture();const service=new Service(f.config,f.state,async()=>assert.fail("no model needed"),{reply:async()=>{}});
+  try {
+    f.state.enqueue(message("om_old","/reasoning low"));f.state.claim();
+    f.state.recover();
+    service.receive(message("om_new","/reasoning max"));
+    await service.work();
+    assert.equal(f.state.reasoningEffort("high"),"max");
+    const texts=f.state.db.prepare("SELECT text FROM outbox").all().map(x=>String(x.text));
+    assert(texts.some(x=>x.includes("Reasoning remains max")));
+    assert.equal(f.state.claim(),undefined);
+  } finally {f.state.close();f.cleanup();}
+});

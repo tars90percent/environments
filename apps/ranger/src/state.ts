@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
+import { isReasoningEffort, reasoningCommand, type ReasoningEffort } from "./reasoning.js";
 
 export type Message = {
   id: string; chat: string; replyTo: string; text: string;
@@ -30,6 +31,9 @@ export class State {
         id TEXT PRIMARY KEY, chat TEXT NOT NULL, prompt TEXT NOT NULL, due INTEGER NOT NULL,
         expires INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending'
       );
+      CREATE TABLE IF NOT EXISTS runtime_settings (
+        id INTEGER PRIMARY KEY CHECK(id=1), reasoning_effort TEXT NOT NULL, message_seq INTEGER NOT NULL
+      );
     `);
   }
   close() { this.db.close(); }
@@ -59,6 +63,23 @@ export class State {
   }
   saveThread(chat: string, thread: string) { this.db.prepare("UPDATE conversations SET thread=? WHERE chat=?").run(thread, chat); }
   thread(chat: string) { return (this.db.prepare("SELECT thread FROM conversations WHERE chat=?").get(chat) as {thread: string | null} | undefined)?.thread || undefined; }
+  reasoningEffort(fallback: ReasoningEffort): ReasoningEffort {
+    const row = this.db.prepare("SELECT reasoning_effort FROM runtime_settings WHERE id=1").get();
+    if (!row) return fallback;
+    if (!isReasoningEffort(row.reasoning_effort)) throw new Error("Invalid stored reasoning effort");
+    return row.reasoning_effort;
+  }
+  finishReasoningChange(m: Message, effort: ReasoningEffort, response: string) {
+    this.transaction(() => {
+      const message = this.db.prepare("SELECT seq FROM inbox WHERE id=?").get(m.id);
+      if (!message || typeof message.seq !== "number") throw new Error("Reasoning command is missing from the inbox");
+      // An older queued command recovered after restart must not undo a newer
+      // selection already handled by the live event stream.
+      const changed = this.db.prepare("INSERT INTO runtime_settings(id,reasoning_effort,message_seq) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET reasoning_effort=excluded.reasoning_effort,message_seq=excluded.message_seq WHERE excluded.message_seq>runtime_settings.message_seq").run(effort,message.seq);
+      this.reply(`${m.id}:final`,m.replyTo,changed.changes ? response : `A newer reasoning command has already taken precedence. Reasoning remains ${this.reasoningEffort(effort)}.`);
+      this.db.prepare("UPDATE inbox SET status='completed',updated=? WHERE id=?").run(Date.now(),m.id);
+    });
+  }
   reset(chat: string) {
     this.transaction(() => {
       this.db.prepare("UPDATE conversations SET thread=NULL,generation=generation+1 WHERE chat=?").run(chat);
@@ -91,6 +112,12 @@ export class State {
   recover() {
     const rows = this.db.prepare("SELECT id,chat,reply_to AS replyTo,text,kind FROM inbox WHERE status='running'").all() as Message[];
     for (const m of rows) this.transaction(() => {
+      // A control command has no model-side effects to reconcile. Its setting,
+      // completion and reply commit atomically, so an interrupted command can retry.
+      if (m.kind === "user" && reasoningCommand(m.text)) {
+        this.db.prepare("UPDATE inbox SET status='queued',updated=? WHERE id=?").run(Date.now(),m.id);
+        return;
+      }
       this.db.prepare("UPDATE inbox SET status='interrupted',updated=? WHERE id=?").run(Date.now(), m.id);
       // Recovery is a fresh turn in the persisted conversation, never a replay of shell commands.
       this.db.prepare("INSERT OR IGNORE INTO inbox(id,chat,reply_to,text,kind,created,updated) VALUES(?,?,?,?,?,?,?)")

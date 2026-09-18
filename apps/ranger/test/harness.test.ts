@@ -1,14 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readConfig } from "../src/config.js";
-import { prepareWorkspace } from "../src/agent.js";
+import { chatKey, createAgent, prepareWorkspace } from "../src/agent.js";
 import { runHarness } from "../src/harness.js";
+import { State, type Message } from "../src/state.js";
+import { Service } from "../src/service.js";
 
-test("official harness preserves history across separate processes and honors model selection",{timeout:90_000},async()=>{
+test("Feishu reasoning commands reach the official harness across turns and restart with history intact",{timeout:150_000},async()=>{
   const dir=await mkdtemp(join(tmpdir(),"ranger-acp-"));
   const requests: Record<string,unknown>[]=[];
   const server=createServer(async(req,res)=>{
@@ -21,23 +23,33 @@ test("official harness preserves history across separate processes and honors mo
   });
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
   const address=server.address();assert(address && typeof address!=="string");
-  const config=readConfig({ALLOWED_USER_IDS:"ou_test",RANGER_DATA_DIR:dir,DSH_PERMISSION_MODE:"read-only"});
+  const config=readConfig({ALLOWED_USER_IDS:"ou_test",RANGER_DATA_DIR:dir,DSH_PERMISSION_MODE:"read-only",RANGER_TURN_TIMEOUT_SECONDS:"35"});
   const env={PATH:process.env.PATH,HOME:dir,DEEPSEEK_API_KEY:"sk-local-fixture-only",DEEPSEEK_BASE_URL:`http://127.0.0.1:${address.port}`};
-  let sessionId:string|undefined;
+  let state=new State(join(dir,"state.sqlite"));
+  const makeService=()=>new Service(config,state,createAgent(config,state,env),{reply:async()=>{}});
+  const message=(id:string,text:string):Message=>({id,chat:"oc_test",replyTo:id,text,kind:"user"});
   try {
     await prepareWorkspace(config);
-    const first=await runHarness(config,env,join(config.harnessHome,"ranger.patch.yml"),{
-      prompt:"Remember RANGER_MEMORY_42",signal:AbortSignal.timeout(35000),onSession:id=>{sessionId=id;},onText:()=>{},
-    });
-    assert.match(first,/Remembered/);assert(sessionId);
-    const second=await runHarness(config,env,join(config.harnessHome,"ranger.patch.yml"),{
-      sessionId,prompt:"What did I ask you to remember?",signal:AbortSignal.timeout(35000),onSession:id=>assert.equal(id,sessionId),onText:()=>{},
-    });
-    assert.match(second,/survived restart/);assert.equal(requests.length,2);
+    let service=makeService();
+    service.receive(message("om_first","Remember RANGER_MEMORY_42"));await service.work();
+    const sessionId=state.thread("oc_test");assert(sessionId);
+    service.receive(message("om_max","/reasoning max"));
+    state.close();state=new State(join(dir,"state.sqlite"));service=makeService();
+    service.receive(message("om_second","What did I ask you to remember?"));await service.work();
+    for (const effort of ["low","off"]) {
+      service.receive(message(`om_set_${effort}`,`/reasoning ${effort}`));
+      service.receive(message(`om_turn_${effort}`,"Recall the saved value."));await service.work();
+    }
+    assert.equal(state.thread("oc_test"),sessionId);assert.equal(requests.length,4);
     for(const r of requests) {assert.equal(r.model,"deepseek-flash");assert.equal(r.max_tokens,16384);}
+    assert.deepEqual(requests.map(r=>r.reasoning_effort),["high","max","low",undefined]);
+    assert.deepEqual(requests.map(r=>r.thinking),[{type:"enabled"},{type:"enabled"},{type:"enabled"},{type:"disabled"}]);
     assert.match(JSON.stringify(requests[1]?.messages),/Remembered RANGER_MEMORY_42/);
     assert.match(JSON.stringify(requests[1]?.messages),/Remember RANGER_MEMORY_42/);
-  } finally {server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});}
+    const context=JSON.parse(await readFile(join(config.data,"conversations",chatKey("oc_test"),"context.json"),"utf8"));
+    assert.equal(context.reasoningEffort,"off");
+    assert.equal(state.db.prepare("SELECT COUNT(*) AS n FROM inbox WHERE status!='completed'").get()?.n,0);
+  } finally {state.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});}
 });
 
 test("cancelling a real harness request stops the model stream and reaps its process",{timeout:60_000},async()=>{
