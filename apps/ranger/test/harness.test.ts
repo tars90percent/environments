@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readConfig } from "../src/config.js";
@@ -68,4 +68,39 @@ test("cancelling a real harness request stops the model stream and reaps its pro
     const rejection=assert.rejects(running);
     await Promise.race([requested,running]);controller.abort(new Error("test cancellation"));await rejection;
   } finally {controller.abort();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});}
+});
+
+test("real harness tool inputs reach the outbox in order, with no outputs or thoughts and quiet wakeups",{timeout:90_000},async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"ranger-tools-"));
+  const config=readConfig({ALLOWED_USER_IDS:"ou_test",RANGER_DATA_DIR:dir,DSH_PERMISSION_MODE:"read-only",RANGER_TURN_TIMEOUT_SECONDS:"35"});
+  const path=join(config.workspace,"example.txt"),requests:Record<string,unknown>[]=[];
+  const server=createServer(async(req,res)=>{
+    const chunks:Buffer[]=[];for await(const c of req) chunks.push(c);
+    const body=JSON.parse(Buffer.concat(chunks).toString());requests.push(body);
+    const toolTurn=requests.length%2===1;
+    const delta=toolTurn ? {role:"assistant",content:"Checking the file.",reasoning_content:"THOUGHT_MUST_STAY_PRIVATE",tool_calls:[{index:0,id:`read_${requests.length}`,type:"function",function:{name:"read",arguments:JSON.stringify({file_path:path})}}]} : {role:"assistant",content:requests.length===2 ? "The check is complete." : "RANGER_NO_UPDATE"};
+    const packet={id:"mock",object:"chat.completion.chunk",created:1,model:"deepseek-flash",choices:[{index:0,delta,finish_reason:null}]};
+    res.writeHead(200,{"content-type":"text/event-stream"});res.write(`data: ${JSON.stringify(packet)}\n\n`);
+    res.end(`data: ${JSON.stringify({...packet,choices:[{index:0,delta:{},finish_reason:toolTurn?"tool_calls":"stop"}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}})}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  const address=server.address();assert(address && typeof address!=="string");
+  const state=new State(join(dir,"state.sqlite"));
+  const env={PATH:process.env.PATH,HOME:dir,DEEPSEEK_API_KEY:"sk-local-fixture-only",DEEPSEEK_BASE_URL:`http://127.0.0.1:${address.port}`};
+  try {
+    await prepareWorkspace(config);await writeFile(path,"TOOL_OUTPUT_MUST_STAY_PRIVATE");
+    const service=new Service(config,state,createAgent(config,state,env),{reply:async()=>{}});
+    service.receive({id:"om_tools",chat:"oc_tools",replyTo:"om_tools",text:"Inspect example.txt",kind:"user"});await service.work();
+    assert.equal(requests.length,2);
+    assert.match(JSON.stringify(requests[1]?.messages),/TOOL_OUTPUT_MUST_STAY_PRIVATE/);
+    const texts=state.db.prepare("SELECT text FROM outbox ORDER BY seq").all().map(x=>String(x.text));
+    assert.equal(texts.length,4);assert.equal(texts[1],"Checking the file.");
+    assert.match(texts[2]!,/🔧 Tool call: read/);assert(texts[2]!.includes(path));
+    assert.equal(texts[3],"The check is complete.");
+    assert.doesNotMatch(texts.join("\n"),/TOOL_OUTPUT_MUST_STAY_PRIVATE|THOUGHT_MUST_STAY_PRIVATE/);
+    state.enqueue({id:"wake:tools",chat:"oc_tools",replyTo:"om_tools",text:"Check the file again",kind:"wakeup"});await service.work();
+    assert.equal(requests.length,4);
+    assert.equal(state.db.prepare("SELECT COUNT(*) AS n FROM outbox").get()?.n,4);
+    assert.equal(state.db.prepare("SELECT COUNT(*) AS n FROM inbox WHERE status!='completed'").get()?.n,0);
+  } finally {state.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});}
 });

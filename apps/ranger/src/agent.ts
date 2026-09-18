@@ -5,6 +5,7 @@ import type { Config } from "./config.js";
 import type { Message, State } from "./state.js";
 import { runHarness } from "./harness.js";
 import type { ReasoningEffort } from "./reasoning.js";
+import { formatToolNotice } from "./tool-notice.js";
 
 export function chatKey(chat: string) { return createHash("sha256").update(chat).digest("hex").slice(0, 24); }
 export type AgentRunner = (message: Message, signal: AbortSignal, effort: ReasoningEffort) => Promise<void>;
@@ -53,8 +54,14 @@ export function createAgent(config: Config, state: State, environment: NodeJS.Pr
     const final=await runHarness({...config,effort},env,join(config.harnessHome,"ranger.patch.yml"),{
       sessionId:state.thread(message.chat),prompt:input,signal,
       onSession:id=>state.saveThread(message.chat,id),
-      onText:text=>{
-        if (message.kind!=="wakeup" && text.trim()) state.reply(`${message.id}:text:${sequence++}`,message.replyTo,text);
+      onText:(text,id)=>{
+        if (message.kind!=="wakeup" && text.trim()) {
+          state.reply(`${message.id}:text:${id ?? sequence}`,message.replyTo,text);
+          sequence++;
+        }
+      },
+      onToolCall:call=>{
+        if (message.kind!=="wakeup") state.reply(`${message.id}:tool:${call.id}`,message.replyTo,formatToolNotice(call,environment));
       },
     });
     state.finish(message,message.kind==="wakeup"

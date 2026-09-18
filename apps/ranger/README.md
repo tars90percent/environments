@@ -62,9 +62,16 @@ Feishu controls:
 
 Text and Markdown messages are normalized by lark-cli. The current message ID is
 available in the per-turn context JSON and as `RANGER_MESSAGE_ID`; use normal lark-cli operations to inspect rich
-content or retrieve attachments when needed. Tool outputs and reasoning are not
-forwarded to chat automatically. Committed assistant text is forwarded. The harness uses its upstream general
-tools; RANGER does not implement Beagle/EVE/JFS tool wrappers.
+content or retrieve attachments when needed. In user-requested and recovery turns,
+each tool invocation produces one notice with its name and arguments. Sensitive
+argument fields and known environment credentials are redacted; long arguments
+are truncated. Tool results and thinking blocks are not forwarded.
+Committed assistant text is grouped by the harness's message IDs, with long
+messages split preferentially at paragraph, line, or word boundaries. This ACP
+bridge emits committed messages, not a token-by-token live edit of one bubble.
+Scheduled follow-ups retain their quiet-unless-actionable behavior and do not
+send tool notices. The harness uses its upstream general tools; RANGER does not
+implement Beagle/EVE/JFS tool wrappers.
 
 ## Operating context
 

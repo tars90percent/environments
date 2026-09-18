@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION,
   type SessionConfigOption, type SessionNotification } from "@agentclientprotocol/sdk";
 import type { Config } from "./config.js";
+import { HarnessEvents, type HarnessObservers } from "./harness-events.js";
 
 export async function bounded<T>(operation: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -18,12 +19,11 @@ function choices(options: SessionConfigOption[], id: string) {
   return row?.type === "select" ? row.options.flatMap(x => "options" in x ? x.options : [x]) : [];
 }
 
-export interface HarnessRun {
+export interface HarnessRun extends HarnessObservers {
   sessionId?: string;
   prompt: string;
   signal: AbortSignal;
   onSession(id: string): void;
-  onText(text: string): void;
 }
 
 /** The upstream ACP profile owns the agent loop, tools, persistence and model calls. */
@@ -38,18 +38,15 @@ export async function runHarness(config: Config, environment: NodeJS.ProcessEnv,
   child.stderr.on("data",chunk => { stderr=(stderr+String(chunk)).slice(-8000); });
   const exited = new Promise<void>((resolve,reject) => {child.once("close",()=>resolve());child.once("error",reject);});
   void exited.catch(()=>undefined);
-  let sessionId = run.sessionId, observerError: unknown, part = "";
+  let sessionId = run.sessionId, observerError: unknown;
+  const events = new HarnessEvents(run);
   const client = new ClientSideConnection(()=>({
     // The service cannot ask interactive sandbox questions. Never silently grant an escalation.
     requestPermission:async()=>({outcome:{outcome:"cancelled" as const}}),
     sessionUpdate:async(notification: SessionNotification)=>{
-      if (notification.sessionId !== sessionId) return;
-      const update=notification.update;
-      if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
-        part+=update.content.text;
-        try { run.onText(update.content.text); }
-        catch(error) { observerError=error; void client.cancel({sessionId}).catch(()=>undefined); }
-      }
+      if (notification.sessionId !== sessionId || observerError) return;
+      try { events.accept(notification.update); }
+      catch(error) { observerError=error; void client.cancel({sessionId}).catch(()=>undefined); }
     },
   }),ndJsonStream(Writable.toWeb(child.stdin),Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>));
   let killTimer: NodeJS.Timeout | undefined;
@@ -88,7 +85,7 @@ export async function runHarness(config: Config, environment: NodeJS.ProcessEnv,
     if (observerError) throw observerError;
     run.signal.throwIfAborted();
     if (result.stopReason!=="end_turn") throw new Error(`Harness stopped: ${result.stopReason}`);
-    return part.trim();
+    return events.finish();
   } catch(error) {
     failure=error;
     // Only the error class is logged. Private runtime session files retain detailed evidence.

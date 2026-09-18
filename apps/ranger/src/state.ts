@@ -147,6 +147,21 @@ export class State {
 
 export function chunkText(text: string, size = 3000): string[] {
   const characters = Array.from(text), chunks: string[] = [];
-  for (let i = 0; i < characters.length; i += size) chunks.push(characters.slice(i, i + size).join(""));
+  for (let i = 0; i < characters.length;) {
+    let end = Math.min(i+size,characters.length);
+    if (end < characters.length) {
+      const minimum = i+Math.floor(size/2);
+      for (const boundary of ["paragraph","line","space"]) {
+        let found = false;
+        for (let j=end; j>minimum; j--) {
+          if (boundary === "paragraph" ? characters[j-1]==="\n" && characters[j-2]==="\n" : boundary === "line" ? characters[j-1]==="\n" : characters[j-1]===" ") {
+            end=j;found=true;break;
+          }
+        }
+        if (found) break;
+      }
+    }
+    chunks.push(characters.slice(i,end).join(""));i=end;
+  }
   return chunks;
 }
