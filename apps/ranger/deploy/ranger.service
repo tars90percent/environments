@@ -1,0 +1,35 @@
+[Unit]
+Description=RANGER Feishu operations agent
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+PrivateUsers=true
+UMask=0077
+WorkingDirectory=/var/lib/ranger/workspace
+Environment=HOME=/var/lib/ranger
+Environment=PATH=/opt/ranger/runtime/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin
+Environment=NODE_ENV=production
+EnvironmentFile=/var/lib/ranger/service/ranger.env
+EnvironmentFile=/var/lib/ranger/service/secrets.env
+ExecStartPre=/usr/bin/mountpoint -q /jfs-dialogue-alishprod01
+ExecStart=/usr/bin/flock --nonblock /var/lib/ranger/service.lock /opt/ranger/runtime/bin/node /opt/ranger/current/apps/ranger/dist/index.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/ranger /jfs-dialogue-alishprod01/data/users/TARS
+BindReadOnlyPaths=/home/TARS/.config/harbor-tasks-mirror /home/TARS/.config/harbor-task-archives
+BindPaths=/home/TARS/.local/state/harbor-tasks-mirror /home/TARS/.local/state/harbor-task-archives
+
+[Install]
+WantedBy=default.target

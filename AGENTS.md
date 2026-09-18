@@ -8,6 +8,10 @@ Use judgment. Humans and agents decide what to inspect, request, evaluate, and r
 
 CASE is the Railway-hosted agent. The Base owns supplier relationships, all timelines, original submissions and their receipt/source metadata, research feedback, and procurement history. Record new material there; do not create or update supplier timelines or retain new original deliveries in Railway.
 
+RANGER is the development-machine agent, reachable through its own Feishu app. It uses the machine's existing identity and ordinary tools to operate internal services and JFS within the user's authorized scope. Keep its conversations and operational checkpoints in its private workspace; retain supplier history and evaluation evidence in Base. Its durable harness does not replace Beagle, EVE, or the existing publication programs and locks.
+
+RANGER has its own SSH key registered to the TARS GitLab account. Its Beagle source checkout is `/var/lib/ranger/workspace/beagle`, with origin `git@gitlab.xaminim.com:product/teral/beagle.git`; ordinary Git commands use RANGER's private SSH configuration. Read `/var/lib/ranger/workspace/GITLAB_ACCESS.md` for deployment-specific access details and the checkout's `AGENTS.md` before working on Beagle. Use the source API contract and implementation to investigate behavior, and verify the deployed service version separately. GitLab access does not authenticate RANGER to the Beagle service API or authorize changes beyond the user's request.
+
 Railway serves the Harbor task view: task files and the minimal identities, versions, classifications, integrity metadata, and Base references needed to browse, download, and distribute them. Keep that technical catalog linked to the corresponding Base records. Existing Railway originals and historical metadata may be retired only after their complete preservation in Base is verified and Harbor consumers no longer depend on them; a matching filename or record count is insufficient.
 
 The remote development machine controls copying and packaging. JFS is the shared filesystem mounted on it; staging and shared publication are JFS locations, not copies on the machine's local disk. EVE transfers files to shared locations, and Argus provides a browser view.
@@ -61,6 +65,7 @@ Read the relevant reference when performing that work; this file does not duplic
 | --- | --- |
 | Base ownership, legacy retention, and Harbor-only transition | [SRM data boundary](docs/srm-data-boundary.md) |
 | Harbor registration, classification, and CASE commands | [CASE guide](apps/case/README.md); `casectl registry operations` |
+| Development-machine agent, ordinary tools, persistent conversations, and follow-ups | [RANGER guide](apps/ranger/README.md) |
 | Railway pull, JFS staging, EVE transfer, cron, and recovery | [Harbor raw mirror](ops/harbor-mirror/README.md) |
 | Manifests, submission ZIP publication, and archive verification | [Harbor archive publisher](ops/harbor-archives/README.md) |
 | Beagle objects, imports, retries, API, native artifacts, and scoring | [Beagle operating reference](docs/beagle.md) |

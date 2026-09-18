@@ -1,0 +1,12 @@
+import { execFileSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const root=new URL("../",import.meta.url);
+const pkg=JSON.parse(readFileSync(new URL("package.json",root),"utf8"));
+const dsh=JSON.parse(readFileSync(new URL("node_modules/@deepseek-ai/dsh/package.json",root),"utf8"));
+if (dsh.version!==pkg.dependencies["@deepseek-ai/dsh"]) throw new Error("Harness does not match the pinned release");
+execFileSync(process.execPath,[fileURLToPath(new URL("node_modules/@deepseek-ai/dsh/lib/bin.js",root)),"--help"],{stdio:"pipe"});
+const lark=execFileSync(fileURLToPath(new URL("node_modules/.bin/lark-cli",root)),["--version"],{encoding:"utf8"}).trim();
+const db=new DatabaseSync(":memory:");db.exec("CREATE TABLE smoke (id INTEGER)");db.close();
+console.log(JSON.stringify({node:process.version,deepseekHarness:dsh.version,lark,sqlite:"ok"}));

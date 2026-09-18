@@ -1,0 +1,28 @@
+{
+  "name": "ranger-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RANGER: a persistent Feishu colleague on the development machine.",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --watch --import tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "start": "node dist/index.js",
+    "smoke": "node scripts/runtime-smoke.mjs"
+  },
+  "dependencies": {
+    "@larksuite/cli": "1.0.96",
+    "@deepseek-ai/dsh": "0.1.5-rc.2",
+    "@agentclientprotocol/sdk": "1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
