@@ -93,8 +93,16 @@ running outside the unit as TARS retain that account's existing access.
 
 - **Beagle:** use its documented HTTP API and source contract in
   [the operating reference](../../docs/beagle.md). SSO/JWT authentication is
-  separate from DeepSeek Harness and Feishu. There is no unattended renewal contract yet;
-  an expired/missing credential must be reported. Preserve request and result IDs.
+  separate from DeepSeek Harness and Feishu. This deployment uses the owner's
+  TARS login, not a separate Beagle service identity. Its bearer token belongs in
+  `/var/lib/ranger/service/beagle.token` (mode 0600); read
+  `/var/lib/ranger/workspace/BEAGLE_ACCESS.md` for verification and expiry details.
+  Read the token from that file inside ordinary HTTP tools at request time; never
+  print it, inline it in tool arguments, or ask for it in chat. A private file
+  replacement renews access without a service restart. The inspected backend
+  issues 30-day tokens; check the installed token's actual expiry and API response.
+  There is no unattended renewal contract yet; report missing, expired, or
+  rejected credentials and request a private handoff. Preserve request and result IDs.
 - **JFS:** `/jfs-dialogue-alishprod01` is the actual shared mount. Staging is
   `/jfs-dialogue-alishprod01/data/users/TARS`; do not substitute local-disk paths.
   Shared publication is performed through EVE. Native Beagle results under
