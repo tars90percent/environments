@@ -93,8 +93,15 @@ running outside the unit as TARS retain that account's existing access.
   [archive](../../ops/harbor-archives/README.md) guides. Respect their locks, cron,
   credentials, state, and reconciliation behavior. Do not start duplicate jobs.
 - **Feishu records:** use supported lark-cli operations. Bot login provides chat;
-  user-context Base/docs access requires a separate user authorization. Store
-  that authorization only in RANGER's private CLI profile.
+  ordinary CLI operations use the default profile approved for this deployment.
+  The owner requested the same active application, settings and user scopes as
+  their local CLI: the CASE app profile `cli_a968ae3349f99cb3`, with a separate
+  user login on the dev machine. Match the granted scopes before selecting it
+  as the default. Store its authorization in RANGER's private CLI home.
+  The gateway explicitly uses `--profile ranger --as bot` for RANGER's own chat
+  transport regardless of the default profile. Do not start an event consumer
+  for the CASE profile; CASE already owns that app's message stream. When using
+  Feishu message IDs from the RANGER conversation, select `--profile ranger`.
 
 ## Durable follow-ups
 
@@ -132,10 +139,13 @@ npm run build
 npm run smoke
 ```
 
-Use an independent Feishu app/profile. Complete `lark-cli config init --new`, pair
+Use an independent Feishu app/profile for the chat transport. Complete `lark-cli config init --new`, pair
 the intended owner in a bounded listener, then set their verified `open_id` in
-`ALLOWED_USER_IDS`. Never share CASE's event consumer/app or copy another agent's
-credentials. Keep only one consumer of this app active during deployment.
+`ALLOWED_USER_IDS`. Keep only one consumer of the RANGER app active during
+deployment. Additional CLI profiles and credentials require the owner's
+authorization. For the approved local-profile match, install that app's settings
+and request the same scopes through a separate user login; do not clone the
+rotating user access/refresh tokens between independently running machines.
 
 Package a reviewed commit with `scripts/package-release.sh COMMIT /tmp/ranger.tar.gz`.
 It includes an explicit source/documentation allowlist, never local deliveries,
