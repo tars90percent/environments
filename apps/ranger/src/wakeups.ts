@@ -31,6 +31,9 @@ export async function importWakeups(data: string, state: State) {
         state.reply(`wakeup-rejected:${chatKey(chat)}:${file}`,replyTo,"A scheduled follow-up file was invalid or expired. It was retained with a .rejected suffix for inspection.");
         continue;
       }
+      // /new can reset this conversation while filesystem reads yield. Never
+      // import an old generation after reset has cancelled its follow-ups.
+      if (state.generation(chat) !== generation) break;
       // Storage failures are fatal and leave the request available for retry after restart.
       state.schedule(`${chatKey(chat)}:${generation}:${file}`,chat,w.prompt,w.due,w.expires);
       await rename(path, `${path}.accepted`);

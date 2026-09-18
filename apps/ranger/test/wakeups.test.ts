@@ -51,3 +51,17 @@ test("a database failure retains an unimported wakeup file for restart",async()=
   assert.deepEqual(await readdir(wake),["retry.json"]);
   state.close();await rm(dir,{recursive:true,force:true});
 });
+
+test("reset during wakeup file reads cannot revive a cancelled follow-up",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"ranger-reset-race-")), state=new State(join(dir,"state.sqlite")), chat="oc_one";
+  state.enqueue({id:"om_one",chat,replyTo:"om_one",text:"monitor",kind:"user"});state.finish(state.claim()!);
+  const wake=join(dir,"conversations",chatKey(chat),"wakeups","0");await mkdir(wake,{recursive:true});
+  await writeFile(join(wake,"old.json"),JSON.stringify({runAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),prompt:"old task"}));
+  const chats=state.chats.bind(state);
+  state.chats=()=>{const snapshot=chats();queueMicrotask(()=>state.reset(chat));return snapshot;};
+  await importWakeups(dir,state);
+  assert.equal(state.generation(chat),1);
+  assert.equal(state.claim(),undefined);
+  assert.deepEqual(await readdir(wake),["old.json"]);
+  state.close();await rm(dir,{recursive:true,force:true});
+});
